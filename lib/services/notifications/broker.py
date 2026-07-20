@@ -10,6 +10,11 @@ Callers declare WHAT the notification is (category); the broker decides whether,
 when, and how it goes out. Adding a notification type never means adding a gate
 here — it means adding a policy row.
 
+Insights vs notifications are DELIBERATELY separate: insights are a durable,
+actionable feed with their own store; notifications are ephemeral pings that
+live in the inbox. Both route through here for the delivery decision, but only
+notifications are filed as inbox rows (record_inbox=False for insights).
+
 Every step fails open toward delivery for infra errors (Redis/DB down), but
 fails closed for explicit patient choices (mute, permission).
 """
@@ -57,6 +62,12 @@ async def deliver(
     # title/body are already in the patient's language — skip translation
     # (the proactive path translates alongside its insight record).
     prelocalized: bool = False,
+    # Whether to file a PatientNotification inbox row. Notifications (reminders,
+    # gamification, re-engagement) are ephemeral pings and belong in the inbox.
+    # Insights are a separate, durable, actionable feed with their own store —
+    # they route through here for the DELIVERY decision but must NOT be filed
+    # as notifications, so the proactive path passes record_inbox=False.
+    record_inbox: bool = True,
     # Skip FCM permission entirely (internal/system sends). Rare.
     force: bool = False,
 ) -> DeliveryResult:
@@ -88,7 +99,12 @@ async def deliver(
         title_out, body_out = await _localize(patient_id, title, body, body_translation)
 
     # 5. Persist the inbox row FIRST — a failed push still leaves a record.
-    notif_id = await _persist(patient_id, category, title_out, body_out, severity, deeplink, data)
+    # Skipped for insights: they are recorded in the insight store, not the
+    # notification inbox — the two are kept separate by design.
+    notif_id = (
+        await _persist(patient_id, category, title_out, body_out, severity, deeplink, data)
+        if record_inbox else None
+    )
 
     # 6. FCM. CRITICAL bypasses the master permission switch.
     sent = await _send_fcm(

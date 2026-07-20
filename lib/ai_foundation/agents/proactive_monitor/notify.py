@@ -81,6 +81,9 @@ async def send_top_insight_notification(
         group_key="alert_group" if is_urgent else "health_insights_group",
         severity=top.severity.value,
         prelocalized=True,
+        # Insights are their own durable feed (recorded via record_insight
+        # above) — deliver through the broker, but never file as a notification.
+        record_inbox=False,
         data={
             "type": "proactive_insight",
             "insight_id": top.insight_id,

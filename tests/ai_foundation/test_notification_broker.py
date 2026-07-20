@@ -157,3 +157,19 @@ class TestMuteHonorsPolicy:
             assert policy_for(c).mutable is True
         for c in ("meal_logged", "medication_dose", "safety_alert", "cgm_threshold_crossed"):
             assert c not in _MUTABLE_CATEGORIES
+
+
+class TestInsightsNotFiledAsNotifications:
+    @pytest.mark.asyncio
+    async def test_record_inbox_false_skips_persist(self, stubs, monkeypatch):
+        monkeypatch.setattr(broker._budget, "under_cap", AsyncMock(return_value=True))
+        r = await _deliver("proactive_insight", record_inbox=False)
+        assert r.delivered  # still delivered via FCM
+        stubs["persist"].assert_not_awaited()  # but never filed as a notification
+        stubs["fcm"].assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_notifications_still_filed(self, stubs, monkeypatch):
+        r = await _deliver("medication_dose")  # a real notification
+        assert r.delivered
+        stubs["persist"].assert_awaited_once()
