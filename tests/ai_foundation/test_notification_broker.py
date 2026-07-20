@@ -144,3 +144,16 @@ class TestDelivery:
         monkeypatch.setattr(broker._budget, "under_cap", AsyncMock(return_value=True))
         await _deliver("proactive_insight", prelocalized=True)
         loc.assert_not_awaited()
+
+
+class TestMuteHonorsPolicy:
+    """The mute API only exposes categories whose policy is actually mutable —
+    the broker never checks mute for EVENT/CRITICAL, so offering those toggles
+    would be a lie."""
+
+    def test_only_mutable_categories_exposed(self):
+        from rest_server.v1.patients.notification_preferences import _MUTABLE_CATEGORIES
+        for c in _MUTABLE_CATEGORIES:
+            assert policy_for(c).mutable is True
+        for c in ("meal_logged", "medication_dose", "safety_alert", "cgm_threshold_crossed"):
+            assert c not in _MUTABLE_CATEGORIES
