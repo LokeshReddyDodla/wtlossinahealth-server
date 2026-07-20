@@ -174,9 +174,10 @@ async def _run_monitor_case(case: dict[str, Any], *, no_judge: bool) -> dict[str
     from .checks import run_checks
     from .fixtures import EVAL_PATIENT_ID, EVAL_PATIENT_NAME, FakeMemory, FixtureRetriever
     from .judge import judge_case_voted
-    from .monitor_fixtures import SCENARIOS, pick_afternoon_timezone
+    from .monitor_fixtures import SCENARIOS, pick_afternoon_timezone, pick_morning_timezone
 
-    tz = pick_afternoon_timezone()
+    # `scan_period: morning` forces the DailyBrief path; default is afternoon.
+    tz = pick_morning_timezone() if case.get("scan_period") == "morning" else pick_afternoon_timezone()
     records = SCENARIOS[case["scenario"]](tz)
     agent = ProactiveMonitorAgent(
         gateway=shared_gateway(),
@@ -196,6 +197,36 @@ async def _run_monitor_case(case: dict[str, Any], *, no_judge: bool) -> dict[str
                 return self._intents
 
         agent._care_intents = _IntentReader(case["care_intents"])
+
+    # `active_nudges:` on a case injects the day's other proactive nudges
+    # (gamification task titles) so coordination/de-conflict can be tested.
+    if case.get("active_nudges"):
+        class _NudgeReader:
+            def __init__(self, nudges):
+                self._nudges = nudges
+
+            async def get_active_nudges(self, _pid):
+                return self._nudges
+
+        agent._daily_tasks = _NudgeReader(case["active_nudges"])
+
+    # `disliked_categories:` injects the patient's downvoted insight
+    # categories so feedback-driven suppression can be tested.
+    if case.get("disliked_categories"):
+        class _FeedbackTracker:
+            def __init__(self, cats):
+                self._cats = cats
+
+            async def get_disliked_categories(self, _pid, **_):
+                return self._cats
+
+            async def should_send(self, *a, **k):
+                return (True, 0, "info")
+
+            async def record(self, *a, **k):
+                return None
+
+        agent._insight_tracker = _FeedbackTracker(case["disliked_categories"])
 
     # Event-mode: `trigger: <event>` + `anchor: {...}` in the case runs the
     # event-scan path. Record-backed anchors (meal/smbg/symptom) are served
@@ -281,6 +312,17 @@ async def _run_monitor_case(case: dict[str, Any], *, no_judge: bool) -> dict[str
                 f"TRIGGER EVENT (ground truth — this event fired the scan): "
                 f"{trig.value} {anchor_dump}"
             )
+        # Injected context the agent legitimately saw is ground truth for the
+        # judge too — otherwise it flags real attributions as fabricated.
+        for ci in case.get("care_intents") or []:
+            judge_evidence.append(
+                f"CARE INTENT (from {ci['author_name']}, {ci['author_role']}): "
+                f"{ci['original_text']}"
+            )
+        for n in case.get("active_nudges") or []:
+            judge_evidence.append(f"ALREADY-ACTIVE NUDGE today: {n}")
+        for cat in case.get("disliked_categories") or []:
+            judge_evidence.append(f"PATIENT DOWNVOTED insight category: {cat}")
         try:
             judgment = await judge_case_voted(
                 shared_gateway(),

@@ -863,7 +863,6 @@ class MedicationService:
         """Persist a medication-lifecycle inbox row and fire FCM."""
         try:
             from lib.services.notifications import record_and_send_notification
-            from lib.services.notification_budget import record_sent
 
             await record_and_send_notification(
                 patient_id,
@@ -872,7 +871,6 @@ class MedicationService:
                 body=body,
                 data={"event_type": event_type, **extra_data},
             )
-            record_sent(patient_id)
         except Exception:
             logger.debug("Medication notification failed for %s: %s", patient_id, event_type)
 

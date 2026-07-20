@@ -164,6 +164,9 @@ async def submit_insight_feedback(
             value=1.0 if payload.thumbs_up else 0.0,
             comment=payload.comment,
         )
+        # Persist on the insight row too, so the signal actually steers future
+        # targeting (get_disliked_categories) instead of dead-ending in Langfuse.
+        await tracker.record_feedback(payload.insight_id, payload.thumbs_up)
         recorded = True
     except HTTPException:
         raise

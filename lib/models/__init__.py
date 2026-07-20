@@ -6,6 +6,7 @@ Base = declarative_base()
 from .admin import Admin
 from .care_intent import CareIntent
 from .care_intent_event import CareIntentEvent
+from .patient_notification_preference import PatientNotificationPreference
 from .care_provider import CareProvider
 from .health_facility import HealthFacility
 from .package import Package

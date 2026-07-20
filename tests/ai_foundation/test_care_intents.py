@@ -802,3 +802,165 @@ class TestCareIntentCrud:
         assert out.status == "active"
         assert out.escalated_at is None
         assert out.review_date > date.today()
+
+
+# ── adherence quality: observational filter + no-data barrier + type in prompt ─
+
+
+class TestAdherenceQuality:
+    @pytest.mark.asyncio
+    async def test_watch_and_passive_intents_excluded_from_adherence(self, monkeypatch):
+        from lib.ai_foundation.agents.proactive_monitor.agent import ProactiveMonitorAgent
+        import lib.ai_foundation.care_intents.adherence as adherence_mod
+
+        captured = {}
+
+        async def fake_eval(gateway, *, intents, day_data_text, day_label, patient_context=""):
+            captured["intents"] = intents
+            return []
+
+        monkeypatch.setattr(adherence_mod, "evaluate_adherence", fake_eval)
+        reader = MagicMock()
+        reader.record_adherence = AsyncMock()
+        agent = ProactiveMonitorAgent(gateway=MagicMock(), qdrant=MagicMock(), care_intents=reader)
+
+        intents = [
+            {"care_intent_id": "a", "original_text": "walk after dinner", "intent_type": "remind", "cadence": "daily"},
+            {"care_intent_id": "b", "original_text": "keep an eye on sugars", "intent_type": "watch", "cadence": "passive"},
+            {"care_intent_id": "c", "original_text": "no rice at night", "intent_type": "restrict", "cadence": "passive"},
+        ]
+        # simulate the scan gate: only trackable intents reach the evaluator
+        trackable = [ci for ci in intents if ci.get("intent_type") != "watch" and ci.get("cadence") != "passive"]
+        await agent._record_adherence("p1", trackable, "data", "2026-07-19", "yesterday")
+        ids = {ci["care_intent_id"] for ci in captured["intents"]}
+        assert ids == {"a"}  # watch (b) and passive (c) both excluded
+
+    @pytest.mark.asyncio
+    async def test_intent_type_and_nodata_barrier_in_prompt(self):
+        from lib.ai_foundation.care_intents.adherence import AdherenceVerdicts, evaluate_adherence
+
+        gateway = MagicMock()
+        gateway.extract = AsyncMock(return_value=(AdherenceVerdicts(), None))
+        await evaluate_adherence(
+            gateway,
+            intents=[{"care_intent_id": "a", "original_text": "log your meals", "intent_type": "remind"}],
+            day_data_text="(no data logged)",
+            day_label="yesterday",
+        )
+        system = gateway.extract.call_args.kwargs["messages"][0]["content"]
+        user = gateway.extract.call_args.kwargs["messages"][1]["content"]
+        assert "[remind] log your meals" in user           # type is explicit
+        assert "no meals logged" in system.lower()          # barrier-note guidance present
+        assert "about logging" in system.lower()            # logging carve-out present
+
+
+# ── message-vs-intent gate ────────────────────────────────────────────────────
+
+
+class TestMessageGate:
+    def _actor(self):
+        return SimpleNamespace(model=SimpleNamespace(
+            care_provider_id=uuid4(), role="Dietitian", full_name="Usha Rajesh",
+        ))
+
+    @pytest.mark.asyncio
+    async def test_one_off_message_refused_not_stored(self, monkeypatch):
+        import importlib
+        router = importlib.import_module("rest_server.v1.care_intents.router")
+
+        monkeypatch.setattr(router, "resolve_patient_access", AsyncMock(return_value=uuid4()))
+        msg_like = _structured(is_message=True)
+        monkeypatch.setattr(router, "structure_care_intent", AsyncMock(return_value=msg_like))
+        service = MagicMock(); service.create = AsyncMock()
+
+        with pytest.raises(HTTPException) as exc:
+            await router.create_care_intent(
+                payload=router.CareIntentCreateRequest(patient_id=uuid4(), text="Hi pl update your meal pics"),
+                current_actor=self._actor(), access=MagicMock(),
+                service=service, gateway=MagicMock(),
+            )
+        assert exc.value.status_code == 422
+        assert "one-off message" in exc.value.detail.lower()
+        service.create.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_standing_instruction_still_saves(self, monkeypatch):
+        import importlib
+        router = importlib.import_module("rest_server.v1.care_intents.router")
+        pid = uuid4()
+        monkeypatch.setattr(router, "resolve_patient_access", AsyncMock(return_value=pid))
+        monkeypatch.setattr(router, "structure_care_intent", AsyncMock(return_value=_structured(is_message=False)))
+        actor = self._actor()
+        stored = SimpleNamespace(
+            care_intent_id=uuid4(), patient_id=pid, author_id=actor.model.care_provider_id,
+            author_role="Dietitian", author_name="Usha Rajesh",
+            original_text="keep reminding her to log meals", intent_type="remind",
+            domain="nutrition", trigger_condition=None, cadence="daily",
+            patient_summary="x", success_criteria=None,
+            review_date=date.today() + timedelta(days=14), status="active",
+            created_at=datetime.now(),
+        )
+        service = MagicMock(); service.create = AsyncMock(return_value=stored)
+        service.get_active_context = AsyncMock(return_value=[])
+        monkeypatch.setattr(router, "detect_intent_conflicts", AsyncMock(return_value=[]))
+        resp = await router.create_care_intent(
+            payload=router.CareIntentCreateRequest(patient_id=pid, text="keep reminding her to log meals"),
+            current_actor=actor, access=MagicMock(), service=service, gateway=MagicMock(),
+        )
+        service.create.assert_called_once()
+        assert resp.data["care_intent"]["author_name"] == "Usha Rajesh"
+
+
+# ── Phase 3: freshness gate + feedback loop ───────────────────────────────────
+
+
+class TestEventFreshness:
+    def test_stale_event_suppressed_fresh_and_unknown_pass(self):
+        from types import SimpleNamespace
+        from datetime import datetime, timezone, timedelta
+        from lib.workers.tasks.proactive_monitor.event_scan import _is_stale_event
+
+        now = datetime.now(timezone.utc)
+        assert _is_stale_event(SimpleNamespace(event_time=(now - timedelta(hours=10)).isoformat())) is True
+        assert _is_stale_event(SimpleNamespace(event_time=(now - timedelta(minutes=20)).isoformat())) is False
+        assert _is_stale_event(SimpleNamespace(event_time=None)) is False
+        assert _is_stale_event(SimpleNamespace(event_time="not-a-date")) is False
+
+
+class TestFeedbackLoop:
+    @pytest.mark.asyncio
+    async def test_disliked_categories_net_negative_only(self):
+        from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTracker
+
+        docs = [
+            {"category": "meal_low_protein", "feedback": "down"},
+            {"category": "meal_low_protein", "feedback": "down"},
+            {"category": "glucose_spike", "feedback": "down"},
+            {"category": "glucose_spike", "feedback": "up"},   # net 0 → not disliked
+            {"category": "fitness_streak", "feedback": "up"},
+        ]
+
+        class _Cursor:
+            def __init__(self, items): self._items = items
+            def __aiter__(self): self._it = iter(self._items); return self
+            async def __anext__(self):
+                try: return next(self._it)
+                except StopIteration: raise StopAsyncIteration
+
+        tracker = InsightTracker.__new__(InsightTracker)
+        tracker._collection = MagicMock()
+        tracker._collection.find = MagicMock(return_value=_Cursor(docs))
+        out = await tracker.get_disliked_categories("p1")
+        assert out == ["meal_low_protein"]  # net-negative only; tied/positive excluded
+
+    @pytest.mark.asyncio
+    async def test_record_feedback_sets_flag(self):
+        from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTracker
+
+        tracker = InsightTracker.__new__(InsightTracker)
+        tracker._collection = MagicMock()
+        tracker._collection.update_one = AsyncMock()
+        await tracker.record_feedback("ins-1", thumbs_up=False)
+        args = tracker._collection.update_one.call_args
+        assert args.args[0] == {"insight_id": "ins-1"}
+        assert args.args[1]["$set"]["feedback"] == "down"

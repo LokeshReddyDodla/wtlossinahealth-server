@@ -21,7 +21,9 @@ _SYSTEM_PROMPT = """You evaluate whether a patient followed their care team's in
 For EVERY numbered instruction, return one verdict:
 - "followed" — the data shows the asked behavior happened (or the thing to avoid was avoided).
 - "missed" — the data shows it did not happen, or clearly contradicts the instruction.
-- "unclear" — the data cannot tell (nothing relevant logged, instruction is passive/observational, or coverage is too thin). When in doubt, "unclear" — never guess "missed" from absence of data alone unless the instruction is specifically about logging.
+- "unclear" — the data genuinely cannot tell: the instruction is vague/unmeasurable ("eat healthy"), or coverage is too thin to judge. When in doubt, "unclear" — never guess "missed" from absence of data alone.
+
+When you return "unclear" or "missed" because nothing relevant was logged that day, set barrier_note to what was missing ("no meals logged", "no activity recorded") — a blank verdict tells the care team nothing. For instructions that are ABOUT logging ("log your meals", "update meal pics"), nothing logged IS a "missed", not "unclear".
 
 barrier_note: ONLY when the day's data or the patient's own words (PATIENT CONTEXT) show a likely reason for a miss — a symptom entry, an unusual schedule, no data after a certain hour, or something the patient told the assistant ("knee pain makes walking hard"). One short factual phrase, no speculation. null otherwise.
 
@@ -59,7 +61,7 @@ async def evaluate_adherence(
         return []
 
     numbered = "\n".join(
-        f"{i}. {ci['original_text']}"
+        f"{i}. [{ci.get('intent_type', 'remind')}] {ci['original_text']}"
         + (f" (relevant when: {ci['trigger_condition']})" if ci.get("trigger_condition") else "")
         for i, ci in enumerate(intents, start=1)
     )

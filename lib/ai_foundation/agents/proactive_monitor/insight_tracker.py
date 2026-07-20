@@ -193,6 +193,35 @@ class InsightTracker:
             doc["_id"] = str(doc["_id"])
         return doc
 
+    async def record_feedback(self, insight_id: str, thumbs_up: bool) -> None:
+        """Persist a patient's thumbs up/down on the insight row itself, so the
+        signal is queryable (not just a Langfuse score) and can steer future
+        targeting via ``get_disliked_categories``."""
+        await self._collection.update_one(
+            {"insight_id": insight_id},
+            {"$set": {"feedback": "up" if thumbs_up else "down"}},
+        )
+
+    async def get_disliked_categories(self, patient_id: str, *, days: int = 30) -> list[str]:
+        """Categories the patient has thumbs-downed recently and NOT since
+        thumbs-upped — the brain should ease off these unless materially
+        important. A later up-vote on the same category clears it."""
+        from datetime import datetime, timedelta, timezone
+
+        since = datetime.now(timezone.utc) - timedelta(days=days)
+        net: dict[str, int] = {}
+        cursor = self._collection.find(
+            {"patient_id": patient_id, "feedback": {"$in": ["up", "down"]},
+             "created_at": {"$gte": since}},
+            {"category": 1, "feedback": 1},
+        )
+        async for doc in cursor:
+            cat = doc.get("category")
+            if not cat:
+                continue
+            net[cat] = net.get(cat, 0) + (-1 if doc["feedback"] == "down" else 1)
+        return [cat for cat, score in net.items() if score < 0]
+
     async def get_history(
         self,
         patient_id: str,
