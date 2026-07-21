@@ -7,7 +7,7 @@ from arq import create_pool
 from arq.connections import ArqRedis
 from loguru import logger
 
-from .config import get_arq_redis_settings
+from .config import Queues, get_arq_redis_settings
 
 
 class ArqRedisPool:
@@ -18,7 +18,14 @@ class ArqRedisPool:
     async def get_pool(cls) -> ArqRedis:
         async with cls._lock:
             if cls._pool is None:
-                cls._pool = await create_pool(get_arq_redis_settings())
+                # The pool's default queue must match WorkerSettings.queue_name.
+                # arq's own default is "arq:queue", so without this every
+                # enqueue_job() call that doesn't pass _queue_name lands on a
+                # queue no worker polls, and the job waits forever.
+                cls._pool = await create_pool(
+                    get_arq_redis_settings(),
+                    default_queue_name=Queues.DEFAULT,
+                )
             return cls._pool
 
     @classmethod
