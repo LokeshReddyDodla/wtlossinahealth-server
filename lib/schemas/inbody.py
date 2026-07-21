@@ -13,13 +13,19 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-EXTRACTION_SCHEMA_VERSION = "2026.07"
+EXTRACTION_SCHEMA_VERSION = "2026.07.1"
 
 ReportStatus = Literal[
     "uploaded", "extracting", "extracted", "needs_review", "failed"
 ]
 
 AbnormalityLevel = Literal["low", "normal", "high"]
+
+# InBody's evaluation sections rate each component under / normal / over.
+EvalStatus = Literal["under", "normal", "over"]
+
+# Body-balance rows are rated balanced / slightly imbalanced / imbalanced.
+BalanceStatus = Literal["balanced", "slightly_imbalanced", "imbalanced"]
 
 
 # ---------------------------------------------------------------------------
@@ -66,6 +72,35 @@ class WeightControl(BaseModel):
     muscle_control_kg: Optional[float] = None
 
 
+class NutritionEvaluation(BaseModel):
+    """InBody 'Nutritional Evaluation' section — each component under/normal/over."""
+
+    protein: Optional[EvalStatus] = None
+    minerals: Optional[EvalStatus] = None
+    body_fat: Optional[EvalStatus] = None
+    body_water: Optional[EvalStatus] = None
+    summary: Optional[str] = Field(
+        None, description="Overall nutritional read printed on the sheet, if any"
+    )
+
+
+class ObesityEvaluation(BaseModel):
+    """InBody 'Obesity Evaluation' section — BMI and percent body fat rated."""
+
+    bmi: Optional[EvalStatus] = None
+    percent_body_fat: Optional[EvalStatus] = None
+    summary: Optional[str] = None
+
+
+class BodyBalanceEvaluation(BaseModel):
+    """InBody 'Balance of Body' — upper (arms), lower (legs) and upper-lower."""
+
+    upper: Optional[BalanceStatus] = None
+    lower: Optional[BalanceStatus] = None
+    upper_lower: Optional[BalanceStatus] = None
+    summary: Optional[str] = None
+
+
 class InbodyExtraction(BaseModel):
     """Everything readable from one InBody result sheet."""
 
@@ -78,6 +113,18 @@ class InbodyExtraction(BaseModel):
     segmental_lean: List[SegmentalValue] = Field(default_factory=list)
     segmental_fat: List[SegmentalValue] = Field(default_factory=list)
     weight_control: Optional[WeightControl] = None
+    nutrition_evaluation: Optional[NutritionEvaluation] = None
+    obesity_evaluation: Optional[ObesityEvaluation] = None
+    body_balance_evaluation: Optional[BodyBalanceEvaluation] = None
+    impedance_note: Optional[str] = Field(
+        None,
+        description=(
+            "Short plain-language note on the segmental impedance readings "
+            "(the per-segment ohm values at each frequency), e.g. whether "
+            "they look consistent/typical or show an anomaly. Not the full "
+            "raw grid — a one to two sentence read."
+        ),
+    )
     device_model: Optional[str] = Field(
         None, description="e.g. 'InBody 770' if printed on the sheet"
     )

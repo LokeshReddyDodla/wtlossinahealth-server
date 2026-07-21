@@ -35,9 +35,17 @@ EXTRACTION_SYSTEM_PROMPT = (
     "printed — never estimate, infer or fill in values that are not visible. "
     "Use canonical snake_case measurement names. Report values in the units "
     "printed on the sheet. Include normal ranges when printed. For segmental "
-    "lean/fat analysis capture each body segment. Set extraction_confidence "
-    "honestly: reduce it when the image is blurry, cropped, or values are "
-    "ambiguous, and list the problems in notes."
+    "lean/fat analysis capture each body segment. Also read the evaluation "
+    "sections when the sheet prints them: Nutritional Evaluation (rate "
+    "protein, minerals, body fat, body water as under/normal/over), Obesity "
+    "Evaluation (rate BMI and percent body fat), and Balance of Body (rate "
+    "upper, lower and upper-lower as balanced/slightly_imbalanced/"
+    "imbalanced). For impedance, do not transcribe the full per-segment ohm "
+    "grid — give impedance_note as a one to two sentence read of whether the "
+    "readings look consistent/typical or show an anomaly. Leave any section "
+    "null if the sheet does not print it. Set extraction_confidence honestly: "
+    "reduce it when the image is blurry, cropped, or values are ambiguous, "
+    "and list the problems in notes."
 )
 
 
