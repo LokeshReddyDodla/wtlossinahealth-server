@@ -656,6 +656,7 @@ class ProactiveMonitorAgent(BaseAgent):
             by_type.get(HealthDataType.MEAL.value, []),
             trigger=trigger,
             trigger_record=exclude_record,
+            scan_date=scan_date,
         )
         if totals:
             # First section, right under the trigger block — sitting totals are
@@ -703,13 +704,20 @@ class ProactiveMonitorAgent(BaseAgent):
         *,
         trigger: EventTrigger | None,
         trigger_record: dict[str, Any] | None,
+        scan_date: str,
     ) -> str | None:
         """Pre-computed meal totals the LLM can trust instead of adding
         numbers itself.
 
-        * Cron sweep: totals across today's fetched meals.
-        * Meal event: totals for THIS SITTING — the trigger meal plus any
-          co-logged items within 90 minutes of it.
+        The day total is scoped to meals whose ``meal_date`` equals
+        ``scan_date`` (the reported local day). Event scans fetch two days of
+        meals for glucose context; without this scope the LLM sums both days
+        and reports the inflated figure as "today". Matching on the stored
+        local date also sidesteps the UTC day-boundary bleed in the fetch.
+
+        * Any scan: the day total for ``scan_date``.
+        * Meal event: additionally the THIS SITTING total — the trigger meal
+          plus any co-logged items within 90 minutes of it.
         """
         def fmt(label: str, items: list[dict[str, Any]]) -> str:
             names = (" kcal", "g carbs", "g protein", "g fiber")
@@ -733,30 +741,45 @@ class ProactiveMonitorAgent(BaseAgent):
             note = " (some items lack full macro data)" if partial else ""
             return f"{label}: {len(items)} items — approx {', '.join(parts)}{note}"
 
+        blocks: list[str] = []
+
         if trigger == EventTrigger.MEAL_LOGGED and trigger_record is not None:
             t0 = trigger_record.get("start_time")
-            if not isinstance(t0, (int, float)):
-                return None
-            sitting = [trigger_record] + [
-                m for m in meals
-                if isinstance(m.get("start_time"), (int, float))
-                and abs(m["start_time"] - t0) <= self._SITTING_WINDOW_MS
-            ]
-            if len(sitting) < 2:
-                return None  # single-item meal — the record speaks for itself
-            return (
-                "## THIS SITTING — trigger item + "
-                f"{len(sitting) - 1} co-logged item(s) within 90 min. COMPUTED "
-                "TOTALS, judge the meal by these (do not re-add numbers "
-                "yourself):\n- " + fmt("Combined sitting", sitting)
+            if isinstance(t0, (int, float)):
+                sitting = [trigger_record] + [
+                    m for m in meals
+                    if isinstance(m.get("start_time"), (int, float))
+                    and abs(m["start_time"] - t0) <= self._SITTING_WINDOW_MS
+                ]
+                if len(sitting) >= 2:
+                    blocks.append(
+                        "## THIS SITTING — trigger item + "
+                        f"{len(sitting) - 1} co-logged item(s) within 90 min. "
+                        "COMPUTED TOTALS, judge the meal by these (do not re-add "
+                        "numbers yourself):\n- " + fmt("Combined sitting", sitting)
+                    )
+
+        # Day total scoped to the reported local day, for the cron sweep and
+        # meal events (where "intake so far today" is a natural reaction).
+        # Non-meal events are barred from daily summaries by the prompt, so no
+        # day total is offered there. The trigger meal is excluded from `meals`
+        # upstream, so fold it back in when it belongs to this day.
+        emit_day_total = trigger is None or trigger == EventTrigger.MEAL_LOGGED
+        todays = [m for m in meals if m.get("meal_date") == scan_date]
+        if (
+            trigger_record is not None
+            and trigger_record.get("meal_date") == scan_date
+        ):
+            todays = [trigger_record] + todays
+        if emit_day_total and todays:
+            blocks.append(
+                f"## MEALS ON {scan_date} — COMPUTED day total, the ONLY "
+                "authoritative daily figure. Trust this; never sum meal records "
+                "yourself, and never report an earlier day's macros as today:\n- "
+                + fmt(f"Day total ({scan_date})", todays)
             )
 
-        if trigger is None and meals:
-            return (
-                "## MEAL TOTALS TODAY — COMPUTED, trust these sums (do not "
-                "re-add numbers yourself):\n- " + fmt("Total so far", meals)
-            )
-        return None
+        return "\n\n".join(blocks) or None
 
     # Derived from the canonical memory schema — a goal key added to the
     # fact extractor must appear in the monitor's goals section automatically.

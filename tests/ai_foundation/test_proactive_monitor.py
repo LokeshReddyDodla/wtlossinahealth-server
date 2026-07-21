@@ -729,6 +729,7 @@ class TestMealTotalsComputed:
         ]
         section = agent._meal_totals_section(
             meals, trigger=EventTrigger.MEAL_LOGGED, trigger_record=trigger_rec,
+            scan_date="2026-07-21",
         )
         assert "THIS SITTING" in section and "2 co-logged" in section
         assert "395 kcal" in section      # 60+240+95, excludes the 480
@@ -742,36 +743,60 @@ class TestMealTotalsComputed:
         assert agent._meal_totals_section(
             [], trigger=EventTrigger.MEAL_LOGGED,
             trigger_record={"start_time": 1.0, "calories": 300},
+            scan_date="2026-07-21",
         ) is None
 
     def test_cron_day_totals(self):
         agent = _make_agent()
         meals = [
-            {"nutrition": {"calories": 180, "carbohydrates": 32, "proteins": 4, "fiber": 2}},
-            {"nutrition": {"calories": 240, "carbohydrates": 38, "proteins": 9, "fiber": 5}},
+            {"meal_date": "2026-07-21", "nutrition": {"calories": 180, "carbohydrates": 32, "proteins": 4, "fiber": 2}},
+            {"meal_date": "2026-07-21", "nutrition": {"calories": 240, "carbohydrates": 38, "proteins": 9, "fiber": 5}},
         ]
-        section = agent._meal_totals_section(meals, trigger=None, trigger_record=None)
-        assert "MEAL TOTALS TODAY" in section
+        section = agent._meal_totals_section(
+            meals, trigger=None, trigger_record=None, scan_date="2026-07-21",
+        )
+        assert "MEALS ON 2026-07-21" in section
         assert "420 kcal" in section and "13g protein" in section
+
+    def test_day_total_excludes_other_days(self):
+        """Event scans fetch two days of meals; the day total must count only
+        the reported day, or the LLM reports the two-day sum as 'today'."""
+        agent = _make_agent()
+        meals = [
+            {"meal_date": "2026-07-21", "nutrition": {"calories": 240, "carbohydrates": 38, "proteins": 27, "fiber": 5}},
+            # yesterday's meals are context only — must not enter the total
+            {"meal_date": "2026-07-20", "nutrition": {"calories": 500, "carbohydrates": 60, "proteins": 40, "fiber": 8}},
+            {"meal_date": "2026-07-20", "nutrition": {"calories": 400, "carbohydrates": 50, "proteins": 26, "fiber": 7}},
+        ]
+        section = agent._meal_totals_section(
+            meals, trigger=None, trigger_record=None, scan_date="2026-07-21",
+        )
+        assert "27g protein" in section          # today only
+        assert "93g protein" not in section      # not the two-day sum
+        assert "1 items" in section              # only the one Jul-21 meal counted
 
     def test_missing_macro_is_unknown_not_zero(self):
         """A record with no fiber field must not produce '0g fiber' — the
         LLM turns that into 'your meal had 0g fiber' (dietitian-visible bug)."""
         agent = _make_agent()
         meals = [
-            {"calories": 320, "carbs_g": 28, "protein_g": 18},  # no fiber field
-            {"calories": 200, "carbs_g": 30, "protein_g": 6},
+            {"meal_date": "2026-07-21", "calories": 320, "carbs_g": 28, "protein_g": 18},  # no fiber field
+            {"meal_date": "2026-07-21", "calories": 200, "carbs_g": 30, "protein_g": 6},
         ]
-        section = agent._meal_totals_section(meals, trigger=None, trigger_record=None)
+        section = agent._meal_totals_section(
+            meals, trigger=None, trigger_record=None, scan_date="2026-07-21",
+        )
         assert "fiber" not in section
         assert "520 kcal" in section and "24g protein" in section
 
     def test_partial_macro_data_marked(self):
         agent = _make_agent()
         meals = [
-            {"calories": 300, "fiber_g": 6},
-            {"calories": 200},  # no fiber
+            {"meal_date": "2026-07-21", "calories": 300, "fiber_g": 6},
+            {"meal_date": "2026-07-21", "calories": 200},  # no fiber
         ]
-        section = agent._meal_totals_section(meals, trigger=None, trigger_record=None)
+        section = agent._meal_totals_section(
+            meals, trigger=None, trigger_record=None, scan_date="2026-07-21",
+        )
         assert "at least 6g fiber" in section
         assert "lack full macro data" in section
