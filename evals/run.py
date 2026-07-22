@@ -206,35 +206,25 @@ async def _run_monitor_case(case: dict[str, Any], *, no_judge: bool) -> dict[str
         agent._care_intents = reader                        # monitor: morning adherence scoring
         health_agent.context_loader._care_intents = reader  # brain: sees them in its context
 
-    # `active_nudges:` on a case injects the day's other proactive nudges
-    # (gamification task titles) so coordination/de-conflict can be tested.
+    # `active_nudges:` injects today's pending gamification task titles. The
+    # brain reads them from its gamification context (pending_task_titles) so it
+    # doesn't repeat a nudge already in flight — so wire a fake gamification
+    # service on the brain's context loader, not the monitor.
     if case.get("active_nudges"):
-        class _NudgeReader:
+        from lib.schemas.gamification import GamificationContext
+
+        class _Gamification:
             def __init__(self, nudges):
-                self._nudges = nudges
+                self._ctx = GamificationContext(
+                    level=1, title="Newcomer", total_xp=0, current_streak=0,
+                    streak_multiplier=1.0, streak_freezes=0,
+                    pending_task_titles=nudges,
+                )
 
-            async def get_active_nudges(self, _pid):
-                return self._nudges
+            async def get_gamification_context(self, _pid):
+                return self._ctx
 
-        agent._daily_tasks = _NudgeReader(case["active_nudges"])
-
-    # `disliked_categories:` injects the patient's downvoted insight
-    # categories so feedback-driven suppression can be tested.
-    if case.get("disliked_categories"):
-        class _FeedbackTracker:
-            def __init__(self, cats):
-                self._cats = cats
-
-            async def get_disliked_categories(self, _pid, **_):
-                return self._cats
-
-            async def should_send(self, *a, **k):
-                return (True, 0, "info")
-
-            async def record(self, *a, **k):
-                return None
-
-        agent._insight_tracker = _FeedbackTracker(case["disliked_categories"])
+        health_agent.context_loader._gamification_service = _Gamification(case["active_nudges"])
 
     # Event-mode: `trigger: <event>` + `anchor: {...}` in the case runs the
     # event-scan path. Record-backed anchors (meal/smbg/symptom) are served
@@ -316,8 +306,6 @@ async def _run_monitor_case(case: dict[str, Any], *, no_judge: bool) -> dict[str
             )
         for n in case.get("active_nudges") or []:
             judge_evidence.append(f"ALREADY-ACTIVE NUDGE today: {n}")
-        for cat in case.get("disliked_categories") or []:
-            judge_evidence.append(f"PATIENT DOWNVOTED insight category: {cat}")
         try:
             judgment = await judge_case_voted(
                 shared_gateway(),

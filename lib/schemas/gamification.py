@@ -604,6 +604,10 @@ class GamificationContext(BaseModel):
     streak_freezes: int
     recent_achievements: List[str] = []
     tasks_today: Dict[str, int] = {}
+    # Titles of today's still-pending tasks — the nudges the patient will already
+    # get today. The proactive brain reads these so it doesn't become a second
+    # voice repeating a nudge already in flight.
+    pending_task_titles: List[str] = []
     weekly_quest: Optional[Dict[str, Any]] = None
     active_challenges: List[Dict[str, Any]] = []
     buddy_streak: Optional[int] = None

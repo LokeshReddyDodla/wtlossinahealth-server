@@ -728,6 +728,7 @@ class GamificationService:
         )
         tasks = task_result.scalars().all()
         completed = sum(1 for t in tasks if t.status == TaskStatus.COMPLETED.value)
+        pending_task_titles = [t.title for t in tasks if t.status == TaskStatus.PENDING.value]
 
         # Weekly quest
         week_start = today - timedelta(days=today.weekday())
@@ -816,6 +817,7 @@ class GamificationService:
             streak_freezes=profile.streak_freezes,
             recent_achievements=recent,
             tasks_today={"completed": completed, "total": len(tasks)},
+            pending_task_titles=pending_task_titles,
             weekly_quest=quest_data,
             active_challenges=active_challenges,
             buddy_streak=buddy_streak,
