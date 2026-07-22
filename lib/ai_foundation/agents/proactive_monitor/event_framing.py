@@ -131,3 +131,20 @@ def frame_event(
     if trigger in _EVENT_FRAME:
         return f"{who} {_EVENT_FRAME[trigger]}"
     raise ValueError(f"frame_event: {trigger} is not wired to the brain")
+
+
+def frame_cron(patient_name: str | None, scan_period: str) -> str:
+    """The scheduled (no-trigger) digest ask — a proactive check-in, not a reply.
+
+    The brain reviews all domains and decides whether anything is worth a push;
+    unlike an event, there is no single thing that just happened.
+    """
+    who = patient_name or "the patient"
+    when = {"morning": "this morning", "afternoon": "this afternoon",
+            "evening": "this evening"}.get(scan_period, "today")
+    return (
+        f"Produce a short, warm proactive check-in for {who} for {when}. Review "
+        f"their recent data across all domains; if there is something genuinely "
+        f"useful, grounded, and worth their attention, say it briefly. If nothing "
+        f"is noteworthy, do not notify."
+    )

@@ -123,3 +123,23 @@ async def test_every_event_trigger_routes_to_the_brain(trigger, anchor, category
     assert result.insights[0].category is category
     assert result.insights[0].severity is severity
     assert brain.run_proactive.call_args.kwargs["tier"] is tier
+
+
+# ── cron digest also runs on the one brain ─────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_cron_digest_uses_the_brain():
+    agent, brain = _monitor(ProactiveNarration(
+        notify=True, title="Morning check-in", body="You slept well and glucose held steady."))
+    insights = await agent._cron_narration("p1", "Rohan", "morning")
+    assert len(insights) == 1
+    assert insights[0].category is InsightCategory.DAILY_BRIEF
+    assert insights[0].severity is InsightSeverity.INFO
+    assert brain.run_proactive.call_args.kwargs["tier"] is ReasoningTier.ADVANCED
+
+
+@pytest.mark.asyncio
+async def test_cron_digest_declines_when_nothing_noteworthy():
+    agent, _ = _monitor(ProactiveNarration(notify=False))
+    assert await agent._cron_narration("p1", "Rohan", "evening") == []

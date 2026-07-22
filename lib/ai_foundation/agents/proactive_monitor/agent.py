@@ -36,7 +36,8 @@ from lib.ai_foundation.retrieval.base import RetrievalRequest
 from lib.core.qdrant_store import QDRANT_COLLECTION, QdrantStore
 
 from .scheduling import DEFAULT_TIMEZONE
-from .event_framing import classify_event, frame_event, is_wired, trigger_tier
+from lib.ai_foundation.agents.health_query.reasoning_engine import ReasoningTier
+from .event_framing import classify_event, frame_cron, frame_event, is_wired, trigger_tier
 from .contracts import (
     BatchScanResult,
     DailyBrief,
@@ -293,6 +294,29 @@ class ProactiveMonitorAgent(BaseAgent):
         )
         return ScanResult(patient_id=patient_id, insights=[insight], scan_duration_ms=duration)
 
+    async def _cron_narration(
+        self, patient_id: str, patient_name: str | None, scan_period: str,
+    ) -> list[HealthInsight]:
+        """The scheduled digest, written by the one brain. Adherence recording
+        (a separate concern) still runs in the cron path around this call; this
+        only replaces the narration. Returns [] when the brain declines."""
+        narration = await self._health_agent.run_proactive(
+            patient_id=patient_id,
+            event_summary=frame_cron(patient_name, scan_period),
+            tier=ReasoningTier.ADVANCED,
+        )
+        if not narration.notify or not narration.body.strip():
+            return []
+        return [HealthInsight(
+            category=InsightCategory.DAILY_BRIEF,
+            severity=InsightSeverity.INFO,
+            title=narration.title.strip() or "Your check-in",
+            body=narration.body.strip(),
+            patient_id=patient_id,
+            suggested_query=narration.suggested_query,
+            data={"trigger": "cron"},
+        )]
+
     async def scan_patient(
         self,
         patient_id: str,
@@ -452,21 +476,27 @@ class ProactiveMonitorAgent(BaseAgent):
                 },
             ))
 
-            # 5. Single LLM call (or static engagement-drop for empty cron data)
-            insights, llm_meta = await self._analyze(
-                data_text=data_text,
-                patient_id=patient_id,
-                patient_name=display_name,
-                scan_label=scan_label,
-                scan_period=scan_period,
-                greeting=greeting,
-                facts_text=facts_text,
-                has_data=bool(data_text or trigger_record),
-                domain_counts=domain_counts,
-                trigger=trigger,
-                anchor=anchor,
-                trigger_record=trigger_record,
-            )
+            # 5. Narration. Cron digests are written by the one brain when it is
+            # injected (adherence above already ran); the legacy scan remains the
+            # fallback when no brain is wired. Events are handled earlier.
+            if self._health_agent is not None:
+                insights = await self._cron_narration(patient_id, display_name, scan_period)
+                llm_meta = None
+            else:
+                insights, llm_meta = await self._analyze(
+                    data_text=data_text,
+                    patient_id=patient_id,
+                    patient_name=display_name,
+                    scan_label=scan_label,
+                    scan_period=scan_period,
+                    greeting=greeting,
+                    facts_text=facts_text,
+                    has_data=bool(data_text or trigger_record),
+                    domain_counts=domain_counts,
+                    trigger=trigger,
+                    anchor=anchor,
+                    trigger_record=trigger_record,
+                )
 
             # 6. Dedup + escalation (skip for event-driven — each event is unique;
             #    notification_budget + arq job_id prevent spam).
