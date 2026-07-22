@@ -1,0 +1,100 @@
+"""The monitor detects + classifies deterministically and delegates the words
+to the one brain.
+
+Covers the CGM-threshold slice: framing/tier/classification are code, not LLM;
+scan_patient routes a crossing to HealthQueryAgent.run_proactive and wraps the
+result in the same ScanResult the delivery path already consumes; the brain may
+decline (notify=False → no insight).
+"""
+
+from __future__ import annotations
+
+from unittest.mock import AsyncMock
+
+import pytest
+
+from lib.services.cgm_threshold_detector import CGMCrossingKind
+from lib.ai_foundation.agents.health_query.contracts import ProactiveNarration
+from lib.ai_foundation.agents.health_query.reasoning_engine import ReasoningTier
+from lib.ai_foundation.agents.proactive_monitor.agent import ProactiveMonitorAgent
+from lib.ai_foundation.agents.proactive_monitor.contracts import (
+    CGMThresholdCrossedAnchor, EventTrigger, InsightCategory, InsightSeverity,
+)
+from lib.ai_foundation.agents.proactive_monitor.event_framing import (
+    classify_event, frame_event, trigger_tier,
+)
+
+_CGM = EventTrigger.CGM_THRESHOLD_CROSSED
+
+
+def _anchor(kind: str, value: int = 65):
+    return CGMThresholdCrossedAnchor(kind=kind, value=value, unit="mg/dL",
+                                     time="2026-07-21T10:00:00Z")
+
+
+# ── deterministic framing / classification (no LLM) ────────────────────────
+
+
+@pytest.mark.parametrize("kind,tier", [
+    (CGMCrossingKind.SEVERE_HYPO, ReasoningTier.ADVANCED),
+    (CGMCrossingKind.HYPO, ReasoningTier.ADVANCED),
+    (CGMCrossingKind.HYPER, ReasoningTier.STANDARD),
+    (CGMCrossingKind.SEVERE_HYPER, ReasoningTier.STANDARD),
+    (CGMCrossingKind.RAPID_DROP, ReasoningTier.STANDARD),
+    (CGMCrossingKind.RAPID_SPIKE, ReasoningTier.STANDARD),
+])
+def test_tier_is_deeper_for_safety_lows(kind, tier):
+    assert trigger_tier(_CGM, _anchor(kind.value)) is tier
+
+
+@pytest.mark.parametrize("kind,category,severity", [
+    (CGMCrossingKind.SEVERE_HYPO, InsightCategory.GLUCOSE_HYPO, InsightSeverity.ALERT),
+    (CGMCrossingKind.HYPO, InsightCategory.GLUCOSE_HYPO, InsightSeverity.WARNING),
+    (CGMCrossingKind.SEVERE_HYPER, InsightCategory.GLUCOSE_SPIKE, InsightSeverity.WARNING),
+    (CGMCrossingKind.HYPER, InsightCategory.GLUCOSE_SPIKE, InsightSeverity.ATTENTION),
+    (CGMCrossingKind.RAPID_DROP, InsightCategory.GLUCOSE_RAPID_DROP, InsightSeverity.WARNING),
+    (CGMCrossingKind.RAPID_SPIKE, InsightCategory.GLUCOSE_RAPID_SPIKE, InsightSeverity.ATTENTION),
+])
+def test_severity_is_fixed_by_crossing_not_the_model(kind, category, severity):
+    assert classify_event(_CGM, _anchor(kind.value)) == (category, severity)
+
+
+def test_frame_states_the_reading_without_interpretation():
+    text = frame_event(_CGM, _anchor("hypo", 62), patient_name="Rohan")
+    assert "Rohan" in text and "62 mg/dL" in text and "low" in text
+
+
+# ── delegation: monitor → one brain → ScanResult ───────────────────────────
+
+
+def _monitor(narration: ProactiveNarration):
+    brain = AsyncMock()
+    brain.run_proactive = AsyncMock(return_value=narration)
+    agent = ProactiveMonitorAgent(gateway=AsyncMock(), qdrant=None, health_agent=brain)
+    return agent, brain
+
+
+@pytest.mark.asyncio
+async def test_crossing_delegates_to_brain_and_wraps_insight():
+    agent, brain = _monitor(ProactiveNarration(
+        notify=True, title="Glucose is low",
+        body="You're at 65 — have a quick snack and it should come back up.",
+        suggested_query="What can cause a low?"))
+
+    result = await agent.scan_patient("p1", trigger=_CGM, anchor=_anchor("hypo", 65))
+
+    assert len(result.insights) == 1
+    ins = result.insights[0]
+    assert ins.body.startswith("You're at 65")
+    # severity/category are deterministic, not from the brain
+    assert ins.category is InsightCategory.GLUCOSE_HYPO
+    assert ins.severity is InsightSeverity.WARNING
+    # a safety low was investigated at the deepest tier
+    assert brain.run_proactive.call_args.kwargs["tier"] is ReasoningTier.ADVANCED
+
+
+@pytest.mark.asyncio
+async def test_brain_declining_yields_no_insight():
+    agent, _ = _monitor(ProactiveNarration(notify=False))
+    result = await agent.scan_patient("p1", trigger=_CGM, anchor=_anchor("hyper", 190))
+    assert result.insights == [] and result.error is None

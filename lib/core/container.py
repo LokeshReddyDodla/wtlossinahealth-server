@@ -1893,6 +1893,7 @@ container.register(
         metabolic_service=cast(MetabolicService, container.resolve(MetabolicService)),
         care_intents=cast(CareIntentService, container.resolve(CareIntentService)),
         daily_tasks=cast(GamificationService, container.resolve(GamificationService)),
+        health_agent=cast(HealthQueryAgent, container.resolve(HealthQueryAgent)),
     ),
     scope=Scope.singleton,
 )

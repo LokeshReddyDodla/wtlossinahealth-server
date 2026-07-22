@@ -36,6 +36,7 @@ from lib.ai_foundation.retrieval.base import RetrievalRequest
 from lib.core.qdrant_store import QDRANT_COLLECTION, QdrantStore
 
 from .scheduling import DEFAULT_TIMEZONE
+from .event_framing import classify_event, frame_event, trigger_tier
 from .contracts import (
     BatchScanResult,
     DailyBrief,
@@ -143,9 +144,14 @@ class ProactiveMonitorAgent(BaseAgent):
         metabolic_service: Any | None = None,
         care_intents: Any | None = None,
         daily_tasks: Any | None = None,
+        health_agent: Any | None = None,
     ) -> None:
         super().__init__(gateway=gateway, prompts=prompts, event_bus=event_bus, memory=memory)
         self._qdrant = qdrant
+        # The one brain. When present, event triggers it wires to are answered
+        # by HealthQueryAgent.run_proactive instead of this agent's own scan —
+        # the monitor detects and delivers; the intelligence lives in one place.
+        self._health_agent = health_agent
         self._insight_tracker = insight_tracker
         self._metabolic = metabolic_service
         # Duck-typed reader with get_active_context(patient_id) -> list[dict]
@@ -248,6 +254,44 @@ class ProactiveMonitorAgent(BaseAgent):
 
     # -- Public API ---------------------------------------------------------
 
+    async def _event_insight(
+        self,
+        patient_id: str,
+        trigger: EventTrigger,
+        anchor: TriggerAnchor,
+        *,
+        patient_name: str | None = None,
+    ) -> ScanResult:
+        """Produce a single event insight via the one brain.
+
+        Detection/classification are deterministic (category + severity from the
+        trigger); the brain investigates and writes the copy and decides whether
+        the moment is worth notifying. Returns the same ScanResult the scan path
+        returns, so ``event_scan`` delivery is identical.
+        """
+        start = time.perf_counter()
+        narration = await self._health_agent.run_proactive(
+            patient_id=patient_id,
+            event_summary=frame_event(trigger, anchor, patient_name),
+            tier=trigger_tier(trigger, anchor),
+        )
+        duration = int((time.perf_counter() - start) * 1000)
+
+        if not narration.notify or not narration.body.strip():
+            logger.info("one-brain: no notification for %s (%s)", patient_id[:8], trigger.value)
+            return ScanResult(patient_id=patient_id, insights=[], scan_duration_ms=duration)
+
+        category, severity = classify_event(trigger, anchor)
+        insight = HealthInsight(
+            category=category,
+            severity=severity,
+            title=narration.title.strip() or category.value.replace("_", " ").title(),
+            body=narration.body.strip(),
+            patient_id=patient_id,
+            suggested_query=narration.suggested_query,
+        )
+        return ScanResult(patient_id=patient_id, insights=[insight], scan_duration_ms=duration)
+
     async def scan_patient(
         self,
         patient_id: str,
@@ -273,6 +317,23 @@ class ProactiveMonitorAgent(BaseAgent):
         start = time.perf_counter()
         is_event = trigger is not None
         trace_id = f"pm_evt_{uuid4().hex[:14]}" if is_event else f"pm_{uuid4().hex[:16]}"
+
+        # One-brain path: a CGM threshold crossing is investigated and narrated
+        # by HealthQueryAgent. Other triggers + cron still use the scan below
+        # until migrated. Same ScanResult contract, so downstream delivery is
+        # unchanged.
+        if (
+            self._health_agent is not None
+            and trigger is EventTrigger.CGM_THRESHOLD_CROSSED
+            and anchor is not None
+        ):
+            try:
+                return await self._event_insight(
+                    patient_id, trigger, anchor, patient_name=patient_name,
+                )
+            except Exception as exc:
+                logger.exception("proactive one-brain event failed for %s: %s", patient_id, exc)
+                return ScanResult(patient_id=patient_id, error=str(exc))
 
         try:
             # 1. Window + greeting in patient-local time
