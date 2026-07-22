@@ -22,7 +22,7 @@ from typing import Any, AsyncIterator
 from uuid import uuid4
 
 from lib.ai_foundation.agents.base import BaseAgent
-from lib.ai_foundation.agents.state import AgentInput, AgentOutput
+from lib.ai_foundation.agents.state import AgentContext, AgentInput, AgentOutput
 from lib.ai_foundation.config import settings
 from lib.ai_foundation.models.registry import ModelTask
 from lib.ai_foundation.agents.core.bubbles import extract_await, split_bubbles, strip_bubbles
@@ -39,7 +39,7 @@ from lib.ai_foundation.streaming.sse import (
 
 from lib.ai_foundation.models.gateway import safe_cost
 
-from .contracts import QueryIntent, QueryResponse, expand_to_domain_types, resolve_specialist_domains
+from .contracts import ProactiveNarration, QueryIntent, QueryResponse, expand_to_domain_types, resolve_specialist_domains
 from .coordinator import Coordinator
 from .reasoning_engine import ReasoningEngine, ReasoningTier
 
@@ -255,6 +255,70 @@ class HealthQueryAgent(BaseAgent):
                 ),
                 is_ready=False, trace_id=trace_id,
             )
+
+    # ── Public: Proactive (event-triggered) ──────────────────────────────
+
+    async def run_proactive(
+        self,
+        *,
+        patient_id: str,
+        event_summary: str,
+        tier: ReasoningTier = ReasoningTier.STANDARD,
+        refs: list[Any] | None = None,
+        trace_id: str | None = None,
+    ) -> ProactiveNarration:
+        """Run the one brain on an event and return a push-shaped narration.
+
+        Same reasoning engine, specialists, and evidence grounding as chat —
+        there is no separate proactive brain. What differs: there is no user to
+        clarify with, so intent triage is skipped; the event is the prompt; and
+        the brain decides for itself whether the event is worth an unprompted
+        push (``notify``). Copy is English (translated on delivery). The brain
+        never sets clinical severity — the caller derives that from the trigger.
+        """
+        self._ensure_prompts()
+        agent_input = AgentInput(
+            message=event_summary,
+            context=AgentContext(patient_id=patient_id, refs=refs or [],
+                                 metadata={"mode": "proactive"}),
+        )
+        ctx = await self._load_context(agent_input)
+
+        result = await self.reasoning_engine.reason(
+            user_message=event_summary,
+            system_prompt=self._get_system_prompt("patient"),
+            reasoning_prompt=self._render("hq_reasoning"),
+            response_prompt=self._render("hq_proactive_response"),
+            context=ctx,
+            patient_ids=[patient_id],
+            tier=tier,
+            user_role="patient",
+        )
+        return await self._structure_proactive(result.response, trace_id=trace_id)
+
+    async def _structure_proactive(
+        self, analysis: str, *, trace_id: str | None = None,
+    ) -> ProactiveNarration:
+        """Turn the brain's grounded prose into the structured push payload.
+
+        A pure formatting step — it must not add facts the analysis didn't
+        state. If the analysis concluded no notification is warranted, notify
+        is False.
+        """
+        messages = [
+            {"role": "system", "content": (
+                "Convert the analysis into a proactive push payload. Set notify=false "
+                "if it concludes no notification is warranted. Never introduce a number, "
+                "claim, or word the analysis did not already state. Keep the title "
+                "≤50 chars and body ≤180 chars."
+            )},
+            {"role": "user", "content": analysis},
+        ]
+        narration, _meta = await self.gateway.extract(
+            messages=messages, response_model=ProactiveNarration,
+            task=ModelTask.STRUCTURED_ANALYSIS, trace_id=trace_id,
+        )
+        return narration
 
     # ── Public: SSE Streaming ─────────────────────────────────────────────
 

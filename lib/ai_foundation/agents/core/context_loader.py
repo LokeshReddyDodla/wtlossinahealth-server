@@ -131,6 +131,8 @@ def build_context_messages(
             f"- Streak freezes: {g.get('streak_freezes', 0)}\n"
             f"- Recent achievements: {', '.join(g.get('recent_achievements', [])) or 'None'}\n"
             f"- Tasks today: {g.get('tasks_today', {}).get('completed', 0)}/{g.get('tasks_today', {}).get('total', 0)}\n"
+            # Already-in-flight nudges: a proactive push must not repeat these.
+            f"- Today's nudges already reminding the patient: {g.get('pending_task_titles', []) or 'None'}\n"
             f"- Weekly quest: {g.get('weekly_quest') or 'None'}\n"
             f"- Active challenges: {g.get('active_challenges', [])}\n"
             f"- Buddy streak: {g.get('buddy_streak') or 0}"

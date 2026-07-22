@@ -170,7 +170,7 @@ async def _run_monitor_case(case: dict[str, Any], *, no_judge: bool) -> dict[str
     from lib.ai_foundation.agents.proactive_monitor.agent import ProactiveMonitorAgent
     from lib.ai_foundation.agents.proactive_monitor.contracts import SEVERITY_RANK
 
-    from .agent_factory import shared_gateway
+    from .agent_factory import build_eval_agent, shared_gateway
     from .checks import run_checks
     from .fixtures import EVAL_PATIENT_ID, EVAL_PATIENT_NAME, FakeMemory, FixtureRetriever
     from .judge import judge_case_voted
@@ -179,11 +179,15 @@ async def _run_monitor_case(case: dict[str, Any], *, no_judge: bool) -> dict[str
     # `scan_period: morning` forces the DailyBrief path; default is afternoon.
     tz = pick_morning_timezone() if case.get("scan_period") == "morning" else pick_afternoon_timezone()
     records = SCENARIOS[case["scenario"]](tz)
+    patient_name = case.get("patient_name", EVAL_PATIENT_NAME)
+    # The brain investigates the scenario's fixtures via its own tools.
+    health_agent = build_eval_agent(records, patient_name=patient_name)
     agent = ProactiveMonitorAgent(
         gateway=shared_gateway(),
         qdrant=FixtureRetriever(records, tz_name=tz),
         memory=FakeMemory(),
         insight_tracker=None,  # no dedup — every scenario judged fresh
+        health_agent=health_agent,
     )
 
     # `care_intents:` on a case injects provider-authored guidance (attributed
@@ -196,37 +200,27 @@ async def _run_monitor_case(case: dict[str, Any], *, no_judge: bool) -> dict[str
             async def get_active_context(self, _pid):
                 return self._intents
 
-        agent._care_intents = _IntentReader(case["care_intents"])
+        reader = _IntentReader(case["care_intents"])
+        agent._care_intents = reader                        # monitor: morning adherence scoring
+        health_agent.context_loader._care_intents = reader  # brain: sees them in its context
 
-    # `active_nudges:` on a case injects the day's other proactive nudges
-    # (gamification task titles) so coordination/de-conflict can be tested.
+    # `active_nudges:` are surfaced to the brain as its gamification context's
+    # pending_task_titles (where the de-dup-against-active-nudges logic reads).
     if case.get("active_nudges"):
-        class _NudgeReader:
+        from lib.schemas.gamification import GamificationContext
+
+        class _Gamification:
             def __init__(self, nudges):
-                self._nudges = nudges
+                self._ctx = GamificationContext(
+                    level=1, title="Newcomer", total_xp=0, current_streak=0,
+                    streak_multiplier=1.0, streak_freezes=0,
+                    pending_task_titles=nudges,
+                )
 
-            async def get_active_nudges(self, _pid):
-                return self._nudges
+            async def get_gamification_context(self, _pid):
+                return self._ctx
 
-        agent._daily_tasks = _NudgeReader(case["active_nudges"])
-
-    # `disliked_categories:` injects the patient's downvoted insight
-    # categories so feedback-driven suppression can be tested.
-    if case.get("disliked_categories"):
-        class _FeedbackTracker:
-            def __init__(self, cats):
-                self._cats = cats
-
-            async def get_disliked_categories(self, _pid, **_):
-                return self._cats
-
-            async def should_send(self, *a, **k):
-                return (True, 0, "info")
-
-            async def record(self, *a, **k):
-                return None
-
-        agent._insight_tracker = _FeedbackTracker(case["disliked_categories"])
+        health_agent.context_loader._gamification_service = _Gamification(case["active_nudges"])
 
     # Event-mode: `trigger: <event>` + `anchor: {...}` in the case runs the
     # event-scan path. Record-backed anchors (meal/smbg/symptom) are served
@@ -247,23 +241,8 @@ async def _run_monitor_case(case: dict[str, Any], *, no_judge: bool) -> dict[str
             raw.setdefault("daily_task_id", "eval-task-1")
             raw.setdefault("task_date", now_local.strftime("%Y-%m-%d"))
         anchor = parse_anchor(trig, raw)
-
-        rec_field = {
-            EventTrigger.MEAL_LOGGED: "meal_id",
-            EventTrigger.SMBG_LOGGED: "reading_id",
-            EventTrigger.SYMPTOM_LOGGED: "symptom_entry_id",
-        }.get(trig)
-        if rec_field:
-            anchor_rec = dict(next(r for r in records if r.get(rec_field) == raw[rec_field]))
-            anchor_rec["patient_id"] = EVAL_PATIENT_ID
-
-            async def _fixture_trigger_record(pid, a, _rec=anchor_rec):
-                return _rec
-
-            agent._fetch_trigger_record = _fixture_trigger_record
         scan_kwargs = {"trigger": trig, "anchor": anchor}
 
-    patient_name = case.get("patient_name", EVAL_PATIENT_NAME)
     start = time.perf_counter()
     try:
         result = await agent.scan_patient(EVAL_PATIENT_ID, patient_name, tz, **scan_kwargs)
@@ -321,8 +300,6 @@ async def _run_monitor_case(case: dict[str, Any], *, no_judge: bool) -> dict[str
             )
         for n in case.get("active_nudges") or []:
             judge_evidence.append(f"ALREADY-ACTIVE NUDGE today: {n}")
-        for cat in case.get("disliked_categories") or []:
-            judge_evidence.append(f"PATIENT DOWNVOTED insight category: {cat}")
         try:
             judgment = await judge_case_voted(
                 shared_gateway(),
@@ -663,8 +640,12 @@ async def _run_suite(
     executor = _EXECUTORS[target]
     sem = asyncio.Semaphore(CONCURRENCY)
 
-    async def bounded(case: dict[str, Any]) -> dict[str, Any]:
+    async def bounded(case: dict[str, Any]) -> dict[str, Any] | None:
         async with sem:
+            if case.get("skip"):
+                # Excluded from the tally — a known, documented gap, not a pass.
+                print(f"  SKIP        {case['id']:<22}  ({case['skip']})")
+                return None
             result = await executor(case, no_judge=no_judge)
             result["flaky"] = False
             # One retry on failure: the agent samples a fresh response each
@@ -691,7 +672,8 @@ async def _run_suite(
                   f"{result['latency_ms']:>6}ms  ${result['cost_usd']:.4f}")
             return result
 
-    return await asyncio.gather(*(bounded(c) for c in cases))
+    results = await asyncio.gather(*(bounded(c) for c in cases))
+    return [r for r in results if r is not None]
 
 
 def main() -> int:

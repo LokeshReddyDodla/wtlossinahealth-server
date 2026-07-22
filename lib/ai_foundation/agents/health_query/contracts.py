@@ -307,3 +307,20 @@ class QueryResponse(BaseModel):
     trace_id: str | None = None
     cost_usd: float | None = None
     latency_ms: int | None = None
+
+
+class ProactiveNarration(BaseModel):
+    """The brain's decision + copy for a proactive push.
+
+    ``notify`` is the brain's own judgment that the event is worth an unprompted
+    interruption; when False the other fields are ignored and nothing is sent.
+    The brain writes only the words — category and severity are decided
+    deterministically by the caller from the trigger, never invented here.
+    """
+
+    notify: bool = Field(description="Whether this event warrants a proactive push at all.")
+    title: str = Field(default="", max_length=50, description="Push title. English; translated on delivery.")
+    body: str = Field(default="", max_length=180, description="Push body, grounded in investigated data. English.")
+    suggested_query: str | None = Field(
+        default=None, description="One follow-up the patient could tap to open the chat."
+    )

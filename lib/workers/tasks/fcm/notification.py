@@ -22,6 +22,7 @@ async def process_fcm_notification(
         fcm_service = get_fcm_service()
         sent_count = 0
         failed_count = 0
+        skipped_count = 0  # no permission / no devices — not a send, not a failure
 
         for participant in participants:
             user_id = str(participant["id"])
@@ -35,7 +36,7 @@ async def process_fcm_notification(
                 continue
 
             try:
-                await fcm_service.send_fcm_notification_to_user_devices(
+                status = await fcm_service.send_fcm_notification_to_user_devices(
                     user_id=user_id,
                     title=notification_info["title"],
                     body=notification_info["body"],
@@ -43,8 +44,17 @@ async def process_fcm_notification(
                     group_key=notification_info.get("group_key", "other_group"),
                     data=notification_info.get("data", {}),
                 )
-                sent_count += 1
-                logger.info(f"Sent FCM notification to user {user_id}")
+                # Only a real send counts; a known non-send (no_permission /
+                # no_devices) is skipped; any unknown status is a failure.
+                if status == "sent":
+                    sent_count += 1
+                    logger.info(f"Sent FCM notification to user {user_id}")
+                elif status in ("no_permission", "no_devices"):
+                    skipped_count += 1
+                    logger.info(f"Skipped FCM notification to user {user_id}: {status}")
+                else:
+                    failed_count += 1
+                    logger.warning(f"FCM notification to user {user_id} returned unknown status: {status}")
             except Exception as e:
                 failed_count += 1
                 logger.error(f"Failed to send FCM notification to user {user_id}: {e}")
@@ -54,6 +64,7 @@ async def process_fcm_notification(
             data={
                 "total_participants": len(participants),
                 "sent": sent_count,
+                "skipped": skipped_count,
                 "failed": failed_count,
             },
         )

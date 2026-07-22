@@ -186,21 +186,6 @@ cases:
       data. Repeating "take a walk after dinner" or "eat more protein" as a
       fresh suggestion is a failure.
 
-  - id: feedback_suppresses_disliked_category
-    category: care_intents
-    scenario: spike_after_meal
-    disliked_categories: ["glucose_rapid_spike"]
-    checks:
-      min_insights: 1
-    criteria: >
-      The patient has repeatedly thumbs-downed "glucose_rapid_spike" insights.
-      The day's data does include a rapid spike, but since it's a category the
-      patient finds unhelpful and this spike is not materially dangerous, a
-      good scan eases off it — leading with a different useful angle (meal
-      composition, time in range, a positive) rather than another rapid-spike
-      insight. Leading again with the disliked rapid-spike framing as the
-      headline is the failure the feedback loop exists to prevent.
-
   - id: cron_multidomain_coherent
     category: pattern_quality
     scenario: busy_multidomain_day

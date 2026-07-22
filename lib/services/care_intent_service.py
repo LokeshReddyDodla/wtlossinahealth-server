@@ -382,7 +382,7 @@ class CareIntentService:
             try:
                 barriers = (summary.get(str(intent.care_intent_id)) or {}).get("barriers") or []
                 barrier_line = f" Possible barrier: {barriers[0]}." if barriers else ""
-                await fcm.send_fcm_notification_to_user_devices(
+                status = await fcm.send_fcm_notification_to_user_devices(
                     user_id=str(intent.author_id),
                     title=f"Adherence alert — {patient_name}",
                     body=(
@@ -397,10 +397,16 @@ class CareIntentService:
                         "patient_id": patient_id,
                     },
                 )
-                logger.info(
-                    "care_intents.escalated | intent=%s author=%s patient=%s",
-                    str(intent.care_intent_id)[:8], str(intent.author_id)[:8], patient_id[:8],
-                )
+                if status == "sent":
+                    logger.info(
+                        "care_intents.escalated | intent=%s author=%s patient=%s",
+                        str(intent.care_intent_id)[:8], str(intent.author_id)[:8], patient_id[:8],
+                    )
+                else:
+                    logger.warning(
+                        "care_intents.escalation_not_delivered | intent=%s author=%s status=%s",
+                        str(intent.care_intent_id)[:8], str(intent.author_id)[:8], status,
+                    )
             except Exception:
                 logger.warning(
                     "Escalation push failed for intent %s (claimed — will not re-ping)",
