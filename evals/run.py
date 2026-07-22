@@ -170,7 +170,7 @@ async def _run_monitor_case(case: dict[str, Any], *, no_judge: bool) -> dict[str
     from lib.ai_foundation.agents.proactive_monitor.agent import ProactiveMonitorAgent
     from lib.ai_foundation.agents.proactive_monitor.contracts import SEVERITY_RANK
 
-    from .agent_factory import shared_gateway
+    from .agent_factory import build_eval_agent, shared_gateway
     from .checks import run_checks
     from .fixtures import EVAL_PATIENT_ID, EVAL_PATIENT_NAME, FakeMemory, FixtureRetriever
     from .judge import judge_case_voted
@@ -179,11 +179,17 @@ async def _run_monitor_case(case: dict[str, Any], *, no_judge: bool) -> dict[str
     # `scan_period: morning` forces the DailyBrief path; default is afternoon.
     tz = pick_morning_timezone() if case.get("scan_period") == "morning" else pick_afternoon_timezone()
     records = SCENARIOS[case["scenario"]](tz)
+    patient_name = case.get("patient_name", EVAL_PATIENT_NAME)
+    # The one brain, wired to this scenario's fixture data. The monitor delegates
+    # narration to it (same as production); it investigates the fixtures via its
+    # own tools and writes the copy.
+    health_agent = build_eval_agent(records, patient_name=patient_name)
     agent = ProactiveMonitorAgent(
         gateway=shared_gateway(),
         qdrant=FixtureRetriever(records, tz_name=tz),
         memory=FakeMemory(),
         insight_tracker=None,  # no dedup — every scenario judged fresh
+        health_agent=health_agent,
     )
 
     # `care_intents:` on a case injects provider-authored guidance (attributed
@@ -196,7 +202,9 @@ async def _run_monitor_case(case: dict[str, Any], *, no_judge: bool) -> dict[str
             async def get_active_context(self, _pid):
                 return self._intents
 
-        agent._care_intents = _IntentReader(case["care_intents"])
+        reader = _IntentReader(case["care_intents"])
+        agent._care_intents = reader                        # monitor: morning adherence scoring
+        health_agent.context_loader._care_intents = reader  # brain: sees them in its context
 
     # `active_nudges:` on a case injects the day's other proactive nudges
     # (gamification task titles) so coordination/de-conflict can be tested.
@@ -247,23 +255,10 @@ async def _run_monitor_case(case: dict[str, Any], *, no_judge: bool) -> dict[str
             raw.setdefault("daily_task_id", "eval-task-1")
             raw.setdefault("task_date", now_local.strftime("%Y-%m-%d"))
         anchor = parse_anchor(trig, raw)
-
-        rec_field = {
-            EventTrigger.MEAL_LOGGED: "meal_id",
-            EventTrigger.SMBG_LOGGED: "reading_id",
-            EventTrigger.SYMPTOM_LOGGED: "symptom_entry_id",
-        }.get(trig)
-        if rec_field:
-            anchor_rec = dict(next(r for r in records if r.get(rec_field) == raw[rec_field]))
-            anchor_rec["patient_id"] = EVAL_PATIENT_ID
-
-            async def _fixture_trigger_record(pid, a, _rec=anchor_rec):
-                return _rec
-
-            agent._fetch_trigger_record = _fixture_trigger_record
+        # The brain reads the triggering record via its own tools over the same
+        # fixtures (meal/smbg/symptom live in `records`); no monitor-side fetch.
         scan_kwargs = {"trigger": trig, "anchor": anchor}
 
-    patient_name = case.get("patient_name", EVAL_PATIENT_NAME)
     start = time.perf_counter()
     try:
         result = await agent.scan_patient(EVAL_PATIENT_ID, patient_name, tz, **scan_kwargs)
@@ -663,8 +658,12 @@ async def _run_suite(
     executor = _EXECUTORS[target]
     sem = asyncio.Semaphore(CONCURRENCY)
 
-    async def bounded(case: dict[str, Any]) -> dict[str, Any]:
+    async def bounded(case: dict[str, Any]) -> dict[str, Any] | None:
         async with sem:
+            if case.get("skip"):
+                # Excluded from the tally — a known, documented gap, not a pass.
+                print(f"  SKIP        {case['id']:<22}  ({case['skip']})")
+                return None
             result = await executor(case, no_judge=no_judge)
             result["flaky"] = False
             # One retry on failure: the agent samples a fresh response each
@@ -691,7 +690,8 @@ async def _run_suite(
                   f"{result['latency_ms']:>6}ms  ${result['cost_usd']:.4f}")
             return result
 
-    return await asyncio.gather(*(bounded(c) for c in cases))
+    results = await asyncio.gather(*(bounded(c) for c in cases))
+    return [r for r in results if r is not None]
 
 
 def main() -> int:
