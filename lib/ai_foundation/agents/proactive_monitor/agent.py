@@ -27,8 +27,18 @@ from lib.ai_foundation.agents.state import AgentInput, AgentOutput
 from lib.ai_foundation.retrieval.base import RetrievalRequest
 
 from .scheduling import DEFAULT_TIMEZONE
+from lib.ai_foundation.agents.core.refs import Ref, RefType, resolve_refs
 from lib.ai_foundation.agents.health_query.reasoning_engine import ReasoningTier
-from .event_framing import classify_event, frame_cron, frame_event, is_wired, trigger_tier
+from .event_framing import (
+    classify_event,
+    classify_glucose_value,
+    event_ref,
+    frame_cron,
+    frame_event,
+    is_wired,
+    severity_tier,
+    trigger_tier,
+)
 from .contracts import (
     BatchScanResult,
     EventTrigger,
@@ -140,6 +150,35 @@ class ProactiveMonitorAgent(BaseAgent):
         # brain coordinates with them instead of duplicating them.
         self._daily_tasks = daily_tasks
 
+    async def _classify(
+        self, patient_id: str, trigger: EventTrigger, anchor: TriggerAnchor,
+    ) -> tuple[InsightCategory, InsightSeverity, ReasoningTier]:
+        """Deterministic category + severity + tier for an event. SMBG is graded
+        by its actual reading (a finger-stick low is as serious as a sensor low);
+        if the value can't be read, fall back to the trigger's fixed class."""
+        if trigger is EventTrigger.SMBG_LOGGED:
+            value = await self._smbg_value(patient_id, anchor)
+            if value is not None:
+                category, severity = classify_glucose_value(value)
+                return category, severity, severity_tier(severity)
+        category, severity = classify_event(trigger, anchor)
+        return category, severity, trigger_tier(trigger, anchor)
+
+    async def _smbg_value(self, patient_id: str, anchor: TriggerAnchor) -> float | None:
+        """Look up the logged finger-stick reading (mg/dL) by its id, or None."""
+        try:
+            resolved = await resolve_refs(
+                patient_id=patient_id, refs=[Ref(type=RefType.SMBG, id=anchor.reading_id)],
+            )
+            payload = resolved[0].payload if resolved else {}
+            for key in ("glucose_mgdl", "value", "reading", "glucose_level"):
+                v = payload.get(key)
+                if isinstance(v, (int, float)):
+                    return float(v)
+        except Exception as exc:
+            logger.warning("smbg value lookup failed for %s: %s", patient_id, exc)
+        return None
+
     async def _event_insight(
         self,
         patient_id: str,
@@ -150,16 +189,21 @@ class ProactiveMonitorAgent(BaseAgent):
     ) -> ScanResult:
         """Produce a single event insight via the one brain.
 
-        Detection/classification are deterministic (category + severity from the
-        trigger); the brain investigates and writes the copy and decides whether
-        the moment is worth notifying. Returns the same ScanResult the scan path
-        returns, so ``event_scan`` delivery is identical.
+        Detection/classification are deterministic (category + severity never
+        come from the model); the brain investigates the pinned entity and
+        writes the copy, and decides whether the moment is worth notifying.
+        Returns the same ScanResult the scan path returns, so ``event_scan``
+        delivery is identical.
         """
+        category, severity, tier = await self._classify(patient_id, trigger, anchor)
+        ref = event_ref(trigger, anchor)
+
         start = time.perf_counter()
         narration = await self._health_agent.run_proactive(
             patient_id=patient_id,
             event_summary=frame_event(trigger, anchor, patient_name),
-            tier=trigger_tier(trigger, anchor),
+            tier=tier,
+            refs=[ref] if ref else None,
         )
         duration = int((time.perf_counter() - start) * 1000)
 
@@ -167,7 +211,6 @@ class ProactiveMonitorAgent(BaseAgent):
             logger.info("one-brain: no notification for %s (%s)", patient_id[:8], trigger.value)
             return ScanResult(patient_id=patient_id, insights=[], scan_duration_ms=duration)
 
-        category, severity = classify_event(trigger, anchor)
         insight = HealthInsight(
             category=category,
             severity=severity,

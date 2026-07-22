@@ -20,6 +20,13 @@ the specifics. Cron (daily brief) is not handled here.
 from __future__ import annotations
 
 from lib.services.cgm_threshold_detector import CGMCrossingKind
+from lib.services.clinical_constants import (
+    GLUCOSE_HYPER_MGDL,
+    GLUCOSE_HYPO_MGDL,
+    GLUCOSE_SEVERE_HYPER_MGDL,
+    GLUCOSE_SEVERE_HYPO_MGDL,
+)
+from lib.ai_foundation.agents.core.refs import Ref, RefType
 from lib.ai_foundation.agents.health_query.reasoning_engine import ReasoningTier
 from lib.ai_foundation.agents.proactive_monitor.contracts import (
     EventTrigger,
@@ -88,8 +95,52 @@ _EVENT_FRAME: dict[EventTrigger, str] = {
 }
 
 
+# A logged entity the brain should pin as context (so it reasons about THIS
+# meal/reading, not just recent history). CGM crossings + missed doses carry no
+# poolable entity id, so they get no ref.
+_EVENT_REF: dict[EventTrigger, tuple[RefType, str]] = {
+    EventTrigger.MEAL_LOGGED: (RefType.MEAL, "meal_id"),
+    EventTrigger.SMBG_LOGGED: (RefType.SMBG, "reading_id"),
+    EventTrigger.SYMPTOM_LOGGED: (RefType.SYMPTOM, "symptom_entry_id"),
+}
+
+
 def _crossing(anchor: TriggerAnchor) -> CGMCrossingKind:
     return CGMCrossingKind(anchor.kind)  # raises on an unknown kind — fail loud, not silent
+
+
+def event_ref(trigger: EventTrigger, anchor: TriggerAnchor) -> Ref | None:
+    """The entity the event is about, for pinning into the brain's context."""
+    spec = _EVENT_REF.get(trigger)
+    if spec is None:
+        return None
+    ref_type, id_attr = spec
+    entity_id = getattr(anchor, id_attr, None)
+    return Ref(type=ref_type, id=entity_id) if entity_id else None
+
+
+def classify_glucose_value(value: float) -> tuple[InsightCategory, InsightSeverity]:
+    """Grade a discrete glucose reading (e.g. a finger-stick) by the shared ADA
+    thresholds — the same scale as CGM crossings, so a manual low is treated as
+    seriously as a sensor low, not flattened to a generic acknowledgement."""
+    if value <= GLUCOSE_SEVERE_HYPO_MGDL:
+        return InsightCategory.GLUCOSE_HYPO, InsightSeverity.ALERT
+    if value < GLUCOSE_HYPO_MGDL:
+        return InsightCategory.GLUCOSE_HYPO, InsightSeverity.WARNING
+    if value >= GLUCOSE_SEVERE_HYPER_MGDL:
+        return InsightCategory.GLUCOSE_SPIKE, InsightSeverity.WARNING
+    if value > GLUCOSE_HYPER_MGDL:
+        return InsightCategory.GLUCOSE_SPIKE, InsightSeverity.ATTENTION
+    return InsightCategory.GENERAL, InsightSeverity.INFO
+
+
+def severity_tier(severity: InsightSeverity) -> ReasoningTier:
+    """How deep to investigate, scaled to how serious the reading is."""
+    if severity in (InsightSeverity.ALERT, InsightSeverity.WARNING):
+        return ReasoningTier.ADVANCED
+    if severity is InsightSeverity.ATTENTION:
+        return ReasoningTier.STANDARD
+    return ReasoningTier.BASIC
 
 
 def is_wired(trigger: EventTrigger) -> bool:

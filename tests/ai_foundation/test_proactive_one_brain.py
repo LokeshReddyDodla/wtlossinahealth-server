@@ -143,3 +143,63 @@ async def test_cron_digest_uses_the_brain():
 async def test_cron_digest_declines_when_nothing_noteworthy():
     agent, _ = _monitor(ProactiveNarration(notify=False))
     assert await agent._cron_narration("p1", "Rohan", "evening") == []
+
+
+# ── SMBG graded by its actual reading; entity pinned into context ──────────
+
+
+def test_glucose_value_grading():
+    from lib.ai_foundation.agents.proactive_monitor.event_framing import classify_glucose_value
+    assert classify_glucose_value(50) == (InsightCategory.GLUCOSE_HYPO, InsightSeverity.ALERT)
+    assert classify_glucose_value(65) == (InsightCategory.GLUCOSE_HYPO, InsightSeverity.WARNING)
+    assert classify_glucose_value(120) == (InsightCategory.GENERAL, InsightSeverity.INFO)
+    assert classify_glucose_value(200) == (InsightCategory.GLUCOSE_SPIKE, InsightSeverity.ATTENTION)
+    assert classify_glucose_value(260) == (InsightCategory.GLUCOSE_SPIKE, InsightSeverity.WARNING)
+
+
+def test_event_ref_targets_the_logged_entity():
+    from lib.ai_foundation.agents.proactive_monitor.event_framing import event_ref
+    from lib.ai_foundation.agents.core.refs import RefType
+    from lib.ai_foundation.agents.proactive_monitor.contracts import MealLoggedAnchor
+    ref = event_ref(EventTrigger.MEAL_LOGGED, MealLoggedAnchor(meal_id="m9"))
+    assert ref.type is RefType.MEAL and ref.id == "m9"
+    # a CGM crossing has no poolable entity → no ref
+    assert event_ref(_CGM, _anchor("hypo")) is None
+
+
+@pytest.mark.asyncio
+async def test_smbg_low_reading_is_graded_by_value(monkeypatch):
+    from lib.ai_foundation.agents.core.refs import ResolvedRef, RefType
+    from lib.ai_foundation.agents.proactive_monitor.contracts import SMBGLoggedAnchor
+
+    agent, brain = _monitor(ProactiveNarration(notify=True, title="Low", body="You're at 50 — treat it."))
+    resolved = ResolvedRef(type=RefType.SMBG, id="r1", title="Reading", summary="",
+                           payload={"glucose_mgdl": 50})
+    monkeypatch.setattr(
+        "lib.ai_foundation.agents.proactive_monitor.agent.resolve_refs",
+        AsyncMock(return_value=[resolved]),
+    )
+    result = await agent.scan_patient("p1", trigger=EventTrigger.SMBG_LOGGED,
+                                      anchor=SMBGLoggedAnchor(reading_id="r1"))
+    ins = result.insights[0]
+    # a manual low is graded like a sensor low — not a bland ack
+    assert ins.category is InsightCategory.GLUCOSE_HYPO
+    assert ins.severity is InsightSeverity.ALERT
+    assert brain.run_proactive.call_args.kwargs["tier"] is ReasoningTier.ADVANCED
+    # the exact reading is pinned into the brain's context
+    refs = brain.run_proactive.call_args.kwargs["refs"]
+    assert refs and refs[0].type is RefType.SMBG and refs[0].id == "r1"
+
+
+@pytest.mark.asyncio
+async def test_smbg_falls_back_to_fixed_class_when_value_unavailable(monkeypatch):
+    from lib.ai_foundation.agents.proactive_monitor.contracts import SMBGLoggedAnchor
+    agent, _ = _monitor(ProactiveNarration(notify=True, title="Noted", body="Reading logged."))
+    monkeypatch.setattr(
+        "lib.ai_foundation.agents.proactive_monitor.agent.resolve_refs",
+        AsyncMock(return_value=[]),  # reading not resolvable
+    )
+    result = await agent.scan_patient("p1", trigger=EventTrigger.SMBG_LOGGED,
+                                      anchor=SMBGLoggedAnchor(reading_id="r1"))
+    ins = result.insights[0]
+    assert ins.category is InsightCategory.GENERAL and ins.severity is InsightSeverity.ATTENTION
