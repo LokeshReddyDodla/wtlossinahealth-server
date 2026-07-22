@@ -180,9 +180,7 @@ async def _run_monitor_case(case: dict[str, Any], *, no_judge: bool) -> dict[str
     tz = pick_morning_timezone() if case.get("scan_period") == "morning" else pick_afternoon_timezone()
     records = SCENARIOS[case["scenario"]](tz)
     patient_name = case.get("patient_name", EVAL_PATIENT_NAME)
-    # The one brain, wired to this scenario's fixture data. The monitor delegates
-    # narration to it (same as production); it investigates the fixtures via its
-    # own tools and writes the copy.
+    # The brain investigates the scenario's fixtures via its own tools.
     health_agent = build_eval_agent(records, patient_name=patient_name)
     agent = ProactiveMonitorAgent(
         gateway=shared_gateway(),
@@ -206,10 +204,8 @@ async def _run_monitor_case(case: dict[str, Any], *, no_judge: bool) -> dict[str
         agent._care_intents = reader                        # monitor: morning adherence scoring
         health_agent.context_loader._care_intents = reader  # brain: sees them in its context
 
-    # `active_nudges:` injects today's pending gamification task titles. The
-    # brain reads them from its gamification context (pending_task_titles) so it
-    # doesn't repeat a nudge already in flight — so wire a fake gamification
-    # service on the brain's context loader, not the monitor.
+    # `active_nudges:` are surfaced to the brain as its gamification context's
+    # pending_task_titles (where the de-dup-against-active-nudges logic reads).
     if case.get("active_nudges"):
         from lib.schemas.gamification import GamificationContext
 
@@ -245,8 +241,6 @@ async def _run_monitor_case(case: dict[str, Any], *, no_judge: bool) -> dict[str
             raw.setdefault("daily_task_id", "eval-task-1")
             raw.setdefault("task_date", now_local.strftime("%Y-%m-%d"))
         anchor = parse_anchor(trig, raw)
-        # The brain reads the triggering record via its own tools over the same
-        # fixtures (meal/smbg/symptom live in `records`); no monitor-side fetch.
         scan_kwargs = {"trigger": trig, "anchor": anchor}
 
     start = time.perf_counter()

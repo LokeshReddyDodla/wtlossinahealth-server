@@ -135,9 +135,8 @@ class ProactiveMonitorAgent(BaseAgent):
     ) -> None:
         super().__init__(gateway=gateway, prompts=prompts, event_bus=event_bus, memory=memory)
         self._qdrant = qdrant
-        # The one brain. When present, event triggers it wires to are answered
-        # by HealthQueryAgent.run_proactive instead of this agent's own scan —
-        # the monitor detects and delivers; the intelligence lives in one place.
+        # HealthQueryAgent — the reasoning + copy for every proactive insight.
+        # None only in tests that never reach narration.
         self._health_agent = health_agent
         self._insight_tracker = insight_tracker
         self._metabolic = metabolic_service
@@ -187,13 +186,11 @@ class ProactiveMonitorAgent(BaseAgent):
         *,
         patient_name: str | None = None,
     ) -> ScanResult:
-        """Produce a single event insight via the one brain.
+        """Produce a single event insight for a trigger.
 
-        Detection/classification are deterministic (category + severity never
-        come from the model); the brain investigates the pinned entity and
-        writes the copy, and decides whether the moment is worth notifying.
-        Returns the same ScanResult the scan path returns, so ``event_scan``
-        delivery is identical.
+        Category + severity are deterministic (never from the model); the brain
+        investigates the pinned entity, writes the copy, and may decline to
+        notify (empty insights).
         """
         category, severity, tier = await self._classify(patient_id, trigger, anchor)
         ref = event_ref(trigger, anchor)
@@ -208,7 +205,7 @@ class ProactiveMonitorAgent(BaseAgent):
         duration = int((time.perf_counter() - start) * 1000)
 
         if not narration.notify or not narration.body.strip():
-            logger.info("one-brain: no notification for %s (%s)", patient_id[:8], trigger.value)
+            logger.info("proactive: no notification warranted for %s (%s)", patient_id[:8], trigger.value)
             return ScanResult(patient_id=patient_id, insights=[], scan_duration_ms=duration)
 
         insight = HealthInsight(
@@ -225,9 +222,7 @@ class ProactiveMonitorAgent(BaseAgent):
     async def _cron_narration(
         self, patient_id: str, patient_name: str | None, scan_period: str,
     ) -> list[HealthInsight]:
-        """The scheduled digest, written by the one brain. Adherence recording
-        (a separate concern) still runs in the cron path around this call; this
-        only replaces the narration. Returns [] when the brain declines."""
+        """The scheduled daily digest. Returns [] when the brain declines."""
         narration = await self._health_agent.run_proactive(
             patient_id=patient_id,
             event_summary=frame_cron(patient_name, scan_period),
@@ -254,20 +249,14 @@ class ProactiveMonitorAgent(BaseAgent):
         trigger: EventTrigger | None = None,
         anchor: TriggerAnchor | None = None,
     ) -> ScanResult:
-        """Scan a patient and produce structured health insights.
+        """Produce proactive insights for a patient.
 
-        Two modes share this entry point so the harness (fetch → LLM →
-        dedup → publish) is implemented once:
+        * Event-driven (``trigger`` set) — one insight about the event.
+        * Cron sweep (``trigger=None``) — the scheduled digest; morning runs
+          also record care-intent adherence for the completed prior day.
 
-        * **Cron sweep** (``trigger=None``) — fetches the full data-type
-          set, produces 1-3 insights (morning runs collapse them into a
-          single daily brief).
-        * **Event-driven** (``trigger`` set) — narrow fetch via
-          ``TRIGGER_DATA_TYPES``, single focused insight built around the
-          ``anchor`` payload. The LLM is always the brain — no static
-          templating for any trigger.
+        Empty ``insights`` means nothing was worth sending.
         """
-        # Events → one brain (deterministic detection/severity, brain narrates).
         if trigger is not None:
             if anchor is None or not is_wired(trigger):
                 return ScanResult(patient_id=patient_id, error=f"unwired trigger {trigger}")
@@ -277,15 +266,14 @@ class ProactiveMonitorAgent(BaseAgent):
                 logger.exception("proactive event failed for %s: %s", patient_id, exc)
                 return ScanResult(patient_id=patient_id, error=str(exc))
 
-        # Cron → morning adherence (a separate scorer) + one-brain digest.
         start = time.perf_counter()
         try:
             tz = ZoneInfo(tz_name or DEFAULT_TIMEZONE)
             scan_date, scan_label, scan_period = self._scan_window(datetime.now(tz))
             display_name = patient_name or "this patient"
 
-            # Morning: score care-intent adherence for the completed prior day
-            # (a separate scorer, not narration — feeds the future provider view).
+            # Morning sees the completed prior day — the only window where an
+            # adherence verdict isn't premature.
             if scan_period == "morning":
                 await self._record_morning_adherence(patient_id, display_name, scan_date, scan_label)
 
@@ -313,8 +301,8 @@ class ProactiveMonitorAgent(BaseAgent):
         self, patient_id: str, display_name: str, scan_date: str, scan_label: str,
     ) -> None:
         """Score care-intent adherence for the completed prior day and store the
-        verdicts. A separate concern from the digest narration; its failure never
-        blocks the scan. Behavioral intents only — watch/passive have no action."""
+        verdicts. Failure never blocks the scan. Behavioral intents only —
+        watch/passive have no action to score."""
         try:
             care_intents = await self._get_care_intents(patient_id)
             trackable = [
