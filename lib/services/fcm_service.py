@@ -206,7 +206,7 @@ class FCMService:
                     logger.info(
                         f"User {user_id} has notification permissions disabled. Skipping notification."
                     )
-                    return
+                    return "no_permission"
 
             postgres_store = cast(PostgresStore, container.resolve(PostgresStore))
             user_device_service = UserDeviceService(postgres_store=postgres_store)
@@ -222,7 +222,7 @@ class FCMService:
             
             if not tokens:
                 logger.warning(f"No valid FCM tokens found for user {user_id}")
-                return
+                return "no_devices"
 
             logger.info(
                 f"Sending notification to user {user_id} on {len(tokens)} device(s)"
@@ -273,6 +273,7 @@ class FCMService:
                 raise RuntimeError(
                     f"All {len(tokens)} FCM sends failed for user {user_id}"
                 )
+            return "sent"
 
         except Exception as e:
             logger.error(f"Failed to send batch notifications to user {user_id}: {e}")
