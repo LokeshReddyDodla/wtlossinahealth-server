@@ -22,7 +22,6 @@ from __future__ import annotations
 from lib.services.cgm_threshold_detector import CGMCrossingKind
 from lib.ai_foundation.agents.health_query.reasoning_engine import ReasoningTier
 from lib.ai_foundation.agents.proactive_monitor.contracts import (
-    CGMThresholdCrossedAnchor,
     EventTrigger,
     InsightCategory,
     InsightSeverity,

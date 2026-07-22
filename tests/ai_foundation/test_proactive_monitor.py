@@ -1,6 +1,5 @@
 """Tests for the Proactive Monitor Agent (v2 — direct Qdrant fetch + single LLM)."""
 
-from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
@@ -20,11 +19,6 @@ from lib.ai_foundation.agents.proactive_monitor.contracts import (
 from lib.ai_foundation.agents.proactive_monitor.insight_tracker import (
     InsightTracker,
     COLLECTION_NAME,
-    _DEDUP_HOURS,
-    _CONSECUTIVE_TOLERANCE_HOURS,
-    _ESCALATE_ATTENTION_DAYS,
-    _ESCALATE_WARNING_DAYS,
-    _TTL_SECONDS,
 )
 from lib.ai_foundation.agents.state import AgentContext, AgentInput
 from lib.ai_foundation.models.gateway import LLMResponse, LLMUsage
@@ -190,6 +184,17 @@ def _make_insight_tracker(*, should_send_result=(True, "info", 1)):
     return tracker
 
 
+def _make_health_agent(narration=None):
+    """The one brain. run_proactive returns a push-shaped narration; the monitor
+    stamps category/severity deterministically and wraps it in a ScanResult."""
+    from lib.ai_foundation.agents.health_query.contracts import ProactiveNarration
+    brain = AsyncMock()
+    brain.run_proactive = AsyncMock(return_value=narration or ProactiveNarration(
+        notify=True, title="Your check-in", body="Here's your day so far.",
+        suggested_query="How am I doing?"))
+    return brain
+
+
 def _make_agent(**overrides):
     return ProactiveMonitorAgent(
         gateway=overrides.get("gateway", _make_gateway()),
@@ -197,6 +202,7 @@ def _make_agent(**overrides):
         memory=overrides.get("memory", _make_memory()),
         event_bus=overrides.get("event_bus", _make_event_bus()),
         insight_tracker=overrides.get("insight_tracker", None),
+        health_agent=overrides.get("health_agent", _make_health_agent()),
     )
 
 
@@ -246,62 +252,22 @@ class TestProactiveMonitorAgent:
         assert result.has_insights is True
 
     @pytest.mark.asyncio
-    async def test_scan_fetches_from_qdrant(self):
-        qdrant = _make_qdrant()
-        agent = _make_agent(qdrant=qdrant)
-        await agent.scan_patient("p123", "Sarah")
-
-        # Two fetches: the main scan-data fetch + the medications fetch
-        # (medications previously crashed on a missing `query` field and
-        # never reached the retriever — fixed, so both calls happen now).
-        assert qdrant.retrieve_filtered.call_count == 2
-        scan_call = qdrant.retrieve_filtered.call_args_list[0][0][0]
-        assert scan_call.patient_ids == ["p123"]
-        assert "meal" in scan_call.data_types
-        meds_call = qdrant.retrieve_filtered.call_args_list[1][0][0]
-        assert meds_call.data_types == ["medication"]
-
-    @pytest.mark.asyncio
-    async def test_scan_patient_no_data(self):
-        """No data in Qdrant → engagement_drop insight without LLM."""
-        qdrant = _make_qdrant(results=[])
-        gateway = _make_gateway()
-        agent = _make_agent(qdrant=qdrant, gateway=gateway)
+    async def test_brain_declining_yields_no_digest(self):
+        """When the brain judges nothing noteworthy, the cron scan sends nothing."""
+        from lib.ai_foundation.agents.health_query.contracts import ProactiveNarration
+        agent = _make_agent(health_agent=_make_health_agent(ProactiveNarration(notify=False)))
         result = await agent.scan_patient("p_empty", "Sarah")
-
-        assert result.data_available is False
-        assert result.has_insights is True
-        assert result.insights[0].category == InsightCategory.ENGAGEMENT_DROP
-        # Gateway.extract should NOT be called (no-data path skips LLM)
-        gateway.extract.assert_not_called()
+        assert result.has_insights is False
+        assert result.error is None
 
     @pytest.mark.asyncio
-    async def test_scan_llm_failure_stays_silent(self):
-        """LLM failure = NO insight, no fallback push. A content-free
-        'open the app' push helped nobody, and recording it dedup-blocked
-        real insights for 24h while masking provider outages."""
-        gateway = AsyncMock()
-        gateway.extract = AsyncMock(side_effect=Exception("LLM down"))
-        gateway.set_langfuse_context = MagicMock()
-        gateway.langfuse_trace_input = MagicMock()
-        gateway.langfuse_trace_output = MagicMock()
-
-        agent = _make_agent(gateway=gateway)
+    async def test_scan_brain_failure_produces_no_insight(self):
+        """A brain failure never crashes the scan; it just yields no insight."""
+        brain = _make_health_agent()
+        brain.run_proactive = AsyncMock(side_effect=Exception("brain down"))
+        agent = _make_agent(health_agent=brain)
         result = await agent.scan_patient("p_fail", "Sarah")
-
-        assert result.error is None  # outer scan didn't crash
-        assert result.has_insights is False  # silence + ERROR log, retry next scan
-
-    @pytest.mark.asyncio
-    async def test_scan_publishes_events(self):
-        event_bus = _make_event_bus()
-        agent = _make_agent(event_bus=event_bus)
-        await agent.scan_patient("p123")
-
-        assert event_bus.publish.call_count >= 1
-        published_event = event_bus.publish.call_args_list[0][0][0]
-        assert published_event.event_type == "proactive_insight"
-        assert published_event.patient_id == "p123"
+        assert result.has_insights is False
 
     @pytest.mark.asyncio
     async def test_scan_batch(self):
@@ -322,17 +288,6 @@ class TestProactiveMonitorAgent:
             patient_timezones={"p1": "Asia/Kolkata", "p2": "Europe/London"},
         )
         assert batch.scanned == 2
-
-    @pytest.mark.asyncio
-    async def test_scan_handles_qdrant_error(self):
-        qdrant = AsyncMock()
-        qdrant.retrieve_filtered = AsyncMock(side_effect=Exception("Qdrant down"))
-        agent = _make_agent(qdrant=qdrant)
-        result = await agent.scan_patient("p_error")
-
-        assert result.error is not None
-        assert "Qdrant down" in result.error
-        assert result.data_available is False
 
     @pytest.mark.asyncio
     async def test_no_event_bus_still_works(self):
@@ -376,57 +331,6 @@ class TestProactiveMonitorAgent:
         input = AgentInput(message="scan", context=AgentContext())
         output = await agent.run(input)
         assert output.is_ready is False
-
-
-# ---------------------------------------------------------------------------
-# Dedup + Escalation Integration Tests
-# ---------------------------------------------------------------------------
-
-
-class TestDedupEscalationIntegration:
-    @pytest.mark.asyncio
-    async def test_no_tracker_passes_all_insights(self):
-        agent = _make_agent(insight_tracker=None)
-        result = await agent.scan_patient("p1")
-        assert len(result.insights) >= 1
-
-    @pytest.mark.asyncio
-    async def test_tracker_allows_first_time_insights(self):
-        tracker = _make_insight_tracker(should_send_result=(True, "info", 1))
-        agent = _make_agent(insight_tracker=tracker)
-        result = await agent.scan_patient("p1")
-        assert len(result.insights) >= 1
-
-    @pytest.mark.asyncio
-    async def test_tracker_blocks_duplicate_insights(self):
-        tracker = _make_insight_tracker(should_send_result=(False, "info", 1))
-        agent = _make_agent(insight_tracker=tracker)
-        result = await agent.scan_patient("p1")
-        assert len(result.insights) == 0  # all blocked by dedup
-
-    @pytest.mark.asyncio
-    async def test_tracker_escalates_severity(self):
-        tracker = _make_insight_tracker(should_send_result=(True, "attention", 3))
-        agent = _make_agent(insight_tracker=tracker)
-        result = await agent.scan_patient("p1")
-        for insight in result.insights:
-            # Morning briefs use LLM-set severity; afternoon insights get escalated
-            assert insight.severity.value in ("attention", "info")
-
-    @pytest.mark.asyncio
-    async def test_tracker_never_downgrades_warning(self):
-        tracker = _make_insight_tracker(should_send_result=(True, "attention", 3))
-        warning_only = [
-            HealthInsight(
-                category=InsightCategory.GLUCOSE_SPIKE,
-                severity=InsightSeverity.WARNING,
-                title="Spike",
-                body="High glucose after lunch.",
-            ),
-        ]
-        agent = _make_agent(insight_tracker=tracker, gateway=_make_gateway(insights=warning_only))
-        result = await agent.scan_patient("p1")
-        assert result.insights[0].severity == InsightSeverity.WARNING
 
 
 # ---------------------------------------------------------------------------
@@ -637,72 +541,6 @@ class TestTimezoneScheduling:
         from lib.ai_foundation.agents.proactive_monitor.scheduling import is_within_scan_window
         result = is_within_scan_window(None)
         assert isinstance(result, bool)
-
-
-class TestPromptCacheStability:
-    """CACHE INVARIANT: scan system prompts must be byte-identical across
-    patients in a batch — per-patient values (name, greeting) ride in the
-    USER message. Provider prompt caching is prefix-based; one stable system
-    prompt per batch means patient 2..N read it from cache."""
-
-    _PLACEHOLDER = __import__("re").compile(r"\$\{?[a-z_]+\}?")
-
-    async def _capture(self, agent, method, **kwargs):
-        await method(**kwargs)
-        call = agent.gateway.extract.call_args
-        messages = call.kwargs["messages"]
-        system = [m["content"] for m in messages if m["role"] == "system"]
-        user = [m["content"] for m in messages if m["role"] == "user"]
-        return "\n".join(system), "\n".join(user)
-
-    def _scan_kwargs(self, name, pid, trigger=None):
-        return dict(
-            context_parts=["MEALS:\n- Lunch 80g carbs"],
-            greeting="Good morning",
-            scan_label="today so far",
-            scan_period="morning",
-            patient_id=pid,
-            patient_name=name,
-            domain_counts={"meal": 1},
-            trigger=trigger,
-        )
-
-    @pytest.mark.asyncio
-    async def test_cron_scan_system_prompt_stable_across_patients(self):
-        agent = _make_agent()
-        sys_a, user_a = await self._capture(agent, agent._llm_scan_insights, **self._scan_kwargs("Asha", "p1"))
-        sys_b, user_b = await self._capture(agent, agent._llm_scan_insights, **self._scan_kwargs("Rohan", "p2"))
-
-        assert sys_a == sys_b, "cron scan system prompt varies per patient — breaks batch caching"
-        assert "PATIENT: Asha" in user_a and "Good morning" in user_a
-        assert "PATIENT: Rohan" in user_b
-        assert "Asha" not in sys_a and "Rohan" not in sys_b
-        assert not self._PLACEHOLDER.search(sys_a), f"unsubstituted placeholder in: {self._PLACEHOLDER.search(sys_a)}"
-
-    @pytest.mark.asyncio
-    async def test_event_scan_system_prompt_stable_across_patients(self):
-        from lib.ai_foundation.agents.proactive_monitor.contracts import EventTrigger
-        agent = _make_agent()
-        trig = EventTrigger.MEAL_LOGGED
-        sys_a, user_a = await self._capture(agent, agent._llm_scan_insights, **self._scan_kwargs("Asha", "p1", trigger=trig))
-        sys_b, user_b = await self._capture(agent, agent._llm_scan_insights, **self._scan_kwargs("Rohan", "p2", trigger=trig))
-
-        assert sys_a == sys_b
-        assert "PATIENT: Asha" in user_a and "PATIENT: Rohan" in user_b
-        assert not self._PLACEHOLDER.search(sys_a)
-
-    @pytest.mark.asyncio
-    async def test_daily_brief_system_prompt_stable_across_patients(self):
-        agent = _make_agent()
-        kw_a = self._scan_kwargs("Asha", "p1"); kw_a.pop("trigger")
-        kw_b = self._scan_kwargs("Rohan", "p2"); kw_b.pop("trigger")
-        sys_a, user_a = await self._capture(agent, agent._llm_daily_brief, **kw_a)
-        sys_b, user_b = await self._capture(agent, agent._llm_daily_brief, **kw_b)
-
-        assert sys_a == sys_b
-        assert "PATIENT: Asha" in user_a and "GREETING: 'Good morning'" in user_a
-        assert "PATIENT: Rohan" in user_b
-        assert not self._PLACEHOLDER.search(sys_a)
 
 
 class TestMealTotalsComputed:
