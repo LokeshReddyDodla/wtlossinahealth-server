@@ -19,6 +19,7 @@ from lib.ai_foundation.agents.health_query.reasoning_engine import ReasoningTier
 from lib.ai_foundation.agents.proactive_monitor.agent import ProactiveMonitorAgent
 from lib.ai_foundation.agents.proactive_monitor.contracts import (
     CGMThresholdCrossedAnchor, EventTrigger, InsightCategory, InsightSeverity,
+    MealLoggedAnchor, MedicationMissedAnchor, SMBGLoggedAnchor, SymptomLoggedAnchor,
 )
 from lib.ai_foundation.agents.proactive_monitor.event_framing import (
     classify_event, frame_event, trigger_tier,
@@ -98,3 +99,27 @@ async def test_brain_declining_yields_no_insight():
     agent, _ = _monitor(ProactiveNarration(notify=False))
     result = await agent.scan_patient("p1", trigger=_CGM, anchor=_anchor("hyper", 190))
     assert result.insights == [] and result.error is None
+
+
+# ── all event triggers route to the brain with capped, fixed classification ─
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("trigger,anchor,category,severity,tier", [
+    (EventTrigger.MEAL_LOGGED, MealLoggedAnchor(meal_id="m1"),
+     InsightCategory.GENERAL, InsightSeverity.INFO, ReasoningTier.STANDARD),
+    (EventTrigger.SYMPTOM_LOGGED, SymptomLoggedAnchor(symptom_entry_id="s1"),
+     InsightCategory.GENERAL, InsightSeverity.ATTENTION, ReasoningTier.STANDARD),
+    (EventTrigger.MEDICATION_MISSED,
+     MedicationMissedAnchor(daily_task_id="t1", slot="morning", medication_name="Metformin", task_date="2026-07-21"),
+     InsightCategory.COACHING_MEDICATION, InsightSeverity.ATTENTION, ReasoningTier.BASIC),
+    (EventTrigger.SMBG_LOGGED, SMBGLoggedAnchor(reading_id="r1"),
+     InsightCategory.GENERAL, InsightSeverity.ATTENTION, ReasoningTier.STANDARD),
+])
+async def test_every_event_trigger_routes_to_the_brain(trigger, anchor, category, severity, tier):
+    agent, brain = _monitor(ProactiveNarration(notify=True, title="t", body="a grounded note"))
+    result = await agent.scan_patient("p1", trigger=trigger, anchor=anchor)
+    assert len(result.insights) == 1
+    assert result.insights[0].category is category
+    assert result.insights[0].severity is severity
+    assert brain.run_proactive.call_args.kwargs["tier"] is tier

@@ -8,9 +8,13 @@ the trigger and its anchor alone, never the LLM — three things:
   * the clinical category + severity of any resulting insight
     (``classify_event``),
 
-so danger level is never the model's to invent. Only CGM threshold crossings
-are wired to the brain today; other triggers stay on the legacy path until
-migrated, and raise here if routed by mistake.
+so danger level is never the model's to invent.
+
+Glucose crossings from the CGM sensor carry the reading in the anchor, so their
+severity is graded by the crossing kind. The manual/log events (meal, SMBG,
+symptom, missed dose) carry only an entity id — the brain fetches the details —
+so they take a conservative fixed prominence; the brain's grounded copy conveys
+the specifics. Cron (daily brief) is not handled here.
 """
 
 from __future__ import annotations
@@ -22,14 +26,16 @@ from lib.ai_foundation.agents.proactive_monitor.contracts import (
     EventTrigger,
     InsightCategory,
     InsightSeverity,
+    TriggerAnchor,
 )
 
-# Crossings where silence is riskiest — the brain gets the deepest tool budget.
+_CGM = EventTrigger.CGM_THRESHOLD_CROSSED
+
+# CGM crossings where silence is riskiest — the brain gets the deepest budget.
 _CGM_SAFETY = frozenset({CGMCrossingKind.SEVERE_HYPO, CGMCrossingKind.HYPO})
 
-# Category + severity per crossing. Severity is clinical authority: it drives
-# the broker's urgent routing and the notification channel, so it is fixed
-# here, not chosen by the model.
+# Category + severity per crossing. Severity is clinical authority (it drives
+# the broker's urgent routing + channel), so it is fixed here, not by the model.
 _CGM_CLASS: dict[CGMCrossingKind, tuple[InsightCategory, InsightSeverity]] = {
     CGMCrossingKind.SEVERE_HYPO: (InsightCategory.GLUCOSE_HYPO, InsightSeverity.ALERT),
     CGMCrossingKind.HYPO: (InsightCategory.GLUCOSE_HYPO, InsightSeverity.WARNING),
@@ -48,35 +54,73 @@ _CGM_READABLE: dict[CGMCrossingKind, str] = {
     CGMCrossingKind.RAPID_SPIKE: "rapidly rising",
 }
 
+# Manual/log events: conservative fixed category, severity, and tier. Symptoms
+# are capped at ATTENTION (no triage rules exist); a missed dose is coaching,
+# never dosing advice; a meal is wellness. SMBG takes ATTENTION because a
+# finger-stick can be out of range — the brain fetches the value and says so.
+_EVENT_CLASS: dict[EventTrigger, tuple[InsightCategory, InsightSeverity]] = {
+    EventTrigger.MEAL_LOGGED: (InsightCategory.GENERAL, InsightSeverity.INFO),
+    EventTrigger.SMBG_LOGGED: (InsightCategory.GENERAL, InsightSeverity.ATTENTION),
+    EventTrigger.SYMPTOM_LOGGED: (InsightCategory.GENERAL, InsightSeverity.ATTENTION),
+    EventTrigger.MEDICATION_MISSED: (InsightCategory.COACHING_MEDICATION, InsightSeverity.ATTENTION),
+}
 
-def _crossing(anchor: CGMThresholdCrossedAnchor) -> CGMCrossingKind:
+_EVENT_TIER: dict[EventTrigger, ReasoningTier] = {
+    EventTrigger.MEAL_LOGGED: ReasoningTier.STANDARD,
+    EventTrigger.SMBG_LOGGED: ReasoningTier.STANDARD,
+    EventTrigger.SYMPTOM_LOGGED: ReasoningTier.STANDARD,
+    EventTrigger.MEDICATION_MISSED: ReasoningTier.BASIC,
+}
+
+# Neutral, interpretation-free descriptions — the brain forms its own view.
+_EVENT_FRAME: dict[EventTrigger, str] = {
+    EventTrigger.MEAL_LOGGED:
+        "just logged a meal. Investigate how it fits their day and recent "
+        "patterns, and decide whether a brief, grounded observation would help.",
+    EventTrigger.SMBG_LOGGED:
+        "just logged a finger-prick glucose reading. Look up the reading and "
+        "its context, and decide whether a brief, grounded check-in would help.",
+    EventTrigger.SYMPTOM_LOGGED:
+        "just logged a symptom. Look at their recent data for context and decide "
+        "whether a brief, supportive note would help — do not attempt triage.",
+    EventTrigger.MEDICATION_MISSED:
+        "appears to have missed a scheduled medication dose. Decide whether a "
+        "gentle reminder would help — never suggest a dose or a schedule change.",
+}
+
+
+def _crossing(anchor: TriggerAnchor) -> CGMCrossingKind:
     return CGMCrossingKind(anchor.kind)  # raises on an unknown kind — fail loud, not silent
 
 
-def trigger_tier(trigger: EventTrigger, anchor: CGMThresholdCrossedAnchor) -> ReasoningTier:
-    if trigger is EventTrigger.CGM_THRESHOLD_CROSSED:
+def is_wired(trigger: EventTrigger) -> bool:
+    """Whether this trigger is answered by the one brain (vs. the legacy scan)."""
+    return trigger is _CGM or trigger in _EVENT_CLASS
+
+
+def trigger_tier(trigger: EventTrigger, anchor: TriggerAnchor) -> ReasoningTier:
+    if trigger is _CGM:
         return ReasoningTier.ADVANCED if _crossing(anchor) in _CGM_SAFETY else ReasoningTier.STANDARD
-    raise ValueError(f"trigger_tier: {trigger} is not wired to the brain yet")
+    if trigger in _EVENT_TIER:
+        return _EVENT_TIER[trigger]
+    raise ValueError(f"trigger_tier: {trigger} is not wired to the brain")
 
 
 def classify_event(
-    trigger: EventTrigger, anchor: CGMThresholdCrossedAnchor,
+    trigger: EventTrigger, anchor: TriggerAnchor,
 ) -> tuple[InsightCategory, InsightSeverity]:
-    if trigger is EventTrigger.CGM_THRESHOLD_CROSSED:
+    if trigger is _CGM:
         return _CGM_CLASS[_crossing(anchor)]
-    raise ValueError(f"classify_event: {trigger} is not wired to the brain yet")
+    if trigger in _EVENT_CLASS:
+        return _EVENT_CLASS[trigger]
+    raise ValueError(f"classify_event: {trigger} is not wired to the brain")
 
 
 def frame_event(
-    trigger: EventTrigger, anchor: CGMThresholdCrossedAnchor, patient_name: str | None = None,
+    trigger: EventTrigger, anchor: TriggerAnchor, patient_name: str | None = None,
 ) -> str:
-    """A neutral, factual description of the event for the brain to investigate.
-
-    Deliberately carries no interpretation or severity language — the brain
-    forms its own view from the data; this only states what happened.
-    """
-    if trigger is EventTrigger.CGM_THRESHOLD_CROSSED:
-        who = patient_name or "The patient"
+    who = patient_name or "The patient"
+    if trigger is _CGM:
         readable = _CGM_READABLE[_crossing(anchor)]
         return (
             f"{who}'s glucose just crossed into the {readable} range, reading "
@@ -84,4 +128,6 @@ def frame_event(
             f"their recent data, and decide whether a brief, grounded check-in "
             f"would genuinely help them right now."
         )
-    raise ValueError(f"frame_event: {trigger} is not wired to the brain yet")
+    if trigger in _EVENT_FRAME:
+        return f"{who} {_EVENT_FRAME[trigger]}"
+    raise ValueError(f"frame_event: {trigger} is not wired to the brain")

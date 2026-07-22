@@ -36,7 +36,7 @@ from lib.ai_foundation.retrieval.base import RetrievalRequest
 from lib.core.qdrant_store import QDRANT_COLLECTION, QdrantStore
 
 from .scheduling import DEFAULT_TIMEZONE
-from .event_framing import classify_event, frame_event, trigger_tier
+from .event_framing import classify_event, frame_event, is_wired, trigger_tier
 from .contracts import (
     BatchScanResult,
     DailyBrief,
@@ -289,6 +289,7 @@ class ProactiveMonitorAgent(BaseAgent):
             body=narration.body.strip(),
             patient_id=patient_id,
             suggested_query=narration.suggested_query,
+            data={"trigger": trigger.value},
         )
         return ScanResult(patient_id=patient_id, insights=[insight], scan_duration_ms=duration)
 
@@ -318,15 +319,11 @@ class ProactiveMonitorAgent(BaseAgent):
         is_event = trigger is not None
         trace_id = f"pm_evt_{uuid4().hex[:14]}" if is_event else f"pm_{uuid4().hex[:16]}"
 
-        # One-brain path: a CGM threshold crossing is investigated and narrated
-        # by HealthQueryAgent. Other triggers + cron still use the scan below
+        # One-brain path: every wired event trigger is investigated and narrated
+        # by HealthQueryAgent. Cron (trigger=None) still uses the scan below
         # until migrated. Same ScanResult contract, so downstream delivery is
         # unchanged.
-        if (
-            self._health_agent is not None
-            and trigger is EventTrigger.CGM_THRESHOLD_CROSSED
-            and anchor is not None
-        ):
+        if self._health_agent is not None and trigger is not None and anchor is not None and is_wired(trigger):
             try:
                 return await self._event_insight(
                     patient_id, trigger, anchor, patient_name=patient_name,
