@@ -420,11 +420,7 @@ def build_default_registry(
             cost_per_1k_output=0.015,
             supports_structured=True,
             supports_streaming=True,
-            tags=["powerful", "reasoning"],
-            # This model rejects function tools on /v1/chat/completions unless
-            # reasoning_effort is 'none' (Instructor's structured output uses
-            # function tools).
-            extra={"reasoning_effort": "none"},
+            tags=["powerful", "reasoning"], 
         ),
         ModelSpec(
             model_id="text-embedding-3-large",

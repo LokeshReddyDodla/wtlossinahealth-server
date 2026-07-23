@@ -18,7 +18,6 @@ from lib.dependencies.service_dependencies import (
     get_care_provider_access_service,
     get_care_provider_profile_service,
     get_glp1_injection_service,
-    get_holistic_summary_service,
     get_plan_composer_service,
     get_task_service,
     get_weight_loss_agent_service,
@@ -363,16 +362,6 @@ async def upload_and_analyze_inbody_report(
                 UUID(patient_id) if isinstance(patient_id, str) else patient_id,
                 force=True,
             )
-
-        # New body-composition data invalidates the whole-person summary.
-        from lib.workers.arq.redis import enqueue_job
-
-        await enqueue_job(
-            "run_whole_person_summary",
-            str(enrollment_id),
-            True,
-            _job_id=f"holistic-summary-inbody-{enrollment_id}-{datetime.utcnow().date().isoformat()}",
-        )
 
         return SuccessResponse(
             status="success",
@@ -1043,173 +1032,6 @@ async def upsert_glp_injection_settings(
             message="GLP-1 injection settings updated",
             data=record,
         )
-    except Exception as e:
-        raise_http_exception(
-            status_code=status.HTTP_400_BAD_REQUEST, message=str(e)
-        )
-
-
-@router.get(
-    "/enrollment/{enrollment_id}/daily-analysis",
-    response_model=SuccessResponse[Dict],
-    summary="Get the holistic daily coach analysis for a date",
-    description=(
-        "Returns the stored whole-day analysis (diet, activity, glucose and "
-        "medication verdicts plus the coach message) for the given date. "
-        "Defaults to yesterday in the patient's timezone. Pass generate=true "
-        "to build it on demand when it does not exist yet."
-    ),
-)
-async def get_daily_coach_analysis(
-    enrollment_id: UUID,
-    date: Optional[str] = Query(
-        None, description="ISO date (patient-local day); defaults to yesterday"
-    ),
-    generate: bool = Query(
-        False, description="Generate the analysis now if it is missing"
-    ),
-    weight_loss_service: WeightLossAgentService = Depends(
-        get_weight_loss_agent_service
-    ),
-    holistic_summary_service=Depends(get_holistic_summary_service),
-    actor: Actor = Depends(
-        get_current_actor(
-            allowed_roles=[ProfileTypeEnum.PATIENT, ProfileTypeEnum.CARE_PROVIDER],
-            care_provider_feature=CareProviderFeature.PATIENTS,
-            care_provider_action=CareProviderPermissionAction.READ,
-        )
-    ),
-    care_provider_access_service: CareProviderAccessService = Depends(
-        get_care_provider_access_service
-    ),
-):
-    """Fetch (or generate) the stored DailyCoachAnalysis for one day."""
-
-    try:
-        enrollment = await verify_enrollment_access(
-            enrollment_id=enrollment_id,
-            actor=actor,
-            weight_loss_service=weight_loss_service,
-            care_provider_access_service=care_provider_access_service,
-        )
-
-        raw_patient_id = enrollment.get("patient_id")
-        patient_id = (
-            UUID(raw_patient_id)
-            if isinstance(raw_patient_id, str)
-            else raw_patient_id
-        )
-
-        if date:
-            target_date = parse_flexible_date(date).date()
-        else:
-            from zoneinfo import ZoneInfo
-
-            from datetime import timedelta
-
-            timezone_name = (
-                await holistic_summary_service.holistic_data_service.get_patient_timezone(
-                    patient_id
-                )
-            )
-            target_date = (
-                datetime.now(ZoneInfo(timezone_name)).date() - timedelta(days=1)
-            )
-
-        analysis = await holistic_summary_service.get_daily_analysis(
-            patient_id, target_date
-        )
-
-        if (
-            generate
-            and (not analysis or analysis.get("status") != "complete")
-        ):
-            analysis = await holistic_summary_service.generate_daily_coach_analysis(
-                patient_id, target_date
-            )
-
-        if not analysis:
-            raise_http_exception(
-                status_code=status.HTTP_404_NOT_FOUND,
-                message=(
-                    f"No daily analysis found for {target_date.isoformat()}. "
-                    "Pass generate=true to build one now."
-                ),
-            )
-
-        return SuccessResponse(
-            status="success",
-            message="Daily coach analysis retrieved successfully",
-            data=analysis,
-        )
-    except HTTPException as e:
-        raise e
-    except Exception as e:
-        raise_http_exception(
-            status_code=status.HTTP_400_BAD_REQUEST, message=str(e)
-        )
-
-
-@router.get(
-    "/enrollment/{enrollment_id}/whole-person-summary",
-    response_model=SuccessResponse[Dict],
-    summary="Get the whole-person summary",
-    description=(
-        "Returns the latest big-picture summary of the patient (body status, "
-        "progress, eating/activity/glucose patterns, medication context, "
-        "risks and priorities). Pass refresh=true to regenerate it now."
-    ),
-)
-async def get_whole_person_summary(
-    enrollment_id: UUID,
-    refresh: bool = Query(False, description="Force regeneration now"),
-    weight_loss_service: WeightLossAgentService = Depends(
-        get_weight_loss_agent_service
-    ),
-    holistic_summary_service=Depends(get_holistic_summary_service),
-    actor: Actor = Depends(
-        get_current_actor(
-            allowed_roles=[ProfileTypeEnum.PATIENT, ProfileTypeEnum.CARE_PROVIDER],
-            care_provider_feature=CareProviderFeature.PATIENTS,
-            care_provider_action=CareProviderPermissionAction.READ,
-        )
-    ),
-    care_provider_access_service: CareProviderAccessService = Depends(
-        get_care_provider_access_service
-    ),
-):
-    """Fetch (or regenerate) the WholePersonSummary for an enrollment."""
-
-    try:
-        await verify_enrollment_access(
-            enrollment_id=enrollment_id,
-            actor=actor,
-            weight_loss_service=weight_loss_service,
-            care_provider_access_service=care_provider_access_service,
-        )
-
-        if refresh:
-            summary = await holistic_summary_service.generate_whole_person_summary(
-                enrollment_id, force=True
-            )
-        else:
-            summary = await holistic_summary_service.get_whole_person_summary(
-                enrollment_id
-            )
-            if not summary:
-                summary = (
-                    await holistic_summary_service.generate_whole_person_summary(
-                        enrollment_id
-                    )
-                )
-
-        return SuccessResponse(
-            status="success",
-            message="Whole-person summary retrieved successfully",
-            data=summary,
-        )
-    except HTTPException as e:
-        raise e
     except Exception as e:
         raise_http_exception(
             status_code=status.HTTP_400_BAD_REQUEST, message=str(e)

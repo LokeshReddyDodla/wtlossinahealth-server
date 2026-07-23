@@ -154,3 +154,8 @@ microservices/**
 lib/services/gamification/_local_overrides.py
 .claude/
 evals/reports/
+
+# Internal drafts and local working files (not checked in)
+docs/internal/research_agent_architecture.md
+docs/internal/research_agent_plan.md
+prescription files/

@@ -35,11 +35,6 @@ services:
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
       # OpenAI
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      # ARQ Redis — the API enqueues background jobs (insights, syncs)
-      - ARQ_REDIS_HOST=${ARQ_REDIS_HOST}
-      - ARQ_REDIS_PORT=${ARQ_REDIS_PORT}
-      - ARQ_REDIS_PASSWORD=${ARQ_REDIS_PASSWORD}
-      - ARQ_REDIS_DB=${ARQ_REDIS_DB}
       # Langfuse
       - LANGFUSE_ENABLED=${LANGFUSE_ENABLED:-false}
       - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}

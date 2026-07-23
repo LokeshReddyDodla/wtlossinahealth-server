@@ -30,9 +30,6 @@ from lib.services.weightloss_agent.glp1_injection_service import (
 from lib.services.weightloss_agent.glp1_symptoms_service import (
     Glp1SymptomsService,
 )
-from lib.services.weightloss_agent.holistic_summary_service import (
-    HolisticSummaryService,
-)
 from lib.services.weightloss_agent.intake_service import IntakeService
 from lib.services.weightloss_agent.plan_composer_service import (
     PlanComposerService,
@@ -89,7 +86,6 @@ class AgenticChatService:
         glp1_symptoms_service: Glp1SymptomsService,
         coach_messenger_service: CoachMessengerService,
         suggestion_cards_collection: AsyncIOMotorCollection,
-        holistic_summary_service: Optional[HolisticSummaryService] = None,
     ) -> None:
         self.mongo_store = mongo_store
         self.flow_engine = flow_engine
@@ -105,7 +101,6 @@ class AgenticChatService:
         self.glp1_symptoms_service = glp1_symptoms_service
         self.coach_messenger_service = coach_messenger_service
         self.suggestion_cards_collection = suggestion_cards_collection
-        self.holistic_summary_service = holistic_summary_service
 
     async def run_scheduled_for_user(self, user_id: UUID) -> None:
         now_utc = datetime.now(timezone.utc)
@@ -830,16 +825,13 @@ class AgenticChatService:
             state_data.get("last_morning_plan_date") != today_str
             and now_local >= morning_dt
         ):
-            sent = await self._send_daily_checkin(
+            await self._send_daily_checkin(
                 user_id,
                 now_local,
                 previous_day_summary_text=state_data.get("last_day_summary_text"),
                 previous_day_summary_date=state_data.get("last_day_summary_date"),
             )
-            # Unsent (analysis still generating) stays unmarked so the next
-            # scheduled run retries — delivered late rather than replaced.
-            if sent:
-                state_data["last_morning_plan_date"] = today_str
+            state_data["last_morning_plan_date"] = today_str
 
         if (
             state_data.get("last_afternoon_walk_date") != today_str
@@ -853,11 +845,8 @@ class AgenticChatService:
             and now_local >= end_of_day_dt
         ):
             day_summary = await self._send_end_of_day_review(user_id, now_local)
-            # None means the LLM review failed — leave the slot unmarked so
-            # the next scheduled run retries instead of falling back to a
-            # canned message.
+            state_data["last_end_of_day_review_date"] = today_str
             if day_summary:
-                state_data["last_end_of_day_review_date"] = today_str
                 state_data["last_day_summary_date"] = today_str
                 state_data["last_day_summary_text"] = day_summary
 
@@ -1019,50 +1008,13 @@ class AgenticChatService:
         *,
         previous_day_summary_text: Optional[str] = None,
         previous_day_summary_date: Optional[str] = None,
-    ) -> bool:
-        """Deliver the morning coach message built from yesterday's holistic
-        analysis.
-
-        Returns False (and sends nothing) while the analysis is not yet
-        complete — there is intentionally no rule-based fallback, so the
-        check-in stays pending and is retried on the next scheduled run.
-        """
-
-        yesterday = now_local.date() - timedelta(days=1)
-
-        analysis_doc = None
-        if self.holistic_summary_service:
-            analysis_doc = await self.holistic_summary_service.get_daily_analysis(
-                user_id, yesterday
-            )
-
-        if not analysis_doc or analysis_doc.get("status") != "complete":
-            from loguru import logger
-
-            logger.warning(
-                "holistic: morning check-in blocked — analysis {} for "
-                "patient={} date={}; queueing analysis",
-                (analysis_doc or {}).get("status", "missing"),
-                user_id,
-                yesterday,
-            )
-            from lib.workers.arq.redis import enqueue_job
-
-            await enqueue_job(
-                "run_daily_holistic_analysis",
-                str(user_id),
-                yesterday.isoformat(),
-                _job_id=f"holistic-daily-{user_id}-{yesterday.isoformat()}-checkin",
-            )
-            return False
-
-        morning_message = (analysis_doc.get("analysis") or {}).get(
-            "morning_message"
+    ) -> None:
+        patient = await self.patient_profile_service.fetch_patient_profile(
+            str(user_id)
         )
-        if not morning_message:
-            return False
+        first_name = (patient.first_name or "there") if patient else "there"
 
-        # Refresh today's plan every morning so tasks are based on latest state.
+        # Refresh today's plan every morning so messaging is based on latest state.
         try:
             await self.plan_composer_service.generate_plan(
                 PlanGenerateRequest(user_id=user_id)
@@ -1088,7 +1040,39 @@ class AgenticChatService:
         if plan_snapshot and getattr(plan_snapshot, "targets", None):
             steps_target = plan_snapshot.targets.get("daily_steps")
 
-        await self._send_bot_message(user_id, morning_message)
+        message_lines = [f"Good morning, {first_name}! Here is your plan for today."]
+        yesterday = (now_local.date() - timedelta(days=1)).isoformat()
+        if previous_day_summary_text and previous_day_summary_date == yesterday:
+            message_lines.append(f"Yesterday summary: {previous_day_summary_text}")
+
+        workout_day = False
+        exercises = []
+        if today_entry:
+            workout_day = bool(today_entry.get("is_workout_day"))
+            exercises = today_entry.get("exercises") or []
+
+        if workout_day:
+            message_lines.append("Today is a workout day.")
+            if exercises:
+                exercise_names = ", ".join(
+                    ex.get("name", "exercise") for ex in exercises[:4]
+                )
+                message_lines.append(f"Planned exercises: {exercise_names}.")
+        else:
+            message_lines.append(
+                "Today is a light-activity or recovery day."
+            )
+
+        if steps_target:
+            target_value = (
+                steps_target.min_value or steps_target.max_value or 0
+            )
+            if target_value:
+                message_lines.append(f"Steps target: {int(target_value)}.")
+
+        message_lines.append("Reply anytime if you need plan adjustments.")
+
+        await self._send_bot_message(user_id, " ".join(message_lines))
 
         await self._create_daily_tasks(
             user_id, now_local.date(), steps_target, today_entry
@@ -1101,7 +1085,6 @@ class AgenticChatService:
                     int(target_value),
                     now_local.date() - timedelta(days=1),
                 )
-        return True
 
     async def _send_after_meal_walk_nudge(self, user_id: UUID) -> None:
         await self._send_bot_message(
@@ -1113,44 +1096,76 @@ class AgenticChatService:
     async def _send_end_of_day_review(
         self, user_id: UUID, now_local: datetime
     ) -> Optional[str]:
-        """LLM-generated evening review of today's (partial) data.
-
-        Returns the review's completion summary, or None when generation
-        failed — in that case no message is sent and the caller leaves the
-        slot unmarked so it retries (no rule-based fallback by design).
-        """
-
         date_str = now_local.date().isoformat()
         await self._auto_complete_steps(user_id, now_local)
-
-        if not self.holistic_summary_service:
-            return None
-
-        try:
-            review = await self.holistic_summary_service.generate_evening_review(
-                user_id, now_local.date()
-            )
-        except Exception as exc:
-            from loguru import logger
-
-            logger.error(
-                "holistic: evening review failed patient={} date={}: {} — "
-                "no message sent, will retry on next run",
-                user_id,
-                date_str,
-                exc,
-            )
-            return None
-
-        message = review.message
 
         task_docs = await self.task_service.tasks_collection.find(
             {"user_id": str(user_id), "date": date_str}
         ).to_list(length=50)
+
         workout_task = next(
             (task for task in task_docs if task.get("task_type") == "workout"),
             None,
         )
+        steps_task = next(
+            (task for task in task_docs if task.get("task_type") == "steps"),
+            None,
+        )
+
+        start = datetime.combine(
+            now_local.date(), datetime.min.time()
+        ).replace(tzinfo=None)
+        end = datetime.combine(
+            now_local.date(), datetime.max.time()
+        ).replace(tzinfo=None)
+        daily_reports = await self.weight_loss_agent_service.get_daily_reports_data(
+            user_id, start, end
+        )
+        today_report = daily_reports[-1] if daily_reports else {}
+        fitness_data = today_report.get("fitness_data") or {}
+        vitals_data = today_report.get("vitals_data") or {}
+
+        steps_value = int(fitness_data.get("steps") or 0)
+        active_minutes = int(fitness_data.get("active_duration") or 0)
+        active_energy = int(fitness_data.get("active_energy") or 0)
+        weight_value = vitals_data.get("weight")
+
+        steps_target = (
+            int(float(steps_task.get("target_value")))
+            if steps_task and steps_task.get("target_value")
+            else None
+        )
+        workout_status = workout_task.get("status") if workout_task else "not_scheduled"
+        total_tasks = len(task_docs)
+        completed_count = len([task for task in task_docs if task.get("status") == "done"])
+        pending_count = len([task for task in task_docs if task.get("status") == "pending"])
+
+        summary_parts = [
+            f"steps {steps_value}"
+            + (f"/{steps_target}" if steps_target is not None else ""),
+            f"workout {workout_status}",
+            f"active minutes {active_minutes}",
+            f"tasks {completed_count}/{total_tasks} complete" if total_tasks else "no tasks created",
+        ]
+        if isinstance(weight_value, (int, float)):
+            summary_parts.append(f"latest weight {weight_value:.1f} kg")
+
+        summary_text = ", ".join(summary_parts)
+
+        message_lines = [
+            "End-of-day check-in: did you complete your tasks today?",
+            f"Today's progress summary: {summary_text}.",
+            f"Active energy: {active_energy} kcal.",
+        ]
+        if pending_count > 0:
+            message_lines.append(
+                "Some tasks are still pending. Be consistent tomorrow; small daily actions compound."
+            )
+        else:
+            message_lines.append(
+                "Great consistency today. Keep the same focus tomorrow."
+            )
+
         if workout_task and workout_task.get("status") == "pending":
             await self.task_service.update_task_metadata(
                 workout_task["task_id"],
@@ -1159,10 +1174,10 @@ class AgenticChatService:
                     "last_prompt_stage": "end_of_day_review",
                 },
             )
-            message = f"{message} Reply 'done' or 'not yet' for today's workout."
+            message_lines.append("Reply 'done' or 'not yet' for today's workout.")
 
-        await self._send_bot_message(user_id, message)
-        return review.completion_summary
+        await self._send_bot_message(user_id, " ".join(message_lines))
+        return summary_text
 
     def _next_daily_checkpoint(
         self,

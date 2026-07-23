@@ -430,42 +430,10 @@ def get_agentic_chat_service() -> AgenticChatService:
     return cast(AgenticChatService, container.resolve(AgenticChatService))
 
 
-def get_inbody_insight_service():
-    from lib.services.inbody.insight_service import InbodyInsightService
-
-    return cast(InbodyInsightService, container.resolve(InbodyInsightService))
-
-
-def get_patient_data_hub_service():
-    from lib.services.patient_data_hub_service import PatientDataHubService
-
-    return cast(
-        PatientDataHubService, container.resolve(PatientDataHubService)
-    )
-
-
 def get_inbody_report_service():
     from lib.services.inbody.service import InbodyReportService
 
     return cast(InbodyReportService, container.resolve(InbodyReportService))
-
-
-def get_holistic_data_service():
-    from lib.services.weightloss_agent.holistic_data_service import (
-        HolisticDataService,
-    )
-
-    return cast(HolisticDataService, container.resolve(HolisticDataService))
-
-
-def get_holistic_summary_service():
-    from lib.services.weightloss_agent.holistic_summary_service import (
-        HolisticSummaryService,
-    )
-
-    return cast(
-        HolisticSummaryService, container.resolve(HolisticSummaryService)
-    )
 
 
 def get_osteoflag_service() -> OsteoFlagService:

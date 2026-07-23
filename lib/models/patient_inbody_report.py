@@ -1,14 +1,23 @@
-"""Patient-level InBody report index — file pointer and lifecycle status.
+"""Patient-level InBody report — file pointer, lifecycle status, extracted
+analysis and insight.
 
-The extracted analysis lives in MongoDB (``inbody_analyses`` collection,
-keyed by ``report_id``); this table is the relational index used for
-listing, trends windows and joins.
+The extracted analysis is a fixed per-scan document, so it lives here as
+JSON rather than in a separate document store.
 """
 
 import uuid
 from datetime import datetime
 
-from sqlalchemy import UUID, Column, Date, DateTime, Index, ForeignKey, String
+from sqlalchemy import (
+    UUID,
+    Column,
+    Date,
+    DateTime,
+    Index,
+    ForeignKey,
+    String,
+)
+from sqlalchemy.dialects.postgresql import JSON
 from sqlalchemy.orm import relationship
 
 from lib.models import Base
@@ -37,6 +46,8 @@ class PatientInbodyReport(Base):
     uploaded_by_role = Column(String, nullable=True)
     uploaded_by_id = Column(UUID(as_uuid=True), nullable=True)
     error = Column(String, nullable=True)
+    # InbodyExtraction dump; set when extraction succeeds.
+    analysis = Column(JSON, nullable=True)
 
     created_at = Column(
         DateTime, default=lambda: datetime.now().replace(tzinfo=None)

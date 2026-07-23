@@ -97,7 +97,6 @@ NotificationCategoryLiteral = Literal[
     "medication_refill",
     "medication_dose",
     "follow_up",
-    "inbody_insight",
 ]
 
 NotificationSeverityLiteral = Literal["info", "warning", "alert"]

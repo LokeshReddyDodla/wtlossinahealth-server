@@ -2,9 +2,8 @@
 
 from lib.workers.tasks.weightloss_agent_tasks.tasks import (
     schedule_daily_agentic_cycles,
-    sweep_agentic_checkins,
 )
-from lib.workers.tasks.utils import daily_cron, interval_cron
+from lib.workers.tasks.utils import daily_cron
 
 
 def get_cron_jobs():
@@ -17,13 +16,5 @@ def get_cron_jobs():
             hour=0,
             minute=0,
             timeout_s=3600,
-        ),
-        # Deliver due morning/evening coach messages at patient-local
-        # checkpoint times regardless of chat activity.
-        interval_cron(
-            coroutine=sweep_agentic_checkins,
-            name="weightloss-agent-checkin-sweep",
-            minute_step=15,
-            timeout_s=840,
         ),
     ]

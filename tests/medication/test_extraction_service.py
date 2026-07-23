@@ -40,7 +40,7 @@ def _gateway(extract_return=None, extract_side_effect=None):
                 output_tokens=50,
             ),
             latency_ms=1234,
-            model_id="gpt-5.6-terra",
+            model_id="gpt-5.2",
             trace_id=None,
         )
         gateway.extract = AsyncMock(return_value=(default_extracted, meta))
@@ -128,13 +128,13 @@ class TestExtractHappyPath:
         assert kwargs["response_model"] is ExtractedPrescription
 
     @pytest.mark.asyncio
-    async def test_pins_to_gpt_5_6_terra(self):
+    async def test_pins_to_gpt_5_2(self):
         gateway = _gateway()
         svc = _service(gateway)
         await svc.extract(image_urls=["x"])
 
         kwargs = gateway.extract.call_args.kwargs
-        assert kwargs["model_id"] == "gpt-5.6-terra"
+        assert kwargs["model_id"] == "gpt-5.2"
 
 
 # ── Trace propagation ───────────────────────────────────────────────────────
