@@ -288,7 +288,12 @@ async def update_care_intent(
     """Edit an intent's instruction (author-only). Re-runs structuring, the
     safety gate, and the conflict check (against OTHER intents — an intent
     can't conflict with itself). Adherence history stays attached."""
-    structured = await structure_care_intent(gateway, payload.text)
+    trace_id = f"trc_{uuid4().hex[:16]}"
+    gateway.set_langfuse_context(session_id=f"care_intent:{care_intent_id}", user_id=None)
+    gateway.langfuse_trace_input(
+        trace_id=trace_id, name="care_intent_update", input_text=payload.text,
+    )
+    structured = await structure_care_intent(gateway, payload.text, trace_id=trace_id)
     _raise_if_unsafe(structured)
 
     existing_intent = await service.get_by_id(
@@ -311,10 +316,12 @@ async def update_care_intent(
             if ci["care_intent_id"] != str(care_intent_id)
         ]
         conflicts = await detect_intent_conflicts(
-            gateway, new_text=payload.text, existing=others,
+            gateway, new_text=payload.text, existing=others, trace_id=trace_id,
         )
     except Exception:
         logger.warning("Conflict check failed — updating without warnings", exc_info=True)
+
+    gateway.langfuse_trace_output(trace_id=trace_id, output_text=structured.model_dump_json())
 
     if payload.dry_run:
         return SuccessResponse(

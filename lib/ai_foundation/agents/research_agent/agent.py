@@ -140,6 +140,9 @@ class ResearchAgent(BaseAgent):
         """
         start = time.perf_counter()
         trace_id = input.trace_id or str(uuid.uuid4())
+        self.gateway.set_langfuse_context(
+            session_id=f"research:{input.provider_id}", user_id=input.provider_id,
+        )
         self.gateway.langfuse_trace_input(
             trace_id=trace_id, name="research", input_text=input.question,
         )
@@ -203,6 +206,9 @@ class ResearchAgent(BaseAgent):
         """
         start = time.perf_counter()
         trace_id = input.trace_id or str(uuid.uuid4())
+        self.gateway.set_langfuse_context(
+            session_id=f"research:{input.provider_id}", user_id=input.provider_id,
+        )
         self.gateway.langfuse_trace_input(
             trace_id=trace_id, name="research", input_text=input.question,
         )
