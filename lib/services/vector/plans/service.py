@@ -14,12 +14,8 @@ from ..base import BaseVectorService
 from ..utils.exceptions import VectorServiceError
 from .text_builder import PlansTextReprBuilder
 
-# An open-ended plan (no end_date) is active until superseded. Its vector's
-# end_time must sit in the far future so date-range retrieval — which matches
-# on [start_time, end_time] overlapping the query window — returns it for any
-# current-day query. Defaulting end_time to start_date instead would hide an
-# ongoing plan from every query dated after its start. Mirrors the 9999-12-31
-# "ongoing" sentinel the diet-plan service uses for overlap checks.
+# end_time for a plan with no end_date: far future so the [start_time,
+# end_time] overlap filter returns an ongoing plan for any current-day query.
 _ONGOING_END = datetime(9999, 12, 31)
 
 
