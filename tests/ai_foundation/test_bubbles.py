@@ -34,6 +34,12 @@ class TestSplit:
     def test_empty_text(self):
         assert split_bubbles("") == []
 
+    def test_no_marker_stays_single_bubble(self):
+        # Without [[BUBBLE]] the whole answer is one coherent message — we do
+        # not fake breaks from markdown blank lines (junk/orphaned bubbles).
+        text = "Yesterday's average was 148 mg/dL.\n\nWant a closer look?"
+        assert split_bubbles(text) == [text]
+
 
 class TestStrip:
     def test_passthrough_without_sentinel(self):

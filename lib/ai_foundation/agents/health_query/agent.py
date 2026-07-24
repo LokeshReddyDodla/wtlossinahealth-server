@@ -136,6 +136,13 @@ class HealthQueryAgent(BaseAgent):
 
             if not intent.is_ready:
                 output = self._build_clarification(intent, meta)
+                # A not-yet-logged ask lands here (is_ready=False), so the
+                # await arms in the clarify branch, not only the execution one.
+                if intent.awaits_log:
+                    await self._register_pending_request(
+                        input, intent.awaits_log, output.suggestions,
+                        self._effective_language(input, ctx),
+                    )
                 if not intent.clarification_msg:  # canned fallback needs localizing
                     output.message = await self._localize_text(output.message, ctx, input=input)
                 await _maybe_await(self.gateway.langfuse_trace_output(trace_id=trace_id, output_text=output.message))
@@ -191,6 +198,10 @@ class HealthQueryAgent(BaseAgent):
             total_cost = safe_cost(meta) + result.total_cost
 
             clean_response, awaited = extract_await(result.response)
+            # Reasoning responders routinely drop the inline [[AWAIT]] marker;
+            # the query-side signal from intent extraction is the deterministic
+            # fallback so the continuation loop still arms.
+            awaited = awaited or intent.awaits_log
             suggestions = [s.model_dump(exclude_none=True) for s in intent.suggestions]
             if awaited:
                 await self._register_pending_request(input, awaited, suggestions, response_language)
@@ -390,12 +401,19 @@ class HealthQueryAgent(BaseAgent):
                 msg = intent.clarification_msg or await self._localize_text(
                     _CLARIFY_FALLBACK, ctx, input=input,
                 )
-                output = AgentOutput(message=msg, is_ready=False, trace_id=trace_id)
+                clarify_suggestions = [s.model_dump(exclude_none=True) for s in intent.suggestions]
+                output = AgentOutput(message=msg, is_ready=False, trace_id=trace_id,
+                                     data={"pending_request": intent.awaits_log})
+                if intent.awaits_log:
+                    await self._register_pending_request(
+                        input, intent.awaits_log, clarify_suggestions,
+                        self._effective_language(input, ctx),
+                    )
                 turn_id = await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
                 self._schedule_background(input, ctx, output, turn_id)
                 yield sse_token(msg)
                 yield sse_done(SSEDonePayload(
-                    suggestions=[s.model_dump(exclude_none=True) for s in intent.suggestions],
+                    suggestions=clarify_suggestions,
                     trace_id=trace_id,
                     latency_ms=int((time.perf_counter() - pipeline_start) * 1000),
                 ))
@@ -454,6 +472,7 @@ class HealthQueryAgent(BaseAgent):
                         engine_data = event.data or {}
                         raw_text = engine_data.get("full_response", "")
                         raw_text, awaited = extract_await(raw_text)
+                        awaited = awaited or intent.awaits_log
                         stream_suggestions = [s.model_dump(exclude_none=True) for s in intent.suggestions]
                         if awaited:
                             await self._register_pending_request(input, awaited, stream_suggestions, response_language)
@@ -1130,7 +1149,8 @@ class HealthQueryAgent(BaseAgent):
             message=intent.clarification_msg or _CLARIFY_FALLBACK,
             is_ready=False,
             suggestions=[s.model_dump(exclude_none=True) for s in intent.suggestions],
-            data={"data_types": [dt.value for dt in intent.data_types], "confidence": intent.confidence},
+            data={"data_types": [dt.value for dt in intent.data_types], "confidence": intent.confidence,
+                  "pending_request": intent.awaits_log},
             trace_id=meta.trace_id if meta else None,
             cost_usd=safe_cost(meta) or None,
             model_id=meta.model_id if meta else None,

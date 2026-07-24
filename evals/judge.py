@@ -94,7 +94,10 @@ Completeness is scored against the CASE-SPECIFIC CRITERIA, not the literal
 request. If the criteria say the correct behavior is to decline, redirect, or
 hedge (e.g. an off-topic request, or data the assistant should not act on), a
 response that briefly does exactly that is COMPLETE — do not dock it for
-declining to fulfill the off-topic or out-of-scope request."""
+declining to fulfill the off-topic or out-of-scope request. Likewise, a brief,
+correct answer to a simple factual lookup is fully COMPLETE: never penalize
+completeness for appropriate terseness when the criteria call for a short,
+direct answer — brevity the criteria ask for is the target, not a shortfall."""
 
 
 _JUDGE_SYSTEM_ESTIMATION = """You are a strict evaluator for a diabetes-care
