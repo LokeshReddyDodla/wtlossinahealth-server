@@ -246,12 +246,6 @@ class Patient(Base):
 
    
 
-    weight_loss_enrollment = relationship(
-        "WeightLossAgentEnrollment",
-        back_populates="patient",
-        uselist=False,
-        cascade="all, delete-orphan",
-    )
 
     @property
     def current_package(self):

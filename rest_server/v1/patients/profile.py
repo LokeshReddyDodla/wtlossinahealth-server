@@ -44,7 +44,7 @@ async def get_patient_profile(
 
     Returns CompletePatientProfile (identity + body + all lifestyle/medical
     sections + care_providers + package_assignments + current_package +
-    reproductive_health + weight_loss_enrollment + permissions + connected_apps),
+    reproductive_health + permissions + connected_apps),
     plus CGM reports and last_active_at side-data.
     """
     try:

@@ -105,37 +105,9 @@ from lib.services.reports import (
     SMBGStatsProcessor,
 )
 
-# Weight Loss Agent Service
-from lib.services.weight_loss_agent_service import WeightLossAgentService
 from lib.services.profile_update_agent import ProfileUpdateAgentService
 from lib.services.profile_agent import ProfileAgentService
-from lib.services.weightloss_agent.analytics_service import AnalyticsService
-from lib.services.weightloss_agent.intake_service import IntakeService
-from lib.services.weightloss_agent.safety_rules_service import (
-    SafetyRulesService,
-)
-from lib.services.weightloss_agent.plan_composer_service import (
-    PlanComposerService,
-)
-from lib.services.weightloss_agent.glp1_symptoms_service import (
-    Glp1SymptomsService,
-)
-from lib.services.weightloss_agent.glp1_injection_service import (
-    Glp1InjectionService,
-)
-from lib.services.weightloss_agent.flow_engine import FlowEngine
-from lib.services.weightloss_agent.task_service import TaskService
-from lib.services.weightloss_agent.agentic_chat_service import (
-    AgenticChatService,
-)
-from lib.services.weightloss_agent.coach_messenger_service import (
-    CoachMessengerService,
-)
-from lib.services.weightloss_agent.agentic_orchestrator import (
-    AgenticOrchestrator,
-)
 
-from lib.services.health_query_agent.service import HealthQueryAgentService
 from lib.ai_foundation.agents.health_query import HealthQueryAgent
 from lib.ai_foundation.agents.research_agent import ResearchAgent
 
@@ -388,45 +360,6 @@ def get_patient_facility_transfer_service():
     return cast(PatientFacilityTransferService, container.resolve(PatientFacilityTransferService))
 
 
-def get_weightloss_analytics_service() -> AnalyticsService:
-    return cast(AnalyticsService, container.resolve(AnalyticsService))
-
-
-def get_intake_service() -> IntakeService:
-    return cast(IntakeService, container.resolve(IntakeService))
-
-
-def get_safety_rules_service() -> SafetyRulesService:
-    return cast(SafetyRulesService, container.resolve(SafetyRulesService))
-
-
-def get_plan_composer_service() -> PlanComposerService:
-    return cast(PlanComposerService, container.resolve(PlanComposerService))
-
-
-def get_coach_messenger_service() -> CoachMessengerService:
-    return cast(CoachMessengerService, container.resolve(CoachMessengerService))
-
-
-def get_glp1_symptoms_service() -> Glp1SymptomsService:
-    return cast(Glp1SymptomsService, container.resolve(Glp1SymptomsService))
-
-
-def get_glp1_injection_service() -> Glp1InjectionService:
-    return cast(Glp1InjectionService, container.resolve(Glp1InjectionService))
-
-
-def get_flow_engine_service() -> FlowEngine:
-    return cast(FlowEngine, container.resolve(FlowEngine))
-
-
-def get_task_service() -> TaskService:
-    return cast(TaskService, container.resolve(TaskService))
-
-
-def get_agentic_chat_service() -> AgenticChatService:
-    return cast(AgenticChatService, container.resolve(AgenticChatService))
-
 
 def get_osteoflag_service() -> OsteoFlagService:
     return cast(OsteoFlagService, container.resolve(OsteoFlagService))
@@ -595,16 +528,6 @@ def get_patient_documents_collection():
 
 
 
-def get_inbody_reports_collection():
-    return container.resolve("inbody_reports_collection")
-
-
-def get_weight_loss_interactions_collection():
-    return container.resolve("weight_loss_interactions_collection")
-
-
-def get_weight_loss_progress_analyses_collection():
-    return container.resolve("weight_loss_progress_analyses_collection")
 
 
 def get_patient_metrics_service() -> PatientMetricsService:
@@ -638,8 +561,6 @@ def get_package_metrics_service() -> PackageMetricsService:
     return cast(PackageMetricsService, container.resolve(PackageMetricsService))
 
 
-def get_weight_loss_agent_service() -> WeightLossAgentService:
-    return cast(WeightLossAgentService, container.resolve(WeightLossAgentService))
 
 
 def get_file_content_extractor_service() -> FileContentExtractorService:
@@ -659,13 +580,6 @@ def get_fitness_qdrant_sync_cache_store() -> CacheStore:
 
 def get_cgm_sync_cache_store() -> CacheStore:
     return cast(CacheStore, container.resolve("cgm_sync"))
-
-
-def get_health_query_agent_service() -> HealthQueryAgentService:
-    return cast(
-        HealthQueryAgentService,
-        container.resolve(HealthQueryAgentService),
-    )
 
 
 def get_health_query_agent() -> HealthQueryAgent:
@@ -705,8 +619,6 @@ def get_arq_task_manager_service() -> ArqTaskManager:
     return get_arq_task_manager()
 
 
-def get_agentic_orchestrator_service() -> AgenticOrchestrator:
-    return cast(AgenticOrchestrator, container.resolve(AgenticOrchestrator))
 
 
 # ── Gamification ─────────────────────────────────────────────────────────────

@@ -24,7 +24,6 @@ from lib.services.ai_conversation_service.ai_conversation_service import (
 from lib.services.patient_document_service import PatientDocumentService
 from lib.services.medication_service import MedicationService
 from lib.services.token_usage_service import TokenUsageService
-from lib.services.weight_loss_agent_service import WeightLossAgentService
 from lib.utils.http_exceptions import raise_http_exception
 from lib.models.patient_prescription import PatientPrescription as PatientPrescriptionModel
 
@@ -41,7 +40,6 @@ class PatientDocumentResearchService:
         patient_document_summary_interactions_collection: Any,
         patient_document_service: PatientDocumentService,
         medication_service: MedicationService,
-        weight_loss_agent_service: WeightLossAgentService,
         token_usage_service: TokenUsageService,
     ):
         self.patient_document_collection = patient_document_collection
@@ -50,7 +48,6 @@ class PatientDocumentResearchService:
         )
         self.patient_document_service = patient_document_service
         self.medication_service = medication_service
-        self.weight_loss_agent_service = weight_loss_agent_service
         self.token_usage_service = token_usage_service
 
     # -------------------------------------------------------------------------
@@ -71,12 +68,9 @@ class PatientDocumentResearchService:
         prescriptions = await self._fetch_prescriptions_safe(
             patient_id=patient_id, order=order
         )
-        inbody_item = await self._get_inbody_selection_item(patient_id)
 
         items = [self._map_document_to_selection(d) for d in documents]
         items += [self._map_prescription_to_selection(p) for p in prescriptions]
-        if inbody_item:
-            items.append(inbody_item)
 
         return PatientDocumentResearchSelectionResponse(items=items)
 
@@ -95,7 +89,7 @@ class PatientDocumentResearchService:
 
         prompt = (
             "Provide a clinical research summary for the selected patient records "
-            "(documents, prescriptions, and inbody reports). "
+            "(documents and prescriptions). "
             "Highlight diagnoses, abnormal values, medications, and follow-up actions."
         )
         if request.question:
@@ -204,44 +198,6 @@ class PatientDocumentResearchService:
             },
         )
 
-    async def _get_inbody_selection_item(
-        self, patient_id: str
-    ) -> Optional[PatientDocumentResearchSelectionItem]:
-        try:
-            patient_uuid = UUID(patient_id)
-        except ValueError:
-            return None
-
-        enrollment = await self.weight_loss_agent_service.get_patient_enrollment_by_patient_id(
-            patient_uuid
-        )
-        if not enrollment or not enrollment.get("enrollment_id"):
-            return None
-
-        enrollment_id = str(enrollment["enrollment_id"])
-        report = await self.weight_loss_agent_service.get_latest_inbody_report_with_details(
-            UUID(enrollment_id)
-        )
-        if not report:
-            return None
-
-        report_data = report.get("report") or {}
-        highlights = report.get("highlights") or {}
-        summary = report_data.get("ai_summary") or ""
-
-        return PatientDocumentResearchSelectionItem(
-            source_type="inbody_report",
-            source_id=enrollment_id,
-            title=report_data.get("original_filename") or "Inbody Report",
-            category="inbody_report",
-            document_date=report_data.get("report_date"),
-            summary_preview=self._truncate(summary, self.PREVIEW_LENGTH) or None,
-            metadata={
-                "report_id": report_data.get("report_id"),
-                "highlights": highlights,
-            },
-        )
-
     # -------------------------------------------------------------------------
     # Document Mappers (for AI context)
     # -------------------------------------------------------------------------
@@ -288,29 +244,6 @@ class PatientDocumentResearchService:
             summary_text=self._truncate(summary, self.MAX_SUMMARY_LENGTH),
         )
 
-    def _map_inbody_to_research(
-        self, report_data: Dict[str, Any]
-    ) -> PatientDocumentResearchDocument:
-        report = report_data.get("report") or {}
-        highlights = report_data.get("highlights") or {}
-        summary = (report.get("ai_summary") or "").strip()
-        if not summary:
-            summary = self._build_inbody_summary(highlights)
-
-        return PatientDocumentResearchDocument(
-            source_type="inbody_report",
-            document_id=str(report.get("report_id") or ""),
-            file_name=report.get("original_filename"),
-            file_url=None,
-            mime_type=report.get("content_type"),
-            category="inbody_report",
-            document_date=report.get("report_date"),
-            uploaded_at=report.get("created_at") or report.get("extracted_at"),
-            uploaded_by_type=None,
-            summary_preview=self._truncate(summary, self.PREVIEW_LENGTH) or None,
-            summary_text=self._truncate(summary, self.MAX_SUMMARY_LENGTH),
-        )
-
     # -------------------------------------------------------------------------
     # Data Fetching
     # -------------------------------------------------------------------------
@@ -352,11 +285,9 @@ class PatientDocumentResearchService:
     ) -> List[PatientDocumentResearchDocument]:
         doc_sources = [s for s in sources if s.source_type == "patient_document"]
         rx_sources = [s for s in sources if s.source_type == "prescription"]
-        inbody_sources = [s for s in sources if s.source_type == "inbody_report"]
 
         doc_map: Dict[str, PatientDocumentResearchDocument] = {}
         rx_map: Dict[str, PatientDocumentResearchDocument] = {}
-        inbody_map: Dict[str, PatientDocumentResearchDocument] = {}
 
         # Fetch patient documents
         if doc_sources:
@@ -380,32 +311,6 @@ class PatientDocumentResearchService:
             if missing:
                 raise_http_exception(404, "Prescriptions not found", {"ids": missing})
 
-        # Fetch inbody reports
-        if inbody_sources:
-            missing = []
-            for source in inbody_sources:
-                try:
-                    enrollment_uuid = UUID(source.source_id)
-                except ValueError:
-                    raise_http_exception(400, f"Invalid enrollment ID: {source.source_id}")
-
-                report = await self.weight_loss_agent_service.get_latest_inbody_report_with_details(
-                    enrollment_uuid
-                )
-                if not report:
-                    missing.append(source.source_id)
-                    continue
-
-                report_patient = report.get("report", {}).get("patient_id")
-                if report_patient and str(report_patient) != patient_id:
-                    missing.append(source.source_id)
-                    continue
-
-                inbody_map[source.source_id] = self._map_inbody_to_research(report)
-
-            if missing:
-                raise_http_exception(404, "Inbody reports not found", {"ids": missing})
-
         # Build ordered result preserving source order
         result = []
         for source in sources:
@@ -414,7 +319,7 @@ class PatientDocumentResearchService:
             elif source.source_type == "prescription":
                 doc = rx_map.get(source.source_id)
             else:
-                doc = inbody_map.get(source.source_id)
+                doc = None
             if doc:
                 result.append(doc)
 
@@ -588,42 +493,6 @@ class PatientDocumentResearchService:
             parts.append("Medications:\n" + "\n".join(lines))
 
         return "\n".join(parts).strip()
-
-    def _build_inbody_summary(self, highlights: Dict[str, Any]) -> str:
-        if not highlights:
-            return ""
-
-        labels = {
-            "skeletal_muscle_mass": "Skeletal muscle mass",
-            "body_fat_percentage": "Body fat percentage",
-            "visceral_fat_level": "Visceral fat level",
-            "basal_metabolic_rate": "Basal metabolic rate",
-        }
-
-        lines = []
-        for key, label in labels.items():
-            if line := self._format_measurement(label, highlights.get(key)):
-                lines.append(line)
-
-        segments = highlights.get("segment_lean_analysis") or []
-        segment_lines = []
-        for seg in segments:
-            if isinstance(seg, dict):
-                if line := self._format_measurement(seg.get("label", "Segment"), seg):
-                    segment_lines.append(line)
-        if segment_lines:
-            lines.append("Segmental lean analysis:\n" + "\n".join(segment_lines))
-
-        return "Inbody report highlights:\n" + "\n".join(lines) if lines else ""
-
-    def _format_measurement(self, label: str, data: Any) -> Optional[str]:
-        if not data or not isinstance(data, dict):
-            return None
-        value = data.get("value")
-        if value is None:
-            return None
-        unit = data.get("unit")
-        return f"{label}: {value} {unit}" if unit else f"{label}: {value}"
 
     def _truncate(self, text: str, length: int) -> str:
         text = text.strip()

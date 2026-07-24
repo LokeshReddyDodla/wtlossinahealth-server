@@ -125,7 +125,6 @@ from lib.services.daily_checkin_service import DailyCheckinService
 from lib.services.sqs_service import SQSService
 from lib.services.token_usage_service import TokenUsageService
 from lib.services.user_device_service import UserDeviceService
-from lib.services.weightloss_agent.analytics_service import AnalyticsService
 from lib.services.reports import (
     FitnessStatsProcessor,
     CGMStatsProcessor,
@@ -135,37 +134,6 @@ from lib.services.reports import (
 )
 from lib.services.vector import CGMVectorService, VitalsVectorService
 
-# Weight Loss Agent Service
-from lib.services.weight_loss_agent_service import WeightLossAgentService
-from lib.services.weightloss_agent.intake_service import IntakeService
-from lib.services.weightloss_agent.safety_rules_service import (
-    SafetyRulesService,
-)
-from lib.services.weightloss_agent.plan_composer_service import (
-    PlanComposerService,
-)
-from lib.services.weightloss_agent.glp1_symptoms_service import (
-    Glp1SymptomsService,
-)
-from lib.services.weightloss_agent.glp1_injection_service import (
-    Glp1InjectionService,
-)
-from lib.services.weightloss_agent.exercise_recommendation_service import (
-    ExerciseRecommendationService,
-)
-from lib.services.weightloss_agent.coach_messenger_service import (
-    CoachMessengerService,
-)
-from lib.services.weightloss_agent.flow_engine import FlowEngine
-from lib.services.weightloss_agent.task_service import TaskService
-from lib.services.weightloss_agent.agentic_chat_service import (
-    AgenticChatService,
-)
-from lib.services.weightloss_agent.agentic_orchestrator import (
-    AgenticOrchestrator,
-)
-
-from lib.services.health_query_agent.service import HealthQueryAgentService
 
 # AI Foundation
 from lib.ai_foundation.config import settings as _ai_settings
@@ -443,7 +411,6 @@ for namespace in [
     "user_session",
     "fitness_sync",
     "patient_profile",
-    "health_query_agent",
 ]:
     container.register(
         namespace,
@@ -680,9 +647,6 @@ container.register(
         ),
         medication_service=cast(
             MedicationService, container.resolve(MedicationService)
-        ),
-        weight_loss_agent_service=cast(
-            WeightLossAgentService, container.resolve(WeightLossAgentService)
         ),
         token_usage_service=cast(
             TokenUsageService, container.resolve(TokenUsageService)
@@ -1046,203 +1010,6 @@ container.register(
     ),
 )
 
-# 🔹 Weight Loss Agent Service (MongoDB)
-container.register(
-    AnalyticsService,
-    lambda: AnalyticsService(
-        audit_traces_collection=cast(
-            MongoStore, container.resolve("audit_traces_collection")
-        ),
-        analytics_events_collection=cast(
-            MongoStore, container.resolve("analytics_events_collection")
-        ),
-    ),
-)
-
-# 🔹 Intake Service
-container.register(
-    IntakeService,
-    lambda: IntakeService(
-        exercise_preferences_collection=container.resolve(
-            "exercise_preferences_collection"
-        ),
-        fitness_screen_collection=container.resolve("fitness_screen_collection"),
-        willingness_commitment_collection=container.resolve(
-            "willingness_commitment_collection"
-        ),
-        analytics_service=cast(AnalyticsService, container.resolve(AnalyticsService)),
-    ),
-)
-
-# 🔹 Safety Rules Service
-container.register(
-    SafetyRulesService,
-    lambda: SafetyRulesService(
-        analytics_service=cast(AnalyticsService, container.resolve(AnalyticsService)),
-    ),
-)
-
-# 🔹 Exercise Recommendation Service
-container.register(
-    ExerciseRecommendationService,
-    lambda: ExerciseRecommendationService(
-        ai_conversation_service=cast(
-            AiConversationService, container.resolve(AiConversationService)
-        ),
-    ),
-)
-
-# 🔹 Plan Composer Service
-container.register(
-    PlanComposerService,
-    lambda: PlanComposerService(
-        plan_snapshots_collection=container.resolve("plan_snapshots_collection"),
-        inbody_reports_collection=container.resolve("inbody_reports_collection"),
-        intake_service=cast(IntakeService, container.resolve(IntakeService)),
-        safety_rules_service=cast(
-            SafetyRulesService, container.resolve(SafetyRulesService)
-        ),
-        analytics_service=cast(AnalyticsService, container.resolve(AnalyticsService)),
-        exercise_recommendation_service=cast(
-            ExerciseRecommendationService,
-            container.resolve(ExerciseRecommendationService),
-        ),
-        ai_conversation_service=cast(
-            AiConversationService, container.resolve(AiConversationService)
-        ),
-    ),
-)
-
-# 🔹 GLP-1 Symptoms Service
-container.register(
-    Glp1SymptomsService,
-    lambda: Glp1SymptomsService(
-        weekly_symptoms_collection=container.resolve("weekly_symptoms_glp1_collection"),
-        analytics_service=cast(AnalyticsService, container.resolve(AnalyticsService)),
-    ),
-)
-
-# 🔹 GLP-1 Injection Settings Service
-container.register(
-    Glp1InjectionService,
-    lambda: Glp1InjectionService(
-        settings_collection=container.resolve("weightloss_glp_injection_collection"),
-    ),
-)
-
-# 🔹 Weightloss Flow Engine
-container.register(
-    FlowEngine,
-    lambda: FlowEngine(
-        flow_collection=container.resolve("weightloss_flow_instances_collection")
-    ),
-)
-
-# 🔹 Weightloss Task Service
-container.register(
-    TaskService,
-    lambda: TaskService(
-        tasks_collection=container.resolve("weightloss_tasks_collection")
-    ),
-)
-
-# 🔹 Coach Messenger Service
-container.register(
-    CoachMessengerService,
-    lambda: CoachMessengerService(
-        suggestion_cards_collection=container.resolve("suggestion_cards_collection"),
-        plan_composer_service=cast(
-            PlanComposerService, container.resolve(PlanComposerService)
-        ),
-        analytics_service=cast(AnalyticsService, container.resolve(AnalyticsService)),
-        ai_conversation_service=cast(
-            AiConversationService, container.resolve(AiConversationService)
-        ),
-    ),
-)
-
-# 🔹 Agentic Orchestrator
-container.register(
-    AgenticOrchestrator,
-    lambda: AgenticOrchestrator(
-        plan_composer_service=cast(
-            PlanComposerService, container.resolve(PlanComposerService)
-        ),
-        coach_messenger_service=cast(
-            CoachMessengerService, container.resolve(CoachMessengerService)
-        ),
-        analytics_service=cast(AnalyticsService, container.resolve(AnalyticsService)),
-    ),
-)
-
-container.register(
-    WeightLossAgentService,
-    lambda: WeightLossAgentService(
-        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
-        clickhouse_store=cast(ClickHouseStore, container.resolve(ClickHouseStore)),
-        reports_collection=cast(
-            MongoStore, container.resolve("inbody_reports_collection")
-        ),
-        interactions_collection=cast(
-            MongoStore,
-            container.resolve("weight_loss_interactions_collection"),
-        ),
-        progress_analyses_collection=cast(
-            MongoStore,
-            container.resolve("weight_loss_progress_analyses_collection"),
-        ),
-        patient_profile_service=cast(
-            PatientProfileService, container.resolve(PatientProfileService)
-        ),
-        care_provider_profile_service=cast(
-            CareProviderProfileService,
-            container.resolve(CareProviderProfileService),
-        ),
-        analytics_service=cast(AnalyticsService, container.resolve(AnalyticsService)),
-        token_usage_service=cast(
-            TokenUsageService, container.resolve(TokenUsageService)
-        ),
-    ),
-)
-
-# 🔹 Agentic Weightloss Chat Service
-container.register(
-    AgenticChatService,
-    lambda: AgenticChatService(
-        mongo_store=cast(MongoStore, container.resolve(MongoStore)),
-        flow_engine=cast(FlowEngine, container.resolve(FlowEngine)),
-        task_service=cast(TaskService, container.resolve(TaskService)),
-        injection_service=cast(
-            Glp1InjectionService, container.resolve(Glp1InjectionService)
-        ),
-        intake_service=cast(IntakeService, container.resolve(IntakeService)),
-        safety_rules_service=cast(
-            SafetyRulesService, container.resolve(SafetyRulesService)
-        ),
-        chat_messaging_service=cast(
-            ChatMessagingService, container.resolve(ChatMessagingService)
-        ),
-        plan_composer_service=cast(
-            PlanComposerService, container.resolve(PlanComposerService)
-        ),
-        weight_loss_agent_service=cast(
-            WeightLossAgentService, container.resolve(WeightLossAgentService)
-        ),
-        patient_profile_service=cast(
-            PatientProfileService, container.resolve(PatientProfileService)
-        ),
-        symptom_daily_collection=container.resolve(
-            "weightloss_symptom_daily_collection"
-        ),
-        glp1_symptoms_service=cast(
-            Glp1SymptomsService, container.resolve(Glp1SymptomsService)
-        ),
-        coach_messenger_service=cast(
-            CoachMessengerService, container.resolve(CoachMessengerService)
-        ),
-        suggestion_cards_collection=container.resolve("suggestion_cards_collection"),
-    ),
-)
 
 
 # 🔹 CGM Upload Service
@@ -1374,16 +1141,6 @@ container.register(
     QdrantSearchEngine,
     lambda: QdrantSearchEngine(
         qdrant_store=cast(QdrantStore, container.resolve(QdrantStore)),
-    ),
-)
-
-# 🔹 Health Query Agent Service
-container.register(
-    HealthQueryAgentService,
-    lambda: HealthQueryAgentService(
-        qdrant_store=cast(QdrantStore, container.resolve(QdrantStore)),
-        mongo_store=cast(MongoStore, container.resolve(MongoStore)),
-        cache_store=cast(CacheStore, container.resolve("health_query_agent")),
     ),
 )
 
@@ -1566,21 +1323,6 @@ def _build_prompt_registry() -> PromptRegistry:
                     logging.getLogger(__name__).warning(
                         "Failed to load prompts from %s: %s", agent_dir.name, e,
                     )
-
-    # Also register existing health_query_agent prompts/playbooks for backward compat
-    legacy_prompts = Path(__file__).parent.parent / "services" / "health_query_agent" / "prompts"
-    if legacy_prompts.is_dir():
-        try:
-            registry.register_directory(legacy_prompts, namespace="health_query_legacy")
-        except Exception:
-            pass
-
-    legacy_playbooks = Path(__file__).parent.parent / "services" / "health_query_agent" / "v2" / "playbooks"
-    if legacy_playbooks.is_dir():
-        try:
-            registry.register_directory(legacy_playbooks, namespace="health_query_legacy.playbooks")
-        except Exception:
-            pass
 
     return registry
 

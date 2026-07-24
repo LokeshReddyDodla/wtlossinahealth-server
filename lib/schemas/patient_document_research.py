@@ -6,7 +6,6 @@ from pydantic import BaseModel, Field, model_validator
 ResearchSourceType = Literal[
     "patient_document",
     "prescription",
-    "inbody_report",
 ]
 
 
@@ -57,7 +56,7 @@ class PatientDocumentResearchSummaryRequest(BaseModel):
     sources: Optional[List[PatientDocumentResearchSource]] = Field(
         None,
         min_length=1,
-        description="Selected research sources across documents, prescriptions, or inbody reports",
+        description="Selected research sources across documents or prescriptions",
     )
     question: Optional[str] = Field(
         None,
@@ -98,7 +97,7 @@ class PatientDocumentResearchChatRequest(BaseModel):
     sources: Optional[List[PatientDocumentResearchSource]] = Field(
         None,
         min_length=1,
-        description="Selected research sources across documents, prescriptions, or inbody reports",
+        description="Selected research sources across documents or prescriptions",
     )
     question: str = Field(..., min_length=1, description="Doctor question")
     conversation_id: Optional[str] = Field(

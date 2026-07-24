@@ -1,4 +1,0 @@
-rule_id,trigger,action,rationale_source_id,severity,mutually_exclusive_with,version
-sr_bmi_steps_cap,"{""all"":[{""source"":""inbody"",""field"":""bmi"",""operator"":"">="",""value"":35}]}", "{""type"":""intensity_cap"",""metric"":""daily_steps"",""value"":8500,""units"":""steps""}",acsm_pa_2025,high,,2025.03
-sr_hypertension_hiit,"{""all"":[{""source"":""conditions"",""field"":""hypertension"",""operator"":""eq"",""value"":true}]}", "{""type"":""contraindication"",""metric"":""hiit"",""value"":0,""units"":""sessions""}",ada_2025,critical,,2025.03
-sr_low_vo2_minutes,"{""all"":[{""source"":""fitness"",""field"":""vo2_proxy"",""operator"":""lt"",""value"":20}]}", "{""type"":""intensity_cap"",""metric"":""weekly_minutes_moderate"",""value"":120,""units"":""minutes""}",acsm_pa_2025,medium,,2025.03
