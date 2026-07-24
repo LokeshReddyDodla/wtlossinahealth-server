@@ -14,6 +14,14 @@ from ..base import BaseVectorService
 from ..utils.exceptions import VectorServiceError
 from .text_builder import PlansTextReprBuilder
 
+# An open-ended plan (no end_date) is active until superseded. Its vector's
+# end_time must sit in the far future so date-range retrieval — which matches
+# on [start_time, end_time] overlapping the query window — returns it for any
+# current-day query. Defaulting end_time to start_date instead would hide an
+# ongoing plan from every query dated after its start. Mirrors the 9999-12-31
+# "ongoing" sentinel the diet-plan service uses for overlap checks.
+_ONGOING_END = datetime(9999, 12, 31)
+
 
 def _serialize_plan_content(content: Any) -> Dict[str, Any] | None:
     """Qdrant payload must be JSON-serializable. Handle Pydantic + ORM + dict."""
@@ -115,7 +123,7 @@ class PlansVectorService(BaseVectorService):
         end_date = plan_data.get("end_date")
 
         start_dt = self._parse_date(start_date)
-        end_dt = self._parse_date(end_date) if end_date else start_dt
+        end_dt = self._parse_date(end_date) if end_date else _ONGOING_END
 
         text_repr = PlansTextReprBuilder.build_diet_plan(plan_data)
 
@@ -154,7 +162,7 @@ class PlansVectorService(BaseVectorService):
         end_date = plan_data.get("end_date")
 
         start_dt = self._parse_date(start_date)
-        end_dt = self._parse_date(end_date) if end_date else start_dt
+        end_dt = self._parse_date(end_date) if end_date else _ONGOING_END
 
         text_repr = PlansTextReprBuilder.build_fitness_plan(plan_data)
 
