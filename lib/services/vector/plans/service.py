@@ -14,13 +14,6 @@ from ..base import BaseVectorService
 from ..utils.exceptions import VectorServiceError
 from .text_builder import PlansTextReprBuilder
 
-# end_time for an ACTIVE plan with no end_date: far future so the [start_time,
-# end_time] overlap filter returns an ongoing plan for any current-day query.
-# Retrieval filters on dates only, never on plan_status, so status must be
-# expressed through the span — a non-ACTIVE plan collapses to start (see
-# _plan_end_dt) and drops out of current-day queries.
-_ONGOING_END = datetime(9999, 12, 31)
-
 
 def _serialize_plan_content(content: Any) -> Dict[str, Any] | None:
     """Qdrant payload must be JSON-serializable. Handle Pydantic + ORM + dict."""
@@ -122,7 +115,8 @@ class PlansVectorService(BaseVectorService):
         end_date = plan_data.get("end_date")
 
         start_dt = self._parse_date(start_date)
-        end_dt = self._plan_end_dt(start_dt, end_date, plan_data.get("status", "ACTIVE"))
+        # Dates are display/ordering only — plan_status drives retrieval.
+        end_dt = self._parse_date(end_date) if end_date else start_dt
 
         text_repr = PlansTextReprBuilder.build_diet_plan(plan_data)
 
@@ -161,7 +155,8 @@ class PlansVectorService(BaseVectorService):
         end_date = plan_data.get("end_date")
 
         start_dt = self._parse_date(start_date)
-        end_dt = self._plan_end_dt(start_dt, end_date, plan_data.get("status", "ACTIVE"))
+        # Dates are display/ordering only — plan_status drives retrieval.
+        end_dt = self._parse_date(end_date) if end_date else start_dt
 
         text_repr = PlansTextReprBuilder.build_fitness_plan(plan_data)
 
@@ -184,20 +179,6 @@ class PlansVectorService(BaseVectorService):
 
         point_id = self._generate_simple_point_id(plan_id)
         return {"id": point_id, "text": text_repr, "payload": payload}
-
-    @classmethod
-    def _plan_end_dt(cls, start_dt: datetime, end_date, status: str) -> datetime:
-        """Vector end_time for a plan, encoding both expiry and status.
-
-        A non-ACTIVE plan collapses to its start so it can't match a current-day
-        query (retrieval never filters on status). An ACTIVE plan runs to its
-        end_date, or far into the future when open-ended.
-        """
-        if status != "ACTIVE":
-            return start_dt
-        if end_date:
-            return cls._parse_date(end_date)
-        return _ONGOING_END
 
     @staticmethod
     def _parse_date(d) -> datetime:
