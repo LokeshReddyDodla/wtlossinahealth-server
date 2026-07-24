@@ -815,7 +815,7 @@ class TestAdherenceQuality:
 
         captured = {}
 
-        async def fake_eval(gateway, *, intents, day_data_text, day_label, patient_context=""):
+        async def fake_eval(gateway, *, intents, day_data_text, day_label, patient_context="", trace_id=None):
             captured["intents"] = intents
             return []
 

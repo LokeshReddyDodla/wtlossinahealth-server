@@ -184,6 +184,7 @@ class HealthQueryAgent(BaseAgent):
                     intent_data_types=[dt.value for dt in expand_to_domain_types(intent.data_types)],
                     patient_names=ctx.patient_names,
                     user_role=input.context.user_role,
+                    trace_id=trace_id,
                 )
 
             elapsed = int((time.perf_counter() - pipeline_start) * 1000)
@@ -277,6 +278,20 @@ class HealthQueryAgent(BaseAgent):
         never sets clinical severity — the caller derives that from the trigger.
         """
         self._ensure_prompts()
+        trace_id = trace_id or f"trc_{uuid4().hex[:16]}"
+
+        # Cron/event path carries no request context — open the trace here.
+        await _maybe_await(self.gateway.set_langfuse_context(
+            session_id=f"proactive:{patient_id}",
+            user_id=patient_id,
+        ))
+        await _maybe_await(self.gateway.langfuse_trace_input(
+            trace_id=trace_id,
+            name="proactive",
+            input_text=event_summary,
+            metadata={"mode": "proactive", "tier": getattr(tier, "value", str(tier))},
+        ))
+
         agent_input = AgentInput(
             message=event_summary,
             context=AgentContext(patient_id=patient_id, refs=refs or [],
@@ -293,8 +308,15 @@ class HealthQueryAgent(BaseAgent):
             patient_ids=[patient_id],
             tier=tier,
             user_role="patient",
+            trace_id=trace_id,
         )
-        return await self._structure_proactive(result.response, trace_id=trace_id)
+        narration = await self._structure_proactive(result.response, trace_id=trace_id)
+        await _maybe_await(self.gateway.langfuse_trace_output(
+            trace_id=trace_id,
+            output_text=getattr(narration, "body", "") or "",
+            metadata={"notify": getattr(narration, "notify", None)},
+        ))
+        return narration
 
     async def _structure_proactive(
         self, analysis: str, *, trace_id: str | None = None,
@@ -419,6 +441,7 @@ class HealthQueryAgent(BaseAgent):
                     intent_data_types=[dt.value for dt in expand_to_domain_types(intent.data_types)],
                     patient_names=ctx.patient_names,
                     user_role=input.context.user_role,
+                    trace_id=trace_id,
                     delta_sink=delta_sink,
                 )
 
@@ -558,7 +581,7 @@ class HealthQueryAgent(BaseAgent):
         # Device local time wins; fall back to the server-computed value from
         # the patient's stored timezone so the agent is never time-blind.
         ctx.local_time = (input.context.metadata or {}).get("local_time") or ctx.local_time
-        intent, meta = await self._extract_intent(input, ctx)
+        intent, meta = await self._extract_intent(input, ctx, trace_id=trace_id)
         # Force chips into the patient's language before any path dumps them —
         # the extractor is told to write suggestions in-language but doesn't
         # reliably obey for short labels. One place, so run(), run_stream(), and
@@ -585,7 +608,7 @@ class HealthQueryAgent(BaseAgent):
             refs=input.context.refs,
         )
 
-    async def _extract_intent(self, input: AgentInput, ctx: Any) -> tuple[QueryIntent, Any]:
+    async def _extract_intent(self, input: AgentInput, ctx: Any, *, trace_id: str | None = None) -> tuple[QueryIntent, Any]:
         self._ensure_prompts()
         system_prompt = self._get_system_prompt(input.context.user_role)
         intent_prompt = self._render("hq_intent_extraction")
@@ -657,6 +680,7 @@ class HealthQueryAgent(BaseAgent):
 
         intent, meta = await self.gateway.extract(
             messages=messages, response_model=QueryIntent, task=ModelTask.INTENT_EXTRACTION,
+            trace_id=trace_id,
         )
 
         return intent, meta

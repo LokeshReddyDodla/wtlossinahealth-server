@@ -212,6 +212,7 @@ class ReasoningEngine:
         intent_data_types: list[str] | None = None,
         patient_names: dict[str, str] | None = None,
         user_role: str = "patient",
+        trace_id: str | None = None,
     ) -> ReasoningResult:
         """Run the full reasoning loop and return the result."""
         async for item in self._reason_core(
@@ -225,6 +226,7 @@ class ReasoningEngine:
             intent_data_types=intent_data_types,
             patient_names=patient_names,
             user_role=user_role,
+            trace_id=trace_id,
             emit_events=False,
         ):
             if isinstance(item, ReasoningResult):
@@ -245,6 +247,7 @@ class ReasoningEngine:
         intent_data_types: list[str] | None = None,
         patient_names: dict[str, str] | None = None,
         user_role: str = "patient",
+        trace_id: str | None = None,
         delta_sink: list[str] | None = None,
     ) -> AsyncIterator[str | SSEDonePayload]:
         """Run the reasoning loop, yielding SSE events as the doctor thinks.
@@ -263,6 +266,7 @@ class ReasoningEngine:
             intent_data_types=intent_data_types,
             patient_names=patient_names,
             user_role=user_role,
+            trace_id=trace_id,
             emit_events=True,
             delta_sink=delta_sink,
         ):
@@ -284,6 +288,7 @@ class ReasoningEngine:
         intent_data_types: list[str] | None = None,
         patient_names: dict[str, str] | None = None,
         user_role: str = "patient",
+        trace_id: str | None = None,
         emit_events: bool = False,
         delta_sink: list[str] | None = None,
     ) -> AsyncIterator[str | ReasoningResult]:
@@ -331,6 +336,7 @@ class ReasoningEngine:
                     seen_calls=seen_calls,
                     patient_names=patient_names,
                     is_voice=is_voice,
+                    trace_id=trace_id,
                 )
             total_cost += plan["cost"]
             total_tools += plan["tools_called"]
@@ -363,6 +369,7 @@ class ReasoningEngine:
                     task=ModelTask.CLASSIFICATION,
                     model_id=tier_cfg.thinker_model,
                     timeout=settings.REASONING_TIMEOUT_SECONDS,
+                    trace_id=trace_id,
                 )
             total_cost += safe_cost(response)
 
@@ -496,6 +503,7 @@ class ReasoningEngine:
                     total_tools=total_tools,
                     patient_names=patient_names,
                     evidence_ledger=evidence_ledger,
+                    trace_id=trace_id,
                 )
             total_cost = reflection["total_cost"]
             total_tools = reflection["total_tools"]
@@ -537,6 +545,7 @@ class ReasoningEngine:
                     task=ModelTask.RESPONSE_GENERATION,
                     model_id=tier_cfg.responder_model,
                     timeout=settings.RESPONDER_TIMEOUT_SECONDS,
+                    trace_id=trace_id,
                 ):
                     if chunk.delta:
                         full_response_parts.append(chunk.delta)
@@ -574,6 +583,7 @@ class ReasoningEngine:
                     model_id=tier_cfg.responder_model,
                     user_role=user_role,
                     evidence_ledger=evidence_ledger,
+                    trace_id=trace_id,
                 )
             total_cost += safe_cost(final_response)
 
@@ -656,6 +666,7 @@ class ReasoningEngine:
         seen_calls: set[str],
         patient_names: dict[str, str] | None = None,
         is_voice: bool = False,
+        trace_id: str | None = None,
     ) -> dict[str, Any]:
         """Generate an investigation plan and add it as context for the thinker.
 
@@ -678,6 +689,7 @@ class ReasoningEngine:
                 tool_schemas=tool_schemas,
                 planning_prompt=planning_prompt,
                 model_id=tier_cfg.thinker_model,
+                trace_id=trace_id,
             )
 
             # Add plan as context — the thinker reads this and executes with proper tool calls
@@ -722,6 +734,7 @@ class ReasoningEngine:
         total_tools: int,
         patient_names: dict[str, str] | None = None,
         evidence_ledger: list | None = None,
+        trace_id: str | None = None,
     ) -> dict[str, Any]:
         """Run reflection and optional gap-filling follow-up.
 
@@ -738,6 +751,7 @@ class ReasoningEngine:
                 user_question=user_message,
                 reflection_prompt=reflection_prompt,
                 model_id=tier_cfg.thinker_model,
+                trace_id=trace_id,
             )
 
             # If gaps found, do targeted follow-up (budget permitting)
@@ -770,6 +784,7 @@ class ReasoningEngine:
                     task=ModelTask.CLASSIFICATION,
                     model_id=tier_cfg.thinker_model,
                     timeout=settings.REASONING_TIMEOUT_SECONDS,
+                    trace_id=trace_id,
                 )
                 total_cost += safe_cost(response)
 
@@ -799,6 +814,7 @@ class ReasoningEngine:
                         user_question=user_message,
                         reflection_prompt=reflection_prompt,
                         model_id=tier_cfg.thinker_model,
+                        trace_id=trace_id,
                     )
 
             # Add safety concerns to context if found
@@ -913,6 +929,7 @@ class ReasoningEngine:
         model_id: str,
         user_role: str = "patient",
         evidence_ledger: list | None = None,
+        trace_id: str | None = None,
     ) -> Any:
         """Generate the final polished response from the responder model."""
         responder_messages = self._build_responder_messages(
@@ -934,6 +951,7 @@ class ReasoningEngine:
             # explicit model_id also disables fallback, so a timeout here
             # would fail the whole query.
             timeout=settings.RESPONDER_TIMEOUT_SECONDS,
+            trace_id=trace_id,
         )
         # Grounding gate: a health reply must not fabricate patient data, confirm
         # a false patient claim, or disavow real data. Verify against the same
@@ -947,12 +965,14 @@ class ReasoningEngine:
         ):
             resp = await self._verify_and_correct(
                 resp, responder_messages, evidence_ledger, user_role, model_id,
+                trace_id=trace_id,
             )
         return resp
 
     async def _verify_and_correct(
         self, resp: Any, responder_messages: list[dict[str, Any]],
         evidence_ledger: list, user_role: str, model_id: str,
+        *, trace_id: str | None = None,
     ) -> Any:
         """Verify the draft against evidence; regenerate once with a targeted
         correction if it fabricates / confirms-a-false-claim / disavows real
@@ -993,6 +1013,7 @@ class ReasoningEngine:
                 )
             verdict = await verify_grounding(
                 self._gateway, response=resp.content, evidence_text=evidence_text,
+                trace_id=trace_id,
             )
             if verdict.grounded:
                 return resp
@@ -1010,6 +1031,7 @@ class ReasoningEngine:
                 task=ModelTask.RESPONSE_GENERATION,
                 model_id=model_id,
                 timeout=settings.RESPONDER_TIMEOUT_SECONDS,
+                trace_id=trace_id,
             )
             return corrected if (corrected.content or "").strip() else resp
         except Exception as exc:

@@ -81,6 +81,7 @@ class TranslationService:
 
     async def translate_cached(
         self, text: str, target_lang: str, *, source_lang: str = "en", terse: bool = False,
+        trace_id: str | None = None,
     ) -> str:
         """``translate`` with an in-memory cache — ONLY for fixed strings
         (labels, canned acks), never for patient-specific content.
@@ -89,7 +90,7 @@ class TranslationService:
         key = (f"t:{target_lang}" if terse else target_lang, text)
         if key in self._cache:
             return self._cache[key]
-        result = await self.translate(text, target_lang, source_lang=source_lang, terse=terse)
+        result = await self.translate(text, target_lang, source_lang=source_lang, terse=terse, trace_id=trace_id)
         # Don't cache fallbacks — a transient provider failure shouldn't pin
         # the English text for the process lifetime. Exception: terse chips
         # for Latin-script targets, where an identical result is a legitimate

@@ -53,9 +53,15 @@ class PrescriptionExtractionService:
     async def extract(
         self,
         image_urls: list[str],
+        *,
+        patient_id: str | None = None,
     ) -> ExtractedPrescription:
         """Extract structured prescription data from one or more images."""
         trace_id = str(uuid4())
+        if patient_id:
+            self.gateway.set_langfuse_context(
+                session_id=f"prescription:{patient_id}", user_id=patient_id,
+            )
         self.gateway.langfuse_trace_input(
             trace_id=trace_id,
             name="prescription-extraction",

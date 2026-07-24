@@ -13,6 +13,8 @@ from __future__ import annotations
 import io
 import logging
 import wave
+
+import litellm
 from abc import ABC, abstractmethod
 from typing import Literal
 
@@ -60,10 +62,6 @@ class OpenAISpeechToText(BaseSpeechToText):
     """Async OpenAI Whisper STT client."""
 
     def __init__(self, settings: VoiceSettings) -> None:
-        from openai import AsyncOpenAI
-        # Library default is 600s — a hung provider call must not stall a live
-        # voice turn for 10 minutes.
-        self._client = AsyncOpenAI(timeout=settings.PROVIDER_TIMEOUT_SECONDS)
         self._settings = settings
 
     async def transcribe_file(
@@ -98,7 +96,10 @@ class OpenAISpeechToText(BaseSpeechToText):
             lang,
         )
 
-        response = await self._client.audio.transcriptions.create(**kwargs)
+        # Explicit timeout: a hung provider call must not stall a live voice turn.
+        response = await litellm.atranscription(
+            **kwargs, timeout=self._settings.PROVIDER_TIMEOUT_SECONDS,
+        )
 
         result = TranscriptionResult(
             text=response.text,
@@ -154,7 +155,10 @@ class OpenAISpeechToText(BaseSpeechToText):
             len(audio_bytes), audio_format, filename, len(upload_bytes), lang or "auto",
         )
 
-        response = await self._client.audio.transcriptions.create(**kwargs)
+        # Explicit timeout: a hung provider call must not stall a live voice turn.
+        response = await litellm.atranscription(
+            **kwargs, timeout=self._settings.PROVIDER_TIMEOUT_SECONDS,
+        )
 
         result = TranscriptionResult(
             text=response.text,

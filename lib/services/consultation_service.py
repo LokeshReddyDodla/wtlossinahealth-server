@@ -96,7 +96,7 @@ class ConsultationService:
         transcript = stt_result.text or ""
 
         if transcript.strip():
-            extracted = await self.extraction_service.extract(transcript)
+            extracted = await self.extraction_service.extract(transcript, patient_id=patient_id)
         else:
             extracted = ExtractedConsultation()
 

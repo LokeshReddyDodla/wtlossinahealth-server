@@ -127,9 +127,13 @@ class ConsultationExtractionService:
     def __init__(self, gateway: ModelGateway):
         self.gateway = gateway
 
-    async def extract(self, transcript: str) -> ExtractedConsultation:
+    async def extract(self, transcript: str, *, patient_id: str | None = None) -> ExtractedConsultation:
         """Extract structured consultation data from a transcript."""
         trace_id = str(uuid4())
+        if patient_id:
+            self.gateway.set_langfuse_context(
+                session_id=f"consultation:{patient_id}", user_id=patient_id,
+            )
         self.gateway.langfuse_trace_input(
             trace_id=trace_id,
             name="consultation-extraction",

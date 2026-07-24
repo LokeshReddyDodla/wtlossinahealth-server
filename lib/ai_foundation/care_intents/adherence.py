@@ -49,6 +49,7 @@ async def evaluate_adherence(
     day_data_text: str,
     day_label: str,
     patient_context: str = "",
+    trace_id: str | None = None,
 ) -> list[dict]:
     """Judge each intent against one completed day's data.
 
@@ -81,6 +82,7 @@ async def evaluate_adherence(
         ],
         response_model=AdherenceVerdicts,
         task=ModelTask.CLASSIFICATION,
+        trace_id=trace_id,
     )
 
     by_index = {v.intent_index: v for v in result.verdicts}

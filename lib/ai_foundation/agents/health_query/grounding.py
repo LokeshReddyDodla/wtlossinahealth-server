@@ -80,6 +80,7 @@ Be literal and conservative: only list a claim you are confident is false-about-
 
 async def verify_grounding(
     gateway: ModelGateway, *, response: str, evidence_text: str,
+    trace_id: str | None = None,
 ) -> GroundingVerdict:
     """Check ``response`` against ``evidence_text``; empty lists = grounded."""
     if not response.strip() or not evidence_text.strip():
@@ -94,6 +95,7 @@ async def verify_grounding(
         ],
         response_model=GroundingVerdict,
         task=ModelTask.QUALITY_JUDGE,
+        trace_id=trace_id,
     )
     return verdict
 
