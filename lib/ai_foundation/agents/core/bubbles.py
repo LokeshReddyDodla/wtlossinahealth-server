@@ -44,25 +44,6 @@ _MARKERS.update({f"[[AWAIT:{e}]]": "" for e in AWAIT_ENTITY_TYPES})
 
 _MAX_BUBBLES = 4
 
-# Below this length an answer stays a single bubble even across paragraph
-# breaks, so short factual replies and closers never fragment.
-_AUTO_SPLIT_MIN_CHARS = 240
-
-
-def _auto_split(text: str) -> list[str]:
-    """Bubble boundaries when the model emitted no ``[[BUBBLE]]`` markers.
-
-    Reasoning models routinely drop the marker, so a genuinely multi-part
-    answer would otherwise render as one wall. Paragraph breaks are the
-    structure the model produces reliably — treat them as the boundaries,
-    but only once the answer is substantial, so a one-liner never splits.
-    """
-    stripped = text.strip()
-    if len(stripped) < _AUTO_SPLIT_MIN_CHARS:
-        return [stripped]
-    paras = [p.strip() for p in re.split(r"\n\s*\n", stripped) if p.strip()]
-    return paras or [stripped]
-
 
 def extract_await(text: str) -> tuple[str, str | None]:
     """Strip AWAIT markers; return (clean_text, awaited_entity_type|None).
@@ -88,10 +69,8 @@ def split_bubbles(text: str) -> list[str]:
     """
     if not text:
         return []
-    if BUBBLE_DELIMITER in text:
-        parts = [p.strip() for p in text.split(BUBBLE_DELIMITER) if p.strip()]
-    else:
-        parts = _auto_split(text)
+    parts = [p.strip() for p in text.split(BUBBLE_DELIMITER)]
+    parts = [p for p in parts if p]
 
     merged: list[str] = []
     for part in parts:

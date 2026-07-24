@@ -34,21 +34,11 @@ class TestSplit:
     def test_empty_text(self):
         assert split_bubbles("") == []
 
-    def test_long_multiparagraph_autosplits_without_sentinel(self):
-        # Reasoning models routinely drop [[BUBBLE]]; a long multi-part answer
-        # must still split on paragraph seams instead of rendering as one wall.
-        para = "This section covers one health domain in enough detail to be worth its own message. "
-        parts = split_bubbles(f"{para}\n\n{para}\n\n{para}")
-        assert 2 <= len(parts) <= 4
-
-    def test_short_multiparagraph_stays_single(self):
-        # Below the length floor, a blank line does not fragment a brief reply.
+    def test_no_marker_stays_single_bubble(self):
+        # Without [[BUBBLE]] the whole answer is one coherent message — we do
+        # not fake breaks from markdown blank lines (junk/orphaned bubbles).
         text = "Yesterday's average was 148 mg/dL.\n\nWant a closer look?"
         assert split_bubbles(text) == [text]
-
-    def test_sentinel_takes_precedence_over_autosplit(self):
-        # Explicit markers win: honor the model's chosen breaks, don't re-derive.
-        assert split_bubbles(f"One.{D}Two.") == ["One.", "Two."]
 
 
 class TestStrip:
