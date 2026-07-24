@@ -13,6 +13,8 @@ from __future__ import annotations
 import io
 import logging
 import wave
+
+import litellm
 from abc import ABC, abstractmethod
 from typing import Literal
 
@@ -98,7 +100,8 @@ class OpenAISpeechToText(BaseSpeechToText):
             lang,
         )
 
-        response = await self._client.audio.transcriptions.create(**kwargs)
+        # Via litellm so the global Langfuse callback logs Whisper cost/tokens.
+        response = await litellm.atranscription(**kwargs)
 
         result = TranscriptionResult(
             text=response.text,
@@ -154,7 +157,8 @@ class OpenAISpeechToText(BaseSpeechToText):
             len(audio_bytes), audio_format, filename, len(upload_bytes), lang or "auto",
         )
 
-        response = await self._client.audio.transcriptions.create(**kwargs)
+        # Via litellm so the global Langfuse callback logs Whisper cost/tokens.
+        response = await litellm.atranscription(**kwargs)
 
         result = TranscriptionResult(
             text=response.text,
