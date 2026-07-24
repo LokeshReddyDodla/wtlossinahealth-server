@@ -33,6 +33,7 @@ async def detect_intent_conflicts(
     *,
     new_text: str,
     existing: list[dict],
+    trace_id: str | None = None,
 ) -> list[str]:
     """Warnings like 'Dr. Mehta's "no food after 9 PM" conflicts with a bedtime snack.'"""
     if not existing:
@@ -48,6 +49,7 @@ async def detect_intent_conflicts(
         ],
         response_model=ConflictReport,
         task=ModelTask.CLASSIFICATION,
+        trace_id=trace_id,
     )
     return report.conflicts
 
@@ -75,6 +77,7 @@ async def propose_intents(
     *,
     recent_insights: list[dict],
     existing: list[dict],
+    trace_id: str | None = None,
 ) -> list[IntentProposal]:
     """0-2 grounded proposals from recent monitor insights. Never stored —
     the provider approves via the normal create flow (dry_run → create)."""
@@ -97,5 +100,6 @@ async def propose_intents(
         ],
         response_model=IntentProposals,
         task=ModelTask.CLASSIFICATION,
+        trace_id=trace_id,
     )
     return result.proposals[:2]

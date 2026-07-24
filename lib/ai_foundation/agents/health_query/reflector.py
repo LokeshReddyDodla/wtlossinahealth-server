@@ -82,6 +82,7 @@ class ReflectionEngine:
         user_question: str,
         reflection_prompt: str,
         model_id: str,
+        trace_id: str | None = None,
     ) -> ReflectionResult:
         """Critique the investigation and identify gaps.
 
@@ -126,6 +127,7 @@ class ReflectionEngine:
             task=ModelTask.CLASSIFICATION,
             model_id=model_id,
             timeout=settings.REFLECTION_TIMEOUT_SECONDS,
+            trace_id=trace_id,
         )
 
         logger.debug(

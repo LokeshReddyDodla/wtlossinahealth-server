@@ -13,6 +13,8 @@ feeds the provider view — not narration).
 
 from __future__ import annotations
 
+from uuid import uuid4
+
 import asyncio
 import inspect
 import logging
@@ -698,12 +700,23 @@ class ProactiveMonitorAgent(BaseAgent):
             ]
             if not intents:
                 return
+            trace_id = f"trc_{uuid4().hex[:16]}"
+            self.gateway.set_langfuse_context(
+                session_id=f"adherence:{patient_id}", user_id=patient_id,
+            )
+            self.gateway.langfuse_trace_input(
+                trace_id=trace_id, name="care_intent_adherence", input_text=scan_label,
+            )
             verdicts = await evaluate_adherence(
                 self.gateway,
                 intents=intents,
                 day_data_text=data_text,
                 day_label=scan_label,
                 patient_context=facts_text,
+                trace_id=trace_id,
+            )
+            self.gateway.langfuse_trace_output(
+                trace_id=trace_id, output_text=str(verdicts),
             )
             await self._care_intents.record_adherence(
                 verdicts,

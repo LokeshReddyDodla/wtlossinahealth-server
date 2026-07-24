@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 from typing import Optional
+from uuid import uuid4
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -161,7 +162,14 @@ class WorkoutVoiceService:
         transcript: str,
         session: WorkoutVoiceSessionState,
     ) -> WorkoutVoiceResponse:
-        extraction, _meta = await self._extract(transcript, session)
+        trace_id = f"trc_{uuid4().hex[:16]}"
+        self._gateway.langfuse_trace_input(
+            trace_id=trace_id, name="workout_voice", input_text=transcript,
+        )
+        extraction, _meta = await self._extract(transcript, session, trace_id=trace_id)
+        self._gateway.langfuse_trace_output(
+            trace_id=trace_id, output_text=str(getattr(extraction, "items", "")),
+        )
 
         logger.info(
             "[WorkoutVoice] LLM extraction | items=%d | interpretation=%r",
@@ -224,6 +232,8 @@ class WorkoutVoiceService:
         self,
         transcript: str,
         session: WorkoutVoiceSessionState,
+        *,
+        trace_id: str | None = None,
     ) -> tuple[VoiceWorkoutExtraction, object]:
         messages = [
             {"role": "system", "content": _SYSTEM_PROMPT},
@@ -234,6 +244,7 @@ class WorkoutVoiceService:
             response_model=VoiceWorkoutExtraction,
             task=ModelTask.STRUCTURED_ANALYSIS,
             temperature=0.1,
+            trace_id=trace_id,
         )
 
     # ── Exercise matching ────────────────────────────────────────────────

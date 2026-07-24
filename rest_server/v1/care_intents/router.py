@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 from typing import Annotated
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -142,7 +142,17 @@ async def create_care_intent(
     # Safety verdict comes from the server-side structurer ONLY — accepting a
     # client-supplied structure would let a forged safety_flag store a
     # clinical order.
-    structured = await structure_care_intent(gateway, payload.text)
+    trace_id = f"trc_{uuid4().hex[:16]}"
+    gateway.set_langfuse_context(
+        session_id=f"care_intent:{verified_pid}", user_id=str(verified_pid),
+    )
+    gateway.langfuse_trace_input(
+        trace_id=trace_id, name="care_intent_structure", input_text=payload.text,
+    )
+    structured = await structure_care_intent(gateway, payload.text, trace_id=trace_id)
+    gateway.langfuse_trace_output(
+        trace_id=trace_id, output_text=structured.model_dump_json(),
+    )
     _raise_if_unsafe(structured)
 
     # Advisory only — conflicts warn the provider, never block or resolve.
@@ -150,7 +160,7 @@ async def create_care_intent(
     try:
         existing = await service.get_active_context(str(verified_pid))
         conflicts = await detect_intent_conflicts(
-            gateway, new_text=payload.text, existing=existing,
+            gateway, new_text=payload.text, existing=existing, trace_id=trace_id,
         )
     except Exception:
         logger.warning("Conflict check failed — creating without warnings", exc_info=True)
@@ -206,8 +216,18 @@ async def propose_care_intents(
     )
     insights = await tracker.get_history(str(verified_pid), limit=15)
     existing = await service.get_active_context(str(verified_pid))
+    trace_id = f"trc_{uuid4().hex[:16]}"
+    gateway.set_langfuse_context(
+        session_id=f"care_intent:{verified_pid}", user_id=str(verified_pid),
+    )
+    gateway.langfuse_trace_input(
+        trace_id=trace_id, name="care_intent_propose", input_text=str(payload.patient_id),
+    )
     proposals = await propose_intents(
-        gateway, recent_insights=insights, existing=existing,
+        gateway, recent_insights=insights, existing=existing, trace_id=trace_id,
+    )
+    gateway.langfuse_trace_output(
+        trace_id=trace_id, output_text=str([p.text for p in proposals]),
     )
     return SuccessResponse(
         message="OK",
