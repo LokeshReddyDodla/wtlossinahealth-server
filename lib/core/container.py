@@ -16,9 +16,6 @@ from lib.managers.arq_task_manager import ArqTaskManager, get_arq_task_manager
 from lib.services.ai_conversation_service.ai_conversation_service import (
     AiConversationService,
 )
-from lib.services.ai_conversation_service.ai_conversation_service_v2 import (
-    AiConversationServiceV2,
-)
 from lib.services.ai_conversation_service_v1.ai_conversation_service_v1 import (
     AIConversationServiceV1,
 )
@@ -1268,16 +1265,6 @@ container.register(
 
 # 🔹 Ai Conversation Service
 container.register(AiConversationService, AiConversationService)
-
-# 🔹 Ai Conversation Service V2
-container.register(
-    AiConversationServiceV2,
-    lambda: AiConversationServiceV2(
-        qdrant_search_engine=cast(
-            QdrantSearchEngine, container.resolve(QdrantSearchEngine)
-        )
-    ),
-)
 
 
 # 🔹 Ai Patient Token Usage Service

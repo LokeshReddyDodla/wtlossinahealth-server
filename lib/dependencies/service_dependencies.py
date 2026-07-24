@@ -6,9 +6,6 @@ from lib.managers.arq_task_manager import ArqTaskManager, get_arq_task_manager
 from lib.services.ai_conversation_service.ai_conversation_service import (
     AiConversationService,
 )
-from lib.services.ai_conversation_service.ai_conversation_service_v2 import (
-    AiConversationServiceV2,
-)
 from lib.services.ai_conversation_service_v1.ai_conversation_service_v1 import (
     AIConversationServiceV1,
 )
@@ -201,10 +198,6 @@ def get_direct_chat_resolver() -> DirectChatResolver:
 
 def get_ai_conversation_service() -> AiConversationService:
     return cast(AiConversationService, container.resolve(AiConversationService))
-
-
-def get_ai_conversation_service_v2() -> AiConversationServiceV2:
-    return cast(AiConversationServiceV2, container.resolve(AiConversationServiceV2))
 
 
 def get_patient_profile_service() -> PatientProfileService:
