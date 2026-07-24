@@ -70,6 +70,13 @@ class DashboardHelpAgent(BaseAgent):
     async def run(self, input: AgentInput) -> AgentOutput:
         start = time.perf_counter()
         trace_id = input.context.trace_id or f"trc_{uuid4().hex[:16]}"
+        self.gateway.set_langfuse_context(
+            session_id=input.context.thread_id,
+            user_id=input.context.user_id,
+        )
+        self.gateway.langfuse_trace_input(
+            trace_id=trace_id, name="dashboard_help", input_text=input.message,
+        )
 
         history = self._coerce_history(input.metadata.get("history"))
         messages = [{"role": "system", "content": self._system_message}, *history,
@@ -98,6 +105,7 @@ class DashboardHelpAgent(BaseAgent):
         v_url = video_url(video_id) if video_id else None
 
         latency_ms = int((time.perf_counter() - start) * 1000)
+        self.gateway.langfuse_trace_output(trace_id=trace_id, output_text=reply)
         return AgentOutput(
             message=reply,
             trace_id=trace_id,
