@@ -278,6 +278,19 @@ class QueryIntent(BaseModel):
     memory_value: str | None = Field(
         None, description="For add: the memory value (e.g. 'vegetarian').",
     )
+    # Entity types must stay in sync with bubbles.AWAIT_ENTITY_TYPES — the
+    # reply-side [[AWAIT]] marker and this query-side signal register the same
+    # pending request, and only entities with a proactive-event producer can
+    # be honored.
+    awaits_log: Literal["meal", "smbg", "symptom"] | None = Field(
+        None,
+        description=(
+            "Set when the user names a health entry they intend to log for "
+            "analysis but haven't yet ('just ate lunch but haven't logged it "
+            "— can you check it?'). That entity's eventual log continues this "
+            "conversation. Null for normal queries and past-tense lookups."
+        ),
+    )
 
 
 

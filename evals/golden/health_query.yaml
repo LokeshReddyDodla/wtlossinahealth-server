@@ -307,7 +307,6 @@ cases:
 
   - id: comp_bubbles_multi_domain
     category: companion
-    skip: "reasoning responder drops [[BUBBLE]] markers — re-enable when emission is enforced code-side"
     query: "Give me a full overview — glucose, meals, sleep and activity this week"
     checks:
       bubbles_between: [2, 4]
@@ -321,7 +320,6 @@ cases:
 
   - id: comp_bubbles_weekly_plan
     category: companion
-    skip: "reasoning responder drops [[BUBBLE]] markers — re-enable when emission is enforced code-side"
     query: "What can I do to improve my health this week?"
     checks:
       bubbles_between: [2, 4]
@@ -336,7 +334,6 @@ cases:
 
   - id: comp_await_marker_on_data_ask
     category: companion
-    skip: "reasoning responder drops [[AWAIT]] markers — re-enable when emission is enforced code-side"
     query: "I just finished lunch but haven't logged it — can you check how it was for me?"
     checks:
       expect_pending: meal

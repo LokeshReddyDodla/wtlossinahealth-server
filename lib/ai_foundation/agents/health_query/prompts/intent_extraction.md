@@ -156,6 +156,26 @@ Detect if the user is asking to manage their memories. Set `memory_action` accor
 
 When memory_action is set, set is_ready=true (memory commands don't need data types).
 
+## Pending Log Signal
+
+Set `awaits_log` when the user names a health entry they intend to log for
+analysis but haven't done yet — the entity's eventual log should continue this
+conversation:
+
+- "I just ate lunch but haven't logged it, can you check it?" → `meal`
+- "let me take a reading and tell me" → `smbg`
+- "I'll log how I'm feeling in a bit" → `symptom`
+
+Only for a not-yet-logged entry the user wants analyzed. Past-tense lookups
+("how was my lunch yesterday?"), general encouragement, and normal queries →
+`awaits_log: null`. Entity must be one of: meal, smbg, symptom.
+
+When `awaits_log` is set, `is_ready = false` (there's nothing to fetch yet)
+and the `clarification_msg` must warmly invite them to **log** it and promise
+to analyze it once it arrives — e.g. "I can't see that lunch yet — log it
+(a photo works) and I'll break down how it hit your glucose." Use the word
+"log" so the next step is unmistakable; never a dead end.
+
 Use snake_case keys: dietary_preference, health_goal, weight, food_allergy, medication, diabetes_type, activity_preference, etc.
 
 ## Fact Extraction (Background)
