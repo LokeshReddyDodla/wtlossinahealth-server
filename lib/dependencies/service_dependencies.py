@@ -436,6 +436,17 @@ def get_inbody_report_service():
     return cast(InbodyReportService, container.resolve(InbodyReportService))
 
 
+def get_inbody_day_summary_service():
+    from lib.services.inbody.day_summary_service import (
+        InbodyDaySummaryService,
+    )
+
+    return cast(
+        InbodyDaySummaryService,
+        container.resolve(InbodyDaySummaryService),
+    )
+
+
 def get_osteoflag_service() -> OsteoFlagService:
     return cast(OsteoFlagService, container.resolve(OsteoFlagService))
 

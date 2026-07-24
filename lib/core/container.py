@@ -432,6 +432,13 @@ container.register(
     scope=Scope.singleton,
 )
 container.register(
+    "inbody_day_summaries_collection",
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "inbody_day_summaries"
+    ),
+    scope=Scope.singleton,
+)
+container.register(
     "analytics_events_collection",
     factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
         "wtloss_analytics_events"
@@ -1250,6 +1257,7 @@ container.register(
 # 🔹 InBody — standalone patient-level report domain
 from lib.services.inbody.extraction_service import InbodyExtractionService
 from lib.services.inbody.service import InbodyReportService
+from lib.services.inbody.day_summary_service import InbodyDaySummaryService
 
 container.register(
     InbodyExtractionService,
@@ -1266,6 +1274,16 @@ container.register(
         extraction_service=cast(
             InbodyExtractionService,
             container.resolve(InbodyExtractionService),
+        ),
+    ),
+    scope=Scope.singleton,
+)
+
+container.register(
+    InbodyDaySummaryService,
+    lambda: InbodyDaySummaryService(
+        summaries_collection=container.resolve(
+            "inbody_day_summaries_collection"
         ),
     ),
     scope=Scope.singleton,
