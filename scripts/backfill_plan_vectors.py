@@ -39,14 +39,12 @@ async def main(dry_run: bool) -> None:
         print(f"--dry-run: {n_diet} diet + {n_fit} fitness plans; no reconciliation, no writes")
         return
 
-    # 1. Expire ended ACTIVE plans first (sets EXPIRED in Postgres + Qdrant), so
-    #    the re-vectorize below reads the reconciled status, not a stale one.
+    # Expire first so the re-vectorize below reads reconciled status, not stale.
     diet_expired = await diet_service.expire_ended_plans()
     fitness_expired = await fitness_service.expire_ended_plans()
     print(f"Expired {diet_expired} diet + {fitness_expired} fitness plans")
 
-    # 2. Re-vectorize every plan (fresh read) so all points carry correct
-    #    plan_status + dates. Vectorize inside the session so objects stay bound.
+    # Fresh read + vectorize inside the session so objects stay session-bound.
     async with store.get_session() as session:
         diet_plans = (await session.execute(select(PatientDietPlan))).scalars().all()
         fitness_plans = (await session.execute(select(PatientFitnessPlan))).scalars().all()

@@ -318,7 +318,7 @@ class QdrantRetriever:
             return None
 
         data_types = _expand_data_types(request.data_types) if request.data_types else []
-        all_types = not data_types  # empty request = all-types sweep
+        all_types = not data_types
 
         plan_types = [dt for dt in data_types if dt in _PLAN_TYPES]
         non_filterable = [dt for dt in data_types if dt in _NON_FILTERABLE_TYPES]
