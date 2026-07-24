@@ -280,8 +280,7 @@ class HealthQueryAgent(BaseAgent):
         self._ensure_prompts()
         trace_id = trace_id or f"trc_{uuid4().hex[:16]}"
 
-        # Proactive runs on cron/event workers with no request context, so it
-        # must open its own Langfuse trace or every generation logs unattributed.
+        # Cron/event path carries no request context — open the trace here.
         await _maybe_await(self.gateway.set_langfuse_context(
             session_id=f"proactive:{patient_id}",
             user_id=patient_id,

@@ -96,7 +96,6 @@ class OpenAISpeechToText(BaseSpeechToText):
             lang,
         )
 
-        # Via litellm so the global Langfuse callback logs Whisper cost/tokens.
         # Explicit timeout: a hung provider call must not stall a live voice turn.
         response = await litellm.atranscription(
             **kwargs, timeout=self._settings.PROVIDER_TIMEOUT_SECONDS,
@@ -156,7 +155,6 @@ class OpenAISpeechToText(BaseSpeechToText):
             len(audio_bytes), audio_format, filename, len(upload_bytes), lang or "auto",
         )
 
-        # Via litellm so the global Langfuse callback logs Whisper cost/tokens.
         # Explicit timeout: a hung provider call must not stall a live voice turn.
         response = await litellm.atranscription(
             **kwargs, timeout=self._settings.PROVIDER_TIMEOUT_SECONDS,

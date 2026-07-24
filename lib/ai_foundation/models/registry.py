@@ -424,8 +424,7 @@ def build_default_registry(
         ),
     ])
 
-    # Task routes: primaries come from settings (see config.py); fallbacks
-    # are cross-provider so one provider outage never takes down a task.
+    # Fallbacks are cross-provider so one provider outage never takes down a task.
     registry.set_task_route(
         ModelTask.INTENT_EXTRACTION,
         primary=thinker,
@@ -441,15 +440,13 @@ def build_default_registry(
         primary=thinker,
         fallbacks=["claude-sonnet-4-6", "gemini-2.5-flash"],
     )
-    # Extractor (photo → items). gpt-5.2: ~half the vision error of the 4o
-    # generation at lower price; gpt-4o first fallback = pre-upgrade behavior.
+    # Meal photo → items: the whole chain must be vision-capable (sends the image).
     registry.set_task_route(
         ModelTask.MEAL_ANALYSIS,
         primary="gpt-5.2",
         fallbacks=["claude-sonnet-4-6", "gemini-2.5-pro"],
     )
-    # Text-only meal engines (scorer/alternatives/glucose fallback) send JSON,
-    # never the photo — vision pricing there was ~6x waste (efficiency audit).
+    # Text-only meal engines (scorer/alternatives/glucose) send JSON, not the photo.
     registry.set_task_route(
         ModelTask.MEAL_REASONING,
         primary="gpt-4.1-mini",

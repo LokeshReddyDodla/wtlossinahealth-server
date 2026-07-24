@@ -11,12 +11,6 @@ from tenacity import (
 import tiktoken
 
 
-# Embeddings route through litellm (not the raw provider SDKs) so the global
-# Langfuse success_callback set by ModelGateway logs cost/tokens for every
-# embedding call — the same observability the chat/analysis generations get.
-# litellm is a thin wrapper over the identical provider endpoints, so the
-# returned vectors match what the raw SDKs produced (OpenAI is byte-identical;
-# Gemini uses the same embed_content default).
 _GEMINI_API_KEY = str(config("GOOGLE_API_KEY", default="")) or None
 
 CHUNK_SIZE = 50  # number of texts per batch request
