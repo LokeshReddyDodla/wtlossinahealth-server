@@ -12,18 +12,6 @@ from lib.core.mongo_store import MongoStore
 from lib.core.postgres_store import PostgresStore
 from lib.core.qdrant_store import QdrantStore
 from lib.managers.arq_task_manager import ArqTaskManager, get_arq_task_manager
-from lib.services.ai_conversation_service.ai_conversation_service import (
-    AiConversationService,
-)
-from lib.services.ai_conversation_service_v1.ai_conversation_service_v1 import (
-    AIConversationServiceV1,
-)
-from lib.services.ai_conversation_service_v1.context_builder import (
-    AIConversationContextBuilder,
-)
-from lib.services.ai_conversation_service_v1.context_resolver import (
-    AIConversationContextResolver,
-)
 from lib.services.care_intent_service import CareIntentService
 from lib.services.care_provider_access_service import (
     CareProviderAccessService,
@@ -1005,10 +993,6 @@ container.register(
     ),
 )
 
-# 🔹 Ai Conversation Service
-container.register(AiConversationService, AiConversationService)
-
-
 # 🔹 Ai Patient Token Usage Service
 container.register(
     TokenUsageService,
@@ -1127,50 +1111,6 @@ container.register(
         qdrant_store=cast(QdrantStore, container.resolve(QdrantStore)),
     ),
 )
-
-# 🔹 AI Conversation V1
-container.register(
-    AIConversationServiceV1,
-    lambda: AIConversationServiceV1(
-        context_builder=cast(
-            AIConversationContextBuilder,
-            container.resolve(AIConversationContextBuilder),
-        )
-    ),
-)
-
-# 🔹 AI Conversation Context Builder
-container.register(
-    AIConversationContextBuilder,
-    lambda: AIConversationContextBuilder(
-        patient_profile_service=cast(
-            PatientProfileService, container.resolve(PatientProfileService)
-        ),
-        ai_messages_collection=cast(
-            MongoStore,
-            container.resolve("ai_conversation_messages_collection"),
-        ),
-        qdrant_search_engine=cast(
-            QdrantSearchEngine, container.resolve(QdrantSearchEngine)
-        ),
-        context_resolver=cast(
-            AIConversationContextResolver,
-            container.resolve(AIConversationContextResolver),
-        ),
-    ),
-)
-
-# 🔹 AI Conversation Context Resolver
-container.register(
-    AIConversationContextResolver,
-    lambda: AIConversationContextResolver(
-        patient_profile_service=cast(
-            PatientProfileService, container.resolve(PatientProfileService)
-        ),
-        patient_profile_store=cast(CacheStore, container.resolve("patient_profile")),
-    ),
-)
-
 
 # 🔹 Patient Metrics Service
 container.register(

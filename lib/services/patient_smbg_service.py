@@ -9,9 +9,6 @@ from sqlalchemy.future import select
 from lib.core.postgres_store import PostgresStore
 from lib.models.patient_smbg import PatientSMBG as PatientSMBGModel
 from lib.schemas.patient_smbg import PatientSMBGCreate
-from lib.services.ai_conversation_service.ai_conversation_service import (
-    AiConversationService,
-)
 from lib.services.patient_profile_service import PatientProfileService
 from lib.services.vector import SMBGVectorService
 from lib.utils.http_exceptions import raise_http_exception
@@ -34,11 +31,6 @@ class PatientSmbgService:
         self.postgres_store = postgres_store
         self.patient_profile_service = patient_profile_service
         self.smbg_vector_service = smbg_vector_service
-        self.ai_conversation_service = AiConversationService(
-            conversation_type="smbg",
-            selected_ai_model="gpt-4.1-mini",
-            ai_model_provider="openai",
-        )
 
     @with_postgres_session
     async def get_patient_smbgs(

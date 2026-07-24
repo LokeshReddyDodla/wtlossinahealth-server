@@ -1,5 +1,4 @@
 from datetime import datetime
-import inspect as py_inspect
 from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
 
@@ -9,17 +8,10 @@ from fastapi import HTTPException
 from sqlalchemy import asc, desc, inspect, select
 
 from lib.schemas.patient_document_research import (
-    PatientDocumentResearchChatRequest,
-    PatientDocumentResearchChatResponse,
     PatientDocumentResearchDocument,
     PatientDocumentResearchSelectionItem,
     PatientDocumentResearchSelectionResponse,
     PatientDocumentResearchSource,
-    PatientDocumentResearchSummaryRequest,
-    PatientDocumentResearchSummaryResponse,
-)
-from lib.services.ai_conversation_service.ai_conversation_service import (
-    AiConversationService,
 )
 from lib.services.patient_document_service import PatientDocumentService
 from lib.services.medication_service import MedicationService
@@ -74,81 +66,7 @@ class PatientDocumentResearchService:
 
         return PatientDocumentResearchSelectionResponse(items=items)
 
-    async def generate_research_summary(
-        self,
-        patient_id: str,
-        care_provider_id: str,
-        request: PatientDocumentResearchSummaryRequest,
-    ) -> PatientDocumentResearchSummaryResponse:
-        """Generate AI research summary from selected documents."""
-        sources = self._normalize_sources(request)
-        documents = await self._fetch_source_documents(patient_id, sources)
-        conversation_id = request.conversation_id or self._generate_conversation_id(
-            patient_id, "research"
-        )
 
-        prompt = (
-            "Provide a clinical research summary for the selected patient records "
-            "(documents and prescriptions). "
-            "Highlight diagnoses, abnormal values, medications, and follow-up actions."
-        )
-        if request.question:
-            prompt += f"\nDoctor question: {request.question}"
-
-        ai_response = await self._get_ai_response(
-            patient_id,
-            care_provider_id,
-            conversation_id,
-            prompt,
-            documents,
-            api_endpoint="/care_provider/patients/documents/research/summary",
-        )
-
-        await self._record_interaction(
-            "research", patient_id, care_provider_id, conversation_id,
-            sources, request.question, ai_response, documents
-        )
-
-        return PatientDocumentResearchSummaryResponse(
-            conversation_id=conversation_id,
-            summary=ai_response["content"],
-            follow_up_questions=ai_response["follow_up_questions"],
-            source_documents=documents,
-        )
-
-    async def chat_about_documents(
-        self,
-        patient_id: str,
-        care_provider_id: str,
-        request: PatientDocumentResearchChatRequest,
-    ) -> PatientDocumentResearchChatResponse:
-        """Answer questions about selected documents."""
-        sources = self._normalize_sources(request)
-        documents = await self._fetch_source_documents(patient_id, sources)
-        conversation_id = request.conversation_id or self._generate_conversation_id(
-            patient_id, "chat"
-        )
-
-        ai_response = await self._get_ai_response(
-            patient_id,
-            care_provider_id,
-            conversation_id,
-            request.question,
-            documents,
-            api_endpoint="/care_provider/patients/documents/research/chat",
-        )
-
-        await self._record_interaction(
-            "chat", patient_id, care_provider_id, conversation_id,
-            sources, request.question, ai_response, documents
-        )
-
-        return PatientDocumentResearchChatResponse(
-            conversation_id=conversation_id,
-            answer=ai_response["content"],
-            follow_up_questions=ai_response["follow_up_questions"],
-            source_documents=documents,
-        )
 
     # -------------------------------------------------------------------------
     # Selection Item Mappers
@@ -345,67 +263,6 @@ class PatientDocumentResearchService:
     # AI Integration
     # -------------------------------------------------------------------------
 
-    async def _get_ai_response(
-        self,
-        patient_id: str,
-        care_provider_id: str,
-        conversation_id: str,
-        prompt: str,
-        documents: List[PatientDocumentResearchDocument],
-        api_endpoint: str,
-    ) -> Dict[str, Any]:
-        ai_service = AiConversationService(
-            conversation_type="care-provider",
-            ai_model_provider="openai",
-            selected_ai_model="gpt-4o",
-        )
-
-        generate_kwargs = {
-            "patient_id": patient_id,
-            "user_id": care_provider_id,
-            "conversation_id": conversation_id,
-            "human_input": prompt,
-            "conversation_type": "care-provider",
-            "additional_context": {
-                "context_type": "patient_document_research",
-                "documents": [d.model_dump() for d in documents],
-            },
-        }
-
-        signature = py_inspect.signature(ai_service.generate_response)
-        if "api_endpoint" in signature.parameters:
-            generate_kwargs["api_endpoint"] = api_endpoint
-
-        response = await ai_service.generate_response(**generate_kwargs)
-
-        return {
-            "content": response.get("content", "Unable to generate response."),
-            "follow_up_questions": response.get("follow_up_questions") or [],
-        }
-
-    async def _record_interaction(
-        self,
-        interaction_type: str,
-        patient_id: str,
-        care_provider_id: str,
-        conversation_id: str,
-        sources: List[PatientDocumentResearchSource],
-        question: Optional[str],
-        ai_response: Dict[str, Any],
-        documents: List[PatientDocumentResearchDocument],
-    ):
-        await self.interactions_collection.insert_one({
-            "patient_id": patient_id,
-            "care_provider_id": care_provider_id,
-            "conversation_id": conversation_id,
-            "interaction_type": interaction_type,
-            "sources": [s.model_dump() for s in sources],
-            "question": question,
-            "response": ai_response["content"],
-            "follow_up_questions": ai_response["follow_up_questions"],
-            "source_documents": [d.model_dump() for d in documents],
-            "created_at": datetime.now(),
-        })
 
     # -------------------------------------------------------------------------
     # Helpers

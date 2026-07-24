@@ -3,12 +3,6 @@ from typing import cast
 from lib.core.cache_store import CacheStore
 from lib.core.container import container
 from lib.managers.arq_task_manager import ArqTaskManager, get_arq_task_manager
-from lib.services.ai_conversation_service.ai_conversation_service import (
-    AiConversationService,
-)
-from lib.services.ai_conversation_service_v1.ai_conversation_service_v1 import (
-    AIConversationServiceV1,
-)
 from lib.services.care_provider_access_service import (
     CareProviderAccessService,
 )
@@ -165,10 +159,6 @@ def get_support_ticket_service():
 
 def get_direct_chat_resolver() -> DirectChatResolver:
     return cast(DirectChatResolver, container.resolve(DirectChatResolver))
-
-
-def get_ai_conversation_service() -> AiConversationService:
-    return cast(AiConversationService, container.resolve(AiConversationService))
 
 
 def get_patient_profile_service() -> PatientProfileService:
@@ -457,10 +447,6 @@ def get_libreview_service() -> LibreViewService:
     return cast(LibreViewService, container.resolve(LibreViewService))
 
 
-def get_ai_conversation_service_v1() -> AIConversationServiceV1:
-    return cast(AIConversationServiceV1, container.resolve(AIConversationServiceV1))
-
-
 def get_qdrant_search_engine() -> QdrantSearchEngine:
     return cast(QdrantSearchEngine, container.resolve(QdrantSearchEngine))
 
@@ -494,10 +480,6 @@ def get_vitals_vector_service() -> VitalsVectorService:
 
 def get_workout_vector_service() -> WorkoutVectorService:
     return cast(WorkoutVectorService, container.resolve(WorkoutVectorService))
-
-
-def get_ai_conversation_messages_collection():
-    return container.resolve("ai_conversation_messages_collection")
 
 
 def get_cgm_report_collection():
