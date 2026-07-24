@@ -167,18 +167,22 @@ def test_event_ref_targets_the_logged_entity():
     assert event_ref(_CGM, _anchor("hypo")) is None
 
 
+def _qdrant_returning(payloads):
+    from lib.ai_foundation.retrieval.base import RetrievalResult
+    q = AsyncMock()
+    q.retrieve_filtered = AsyncMock(return_value=[
+        RetrievalResult(payload=p, source="test", data_type="smbg") for p in payloads
+    ])
+    return q
+
+
 @pytest.mark.asyncio
-async def test_smbg_low_reading_is_graded_by_value(monkeypatch):
-    from lib.ai_foundation.agents.core.refs import ResolvedRef, RefType
+async def test_smbg_low_reading_is_graded_by_value():
+    from lib.ai_foundation.agents.core.refs import RefType
     from lib.ai_foundation.agents.proactive_monitor.contracts import SMBGLoggedAnchor
 
     agent, brain = _monitor(ProactiveNarration(notify=True, title="Low", body="You're at 50 — treat it."))
-    resolved = ResolvedRef(type=RefType.SMBG, id="r1", title="Reading", summary="",
-                           payload={"glucose_mgdl": 50})
-    monkeypatch.setattr(
-        "lib.ai_foundation.agents.proactive_monitor.agent.resolve_refs",
-        AsyncMock(return_value=[resolved]),
-    )
+    agent._qdrant = _qdrant_returning([{"reading_id": "r1", "glucose_mgdl": 50}])
     result = await agent.scan_patient("p1", trigger=EventTrigger.SMBG_LOGGED,
                                       anchor=SMBGLoggedAnchor(reading_id="r1"))
     ins = result.insights[0]
@@ -192,13 +196,10 @@ async def test_smbg_low_reading_is_graded_by_value(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_smbg_falls_back_to_fixed_class_when_value_unavailable(monkeypatch):
+async def test_smbg_falls_back_to_fixed_class_when_value_unavailable():
     from lib.ai_foundation.agents.proactive_monitor.contracts import SMBGLoggedAnchor
     agent, _ = _monitor(ProactiveNarration(notify=True, title="Noted", body="Reading logged."))
-    monkeypatch.setattr(
-        "lib.ai_foundation.agents.proactive_monitor.agent.resolve_refs",
-        AsyncMock(return_value=[]),  # reading not resolvable
-    )
+    agent._qdrant = _qdrant_returning([])  # reading not in the store yet
     result = await agent.scan_patient("p1", trigger=EventTrigger.SMBG_LOGGED,
                                       anchor=SMBGLoggedAnchor(reading_id="r1"))
     ins = result.insights[0]

@@ -81,17 +81,17 @@ _EVENT_TIER: dict[EventTrigger, ReasoningTier] = {
 # Neutral, interpretation-free descriptions — the brain forms its own view.
 _EVENT_FRAME: dict[EventTrigger, str] = {
     EventTrigger.MEAL_LOGGED:
-        "just logged a meal. Investigate how it fits their day and recent "
-        "patterns, and decide whether a brief, grounded observation would help.",
+        "just logged a meal. Look at its macros and how it fits their day, and "
+        "respond with a brief, grounded observation about it.",
     EventTrigger.SMBG_LOGGED:
         "just logged a finger-prick glucose reading. Look up the reading and "
-        "its context, and decide whether a brief, grounded check-in would help.",
+        "respond with a brief, grounded note that references the value.",
     EventTrigger.SYMPTOM_LOGGED:
-        "just logged a symptom. Look at their recent data for context and decide "
-        "whether a brief, supportive note would help — do not attempt triage.",
+        "just logged a symptom. Connect it to their recent data (e.g. a glucose "
+        "dip) and respond with a brief, supportive note — do not attempt triage.",
     EventTrigger.MEDICATION_MISSED:
-        "appears to have missed a scheduled medication dose. Decide whether a "
-        "gentle reminder would help — never suggest a dose or a schedule change.",
+        "appears to have missed a scheduled medication dose. Send a gentle "
+        "reminder that names the medication — never suggest a dose or a change.",
 }
 
 
@@ -175,8 +175,8 @@ def frame_event(
         return (
             f"{who}'s glucose just crossed into the {readable} range, reading "
             f"{anchor.value} {anchor.unit}. Investigate what led up to this using "
-            f"their recent data, and decide whether a brief, grounded check-in "
-            f"would genuinely help them right now."
+            f"their recent data and respond with a brief, grounded check-in that "
+            f"references the reading and helps them act."
         )
     if trigger in _EVENT_FRAME:
         return f"{who} {_EVENT_FRAME[trigger]}"

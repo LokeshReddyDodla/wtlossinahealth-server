@@ -29,7 +29,6 @@ from lib.ai_foundation.agents.state import AgentInput, AgentOutput
 from lib.ai_foundation.retrieval.base import RetrievalRequest
 
 from .scheduling import DEFAULT_TIMEZONE
-from lib.ai_foundation.agents.core.refs import Ref, RefType, resolve_refs
 from lib.ai_foundation.agents.health_query.reasoning_engine import ReasoningTier
 from .event_framing import (
     classify_event,
@@ -166,16 +165,19 @@ class ProactiveMonitorAgent(BaseAgent):
         return category, severity, trigger_tier(trigger, anchor)
 
     async def _smbg_value(self, patient_id: str, anchor: TriggerAnchor) -> float | None:
-        """Look up the logged finger-stick reading (mg/dL) by its id, or None."""
+        """The logged finger-stick reading (mg/dL) by its id, or None if the
+        reading isn't in the store yet (severity then falls back to the fixed
+        class)."""
         try:
-            resolved = await resolve_refs(
-                patient_id=patient_id, refs=[Ref(type=RefType.SMBG, id=anchor.reading_id)],
-            )
-            payload = resolved[0].payload if resolved else {}
-            for key in ("glucose_mgdl", "value", "reading", "glucose_level"):
-                v = payload.get(key)
-                if isinstance(v, (int, float)):
-                    return float(v)
+            results = await self._qdrant.retrieve_filtered(RetrievalRequest(
+                query="", patient_ids=[patient_id], data_types=["smbg"], limit=50,
+            ))
+            for r in results:
+                if r.payload.get("reading_id") == anchor.reading_id:
+                    for key in ("glucose_mgdl", "value", "reading", "glucose_level"):
+                        v = r.payload.get(key)
+                        if isinstance(v, (int, float)):
+                            return float(v)
         except Exception as exc:
             logger.warning("smbg value lookup failed for %s: %s", patient_id, exc)
         return None
