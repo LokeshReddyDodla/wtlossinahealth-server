@@ -134,6 +134,7 @@ class WorkoutVoiceService:
         audio_format: AudioFormat,
         session: WorkoutVoiceSessionState,
         text: Optional[str] = None,
+        patient_id: str | None = None,
     ) -> WorkoutVoiceResponse:
         transcript_result = await self._stt.transcribe(
             audio_bytes, audio_format=audio_format, prompt=_WORKOUT_STT_PROMPT,
@@ -145,15 +146,16 @@ class WorkoutVoiceService:
         if not transcript.strip():
             raise EmptyTranscriptError("Could not understand the audio. Please try again.")
 
-        return await self._interpret(transcript, session)
+        return await self._interpret(transcript, session, patient_id=patient_id)
 
     async def process_text_input(
         self,
         *,
         transcript: str,
         session: WorkoutVoiceSessionState,
+        patient_id: str | None = None,
     ) -> WorkoutVoiceResponse:
-        return await self._interpret(transcript, session)
+        return await self._interpret(transcript, session, patient_id=patient_id)
 
     # ── Shared interpretation pipeline ───────────────────────────────────
 
@@ -161,8 +163,14 @@ class WorkoutVoiceService:
         self,
         transcript: str,
         session: WorkoutVoiceSessionState,
+        *,
+        patient_id: str | None = None,
     ) -> WorkoutVoiceResponse:
         trace_id = f"trc_{uuid4().hex[:16]}"
+        if patient_id:
+            self._gateway.set_langfuse_context(
+                session_id=f"workout_voice:{patient_id}", user_id=patient_id,
+            )
         self._gateway.langfuse_trace_input(
             trace_id=trace_id, name="workout_voice", input_text=transcript,
         )
