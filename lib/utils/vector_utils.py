@@ -1,9 +1,7 @@
-import asyncio
 from typing import Literal
 
+import litellm
 from decouple import config
-from google import genai
-from openai import AsyncOpenAI
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -13,14 +11,21 @@ from tenacity import (
 import tiktoken
 
 
-openai_client = AsyncOpenAI()
-gemini_client = genai.Client(api_key=str(config("GOOGLE_API_KEY")))
+# Embeddings route through litellm (not the raw provider SDKs) so the global
+# Langfuse success_callback set by ModelGateway logs cost/tokens for every
+# embedding call — the same observability the chat/analysis generations get.
+# litellm is a thin wrapper over the identical provider endpoints, so the
+# returned vectors match what the raw SDKs produced (OpenAI is byte-identical;
+# Gemini uses the same embed_content default).
+_GEMINI_API_KEY = str(config("GOOGLE_API_KEY", default="")) or None
 
 CHUNK_SIZE = 50  # number of texts per batch request
 MAX_TOKENS_PER_TEXT = 3000  # conservative limit for chunking long texts
 
 OPENAI_EMBEDDING_MODEL = "text-embedding-3-large"
 GEMINI_EMBEDDING_MODEL = "gemini-embedding-001"
+# litellm addresses Gemini embeddings under the gemini/ provider prefix.
+_GEMINI_LITELLM_MODEL = f"gemini/{GEMINI_EMBEDDING_MODEL}"
 
 EmbeddingProvider = Literal["gemini", "openai"]
 DEFAULT_EMBEDDING_PROVIDER: EmbeddingProvider = "openai"
@@ -38,17 +43,23 @@ def _normalize_provider(provider: EmbeddingProvider) -> EmbeddingProvider:
     return normalized  # type: ignore[return-value]
 
 
+async def _aembedding(model: str, texts: list[str]) -> list[list[float]]:
+    kwargs: dict = {"model": model, "input": texts}
+    # litellm's gemini/ provider reads GEMINI_API_KEY; the app configures
+    # GOOGLE_API_KEY, so pass it through explicitly.
+    if model.startswith("gemini/") and _GEMINI_API_KEY:
+        kwargs["api_key"] = _GEMINI_API_KEY
+    response = await litellm.aembedding(**kwargs)
+    return [item["embedding"] for item in response.data]
+
+
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=2, max=10),
     retry=retry_if_exception_type(Exception),
 )
 async def _embed_openai_batch(texts: list[str]) -> list[list[float]]:
-    response = await openai_client.embeddings.create(
-        model=OPENAI_EMBEDDING_MODEL,
-        input=texts,
-    )
-    return [item.embedding for item in response.data]
+    return await _aembedding(OPENAI_EMBEDDING_MODEL, texts)
 
 
 @retry(
@@ -57,12 +68,7 @@ async def _embed_openai_batch(texts: list[str]) -> list[list[float]]:
     retry=retry_if_exception_type(Exception),
 )
 async def _embed_gemini_batch(texts: list[str]) -> list[list[float]]:
-    response = await asyncio.to_thread(
-        gemini_client.models.embed_content,
-        model=GEMINI_EMBEDDING_MODEL,
-        contents=texts,
-    )
-    return [embedding.values for embedding in response.embeddings]
+    return await _aembedding(_GEMINI_LITELLM_MODEL, texts)
 
 
 async def embed_text_batch_safe(
@@ -100,16 +106,6 @@ async def embed_text(
     text: str, provider: EmbeddingProvider = DEFAULT_EMBEDDING_PROVIDER
 ) -> list[float]:
     resolved_provider = _normalize_provider(provider)
-    if resolved_provider == "openai":
-        response = await openai_client.embeddings.create(
-            model=OPENAI_EMBEDDING_MODEL,
-            input=text,
-        )
-        return response.data[0].embedding
-
-    response = await asyncio.to_thread(
-        gemini_client.models.embed_content,
-        model=GEMINI_EMBEDDING_MODEL,
-        contents=[text],
-    )
-    return response.embeddings[0].values
+    model = OPENAI_EMBEDDING_MODEL if resolved_provider == "openai" else _GEMINI_LITELLM_MODEL
+    embeddings = await _aembedding(model, [text])
+    return embeddings[0]
