@@ -292,8 +292,7 @@ class QdrantRetriever:
                     if range_kwargs:
                         conditions.append(FieldCondition(key=key, range=Range(**range_kwargs)))
 
-        # Other pass-through filters. plan_status is consumed by the plan
-        # should-branch in _build_full_filter, not applied to timeseries types.
+        # plan_status is handled by the plan should-branch, not applied here.
         _HANDLED = frozenset((
             "month_filters", "time_buckets", "hour_start", "hour_end",
             "numeric_filters", "plan_status",
@@ -319,9 +318,8 @@ class QdrantRetriever:
             return None
 
         data_types = _expand_data_types(request.data_types) if request.data_types else []
-        all_types = not data_types  # empty request => whole-day / all-types sweep
+        all_types = not data_types  # empty request = all-types sweep
 
-        # Separate config (plans), non-filterable, and date-filtered types.
         plan_types = [dt for dt in data_types if dt in _PLAN_TYPES]
         non_filterable = [dt for dt in data_types if dt in _NON_FILTERABLE_TYPES]
         filterable = [
@@ -344,8 +342,7 @@ class QdrantRetriever:
                 FieldCondition(key="data_type", match=MatchAny(any=non_filterable)),
             ]))
 
-        # Plans: matched by plan_status (default ACTIVE), never date-filtered.
-        # Included when plan types are requested or on an all-types sweep.
+        # Plans are matched by plan_status (default ACTIVE), never date-filtered.
         if plan_types or all_types:
             plan_must = [
                 FieldCondition(key="patient_id", match=MatchAny(any=request.patient_ids)),
@@ -354,12 +351,11 @@ class QdrantRetriever:
             status = request.filters.get("plan_status", "ACTIVE")
             if isinstance(status, list):
                 plan_must.append(FieldCondition(key="plan_status", match=MatchAny(any=status)))
-            elif status:  # falsy (None/"") => history: no status constraint
+            elif status:  # falsy => history (no status constraint)
                 plan_must.append(FieldCondition(key="plan_status", match=MatchValue(value=status)))
             should_filters.append(Filter(must=plan_must))
 
-        # Filterable types (timeseries data with date/time filters). Plan types
-        # are excluded here — matched only by the status branch above.
+        # Filterable timeseries types (date/time filtered).
         if filterable or all_types:
             must: list[FieldCondition] = [
                 FieldCondition(key="patient_id", match=MatchAny(any=request.patient_ids)),
@@ -371,8 +367,8 @@ class QdrantRetriever:
             must.extend(self._time_range_conditions(request))
             must.extend(self._pass_through_conditions(request))
 
-            # On an all-types sweep this branch has no data_type restriction, so
-            # keep plans out of it — they must come only via the status branch.
+            # A sweep has no data_type restriction; keep plans out so they
+            # come only via the status branch above.
             must_not = (
                 [FieldCondition(key="data_type", match=MatchAny(any=sorted(_PLAN_TYPES)))]
                 if all_types else None
