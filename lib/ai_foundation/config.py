@@ -50,7 +50,7 @@ class AIFoundationSettings(BaseSettings):
     # ── Reasoning Engine ──────────────────────────────────────────────────
 
     REASONING_DEFAULT_TIER: str = Field(default="standard", description="Default reasoning tier: basic, standard, advanced, unlimited")
-    REASONING_THINKER_MODEL: str = Field(default="gpt-4.1-mini", description="Model for reasoning/tool decisions — fast, 1M context, cheap workhorse")
+    REASONING_THINKER_MODEL: str = Field(default="gpt-5.4-nano", description="Model for reasoning/tool decisions — fast, 1M context, reasoning, cheap workhorse")
     REASONING_RESPONDER_MODEL: str = Field(default="gpt-5.1", description="Model for final response generation — reasoning, 128K output")
     REASONING_TIMEOUT_SECONDS: float = Field(default=30.0, description="Per-round timeout for thinker LLM calls")
     RESPONDER_TIMEOUT_SECONDS: float = Field(default=60.0, description="Timeout for final response generation (long answers exceed model spec defaults)")
