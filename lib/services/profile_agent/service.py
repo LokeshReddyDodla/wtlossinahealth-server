@@ -1,6 +1,5 @@
 """Unified Profile Agent service.
 
-Replaces `ProfileUpdateAgentService` and `PatientOnboardingAgentService`.
 Schema-driven field discovery, mode-aware conversation, single Postgres
 transaction apply.
 

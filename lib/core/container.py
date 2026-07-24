@@ -1,6 +1,5 @@
 from typing import cast
 
-from lib.services.patient_onboarding_agent.patient_onboarding_agent_service import PatientOnboardingAgentService
 from punq import Container, Scope
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -333,14 +332,6 @@ container.register(
     scope=Scope.singleton,
 )
 
-# Patient Onboarding Agent Collection
-container.register(
-    "patient_onboarding_conversations_collection",
-    factory=lambda: cast(
-        MongoStore, container.resolve(MongoStore)
-    ).get_collection("patient_onboarding_conversations"),
-    scope=Scope.singleton,
-)
 
 # Profile Agent Collection (unified onboarding + update)
 container.register(
@@ -1508,20 +1499,6 @@ container.register(
         ),
         conversation_collection=container.resolve(
             "profile_update_conversations_collection"
-        ),
-    ),
-)
-
-# 🔹 Patient Onboarding Agent Service
-container.register(
-    PatientOnboardingAgentService,
-    lambda: PatientOnboardingAgentService(
-        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
-        patient_profile_service=cast(
-            PatientProfileService, container.resolve(PatientProfileService)
-        ),
-        conversation_collection=container.resolve(
-            "patient_onboarding_conversations_collection"
         ),
     ),
 )
