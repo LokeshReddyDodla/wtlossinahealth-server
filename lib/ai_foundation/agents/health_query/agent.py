@@ -136,8 +136,8 @@ class HealthQueryAgent(BaseAgent):
 
             if not intent.is_ready:
                 output = self._build_clarification(intent, meta)
-                # A not-yet-logged entry the user wants analyzed is a clarify
-                # ("log it and I'll check") — arm the continuation here too.
+                # A not-yet-logged ask lands here (is_ready=False), so the
+                # await arms in the clarify branch, not only the execution one.
                 if intent.awaits_log:
                     await self._register_pending_request(
                         input, intent.awaits_log, output.suggestions,

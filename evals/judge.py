@@ -11,29 +11,9 @@ noisiest part of the harness, and majority voting collapses that variance.
 from __future__ import annotations
 
 import asyncio
-import re
 from typing import Any
 
 from pydantic import BaseModel, Field
-
-# Numbers a claim asserts; used to spare grounded figures from a spurious
-# fabrication flag (see judge_case).
-_NUM_RE = re.compile(r"\d+(?:\.\d+)?")
-
-
-def _strip_grounded_fabrications(claims: list[str], grounded_text: str) -> list[str]:
-    """Drop any flagged claim whose every number is present in the data.
-
-    LLM judges occasionally flag a grounded figure ("148 mg/dL" when 148 is
-    right there in the CGM summary) — a re-scan miss the prompt warns against
-    but can't fully prevent. This can never clear a real fabrication, which by
-    definition cites numbers absent from the data.
-    """
-    grounded = set(_NUM_RE.findall(grounded_text))
-    return [
-        c for c in claims
-        if not ((nums := _NUM_RE.findall(c)) and all(n in grounded for n in nums))
-    ]
 
 from lib.ai_foundation.models.gateway import ModelGateway
 from lib.ai_foundation.models.registry import ModelTask
@@ -200,10 +180,6 @@ async def judge_case(
         response_model=EvalJudgment,
         task=ModelTask.QUALITY_JUDGE,
     )
-    if judgment.fabricated_claims:
-        judgment.fabricated_claims = _strip_grounded_fabrications(
-            judgment.fabricated_claims, " ".join(fixture_texts) + " " + " ".join(facts),
-        )
     return judgment
 
 
