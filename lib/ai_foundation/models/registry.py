@@ -429,41 +429,41 @@ def build_default_registry(
     registry.set_task_route(
         ModelTask.INTENT_EXTRACTION,
         primary=thinker,
-        fallbacks=["gpt-4.1-mini", "gemini-2.5-flash"],
+        fallbacks=["claude-haiku-4-5-20251001", "gemini-2.5-flash"],
     )
     registry.set_task_route(
         ModelTask.RESPONSE_GENERATION,
         primary=responder,
-        fallbacks=["gpt-5.1", "gemini-2.5-pro"],
+        fallbacks=["claude-sonnet-4-6", "gemini-2.5-pro"],
     )
     registry.set_task_route(
         ModelTask.STRUCTURED_ANALYSIS,
         primary=thinker,
-        fallbacks=["gpt-4.1-mini", "gemini-2.5-flash"],
+        fallbacks=["claude-sonnet-4-6", "gemini-2.5-flash"],
     )
     # Extractor (photo → items). gpt-5.2: ~half the vision error of the 4o
     # generation at lower price; gpt-4o first fallback = pre-upgrade behavior.
     registry.set_task_route(
         ModelTask.MEAL_ANALYSIS,
         primary="gpt-5.2",
-        fallbacks=["gpt-4o", "gemini-2.5-flash", thinker],
+        fallbacks=["claude-sonnet-4-6", "gemini-2.5-pro"],
     )
     # Text-only meal engines (scorer/alternatives/glucose fallback) send JSON,
     # never the photo — vision pricing there was ~6x waste (efficiency audit).
     registry.set_task_route(
         ModelTask.MEAL_REASONING,
         primary="gpt-4.1-mini",
-        fallbacks=["gemini-2.5-flash", thinker],
+        fallbacks=["claude-haiku-4-5-20251001", "gemini-2.5-flash"],
     )
     registry.set_task_route(
         ModelTask.CLASSIFICATION,
         primary=thinker,
-        fallbacks=["gpt-4.1-mini", "gemini-2.5-flash"],
+        fallbacks=["claude-sonnet-4-6", "gemini-2.5-flash"],
     )
     registry.set_task_route(
         ModelTask.SUMMARIZATION,
         primary=thinker,
-        fallbacks=["gpt-4.1-mini", "gemini-2.5-flash"],
+        fallbacks=["claude-haiku-4-5-20251001", "gemini-2.5-flash"],
     )
     registry.set_task_route(
         ModelTask.EMBEDDING,
@@ -472,19 +472,19 @@ def build_default_registry(
     registry.set_task_route(
         ModelTask.QUALITY_JUDGE,
         primary=adv_thinker,
-        fallbacks=[thinker],
+        fallbacks=["claude-sonnet-4-6", "gemini-2.5-pro"],
     )
     registry.set_task_route(
         ModelTask.PRODUCT_BOT,
         primary="gpt-4.1-mini",
-        fallbacks=["gemini-2.5-flash", "claude-haiku-4-5-20251001"],
+        fallbacks=["claude-haiku-4-5-20251001", "gemini-2.5-flash"],
     )
     # Patient-facing translation (preferred AI language). Cheap tier — the
     # deterministic post-checks in TranslationService guard fidelity.
     registry.set_task_route(
         ModelTask.TRANSLATION,
         primary="gpt-4.1-mini",
-        fallbacks=["gemini-2.5-flash", "claude-haiku-4-5-20251001"],
+        fallbacks=["claude-haiku-4-5-20251001", "gemini-2.5-flash"],
     )
 
     return registry
