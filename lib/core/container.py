@@ -67,7 +67,7 @@ from lib.services.fitness_upload_service import FitnessUploadService
 from lib.services.vector import FitnessVectorService
 from lib.services.health_facility_service import HealthFacilityService
 from lib.services.libreview_service import LibreViewService
-from lib.services.meal import MealAnalysisService, MealService
+from lib.services.meal import MealService
 from lib.services.reports import MealReportService
 from lib.services.checkin_history_service import CheckinHistoryService
 from lib.services.medication_service import MedicationService
@@ -655,27 +655,11 @@ container.register(
 )
 
 
-# 🔹 Meal Analysis Service
-container.register(
-    MealAnalysisService,
-    lambda: MealAnalysisService(
-        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
-        token_usage_service=cast(
-            TokenUsageService, container.resolve(TokenUsageService)
-        ),
-        selected_ai_model="gpt-4o",
-        ai_model_provider="openai",
-    ),
-)
-
 # 🔹 Meal Service
 container.register(
     MealService,
     lambda: MealService(
         postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
-        meal_analysis_service=cast(
-            MealAnalysisService, container.resolve(MealAnalysisService)
-        ),
         patient_profile_service=cast(
             PatientProfileService, container.resolve(PatientProfileService)
         ),

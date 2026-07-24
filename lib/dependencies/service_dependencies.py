@@ -53,7 +53,7 @@ from lib.services.fitness_upload_service import FitnessUploadService
 from lib.services.vector import FitnessVectorService
 from lib.services.health_facility_service import HealthFacilityService
 from lib.services.libreview_service import LibreViewService
-from lib.services.meal import MealAnalysisService, MealService
+from lib.services.meal import MealService
 from lib.services.reports import MealReportService
 from lib.services.vector import MealVectorService
 from lib.services.package_service import PackageService
@@ -286,13 +286,6 @@ def get_patient_sleep_service() -> PatientSleepService:
     return cast(
         PatientSleepService,
         container.resolve(PatientSleepService),
-    )
-
-
-def get_meal_analysis_service() -> MealAnalysisService:
-    return cast(
-        MealAnalysisService,
-        container.resolve(MealAnalysisService),
     )
 
 
