@@ -250,3 +250,99 @@ class TestFilterBuilding:
         assert f is not None
         # Should have should filters (one for profile, one for timeseries)
         assert f.should is not None or f.must is not None
+
+
+class TestPlanRetrieval:
+    """Plans are matched by plan_status, never by date overlap."""
+
+    def _build(self, **kwargs):
+        request = RetrievalRequest(query="test", **kwargs)
+        return QdrantRetriever(qdrant_store=MagicMock())._build_full_filter(request)
+
+    @staticmethod
+    def _branches(f):
+        if f is None:
+            return []
+        return list(f.should) if getattr(f, "should", None) else [f]
+
+    @classmethod
+    def _plan_branch(cls, f):
+        for b in cls._branches(f):
+            for c in (b.must or []):
+                if c.key == "data_type":
+                    vals = set(getattr(c.match, "any", None) or [getattr(c.match, "value", None)])
+                    if vals & {"diet_plan", "fitness_plan"}:
+                        return b
+        return None
+
+    @staticmethod
+    def _keys(branch):
+        return {c.key for c in (branch.must or [])}
+
+    @staticmethod
+    def _cond(branch, key):
+        return next((c for c in (branch.must or []) if c.key == key), None)
+
+    def test_plan_branch_matches_status_not_dates(self):
+        """Requesting diet_plan yields a branch filtered by plan_status=ACTIVE
+        with no start_time/end_time — visible regardless of the query window."""
+        f = self._build(
+            patient_ids=["p1"], data_types=["diet_plan"],
+            date_start="2026-07-24", date_end="2026-07-24",
+        )
+        branch = self._plan_branch(f)
+        assert branch is not None
+        keys = self._keys(branch)
+        assert "plan_status" in keys
+        assert "start_time" not in keys and "end_time" not in keys
+        assert self._cond(branch, "plan_status").match.value == "ACTIVE"
+
+    def test_history_filter_overrides_status(self):
+        """An explicit plan_status list requests history (all statuses)."""
+        f = self._build(
+            patient_ids=["p1"], data_types=["diet_plan"],
+            filters={"plan_status": ["ACTIVE", "EXPIRED", "ARCHIVED"]},
+        )
+        branch = self._plan_branch(f)
+        assert set(self._cond(branch, "plan_status").match.any) == {"ACTIVE", "EXPIRED", "ARCHIVED"}
+
+    def test_all_types_sweep_includes_active_plan_and_excludes_from_date_branch(self):
+        """investigate_day (empty data_types) surfaces the active plan via the
+        status branch, and the date branch must_not-excludes plan types."""
+        f = self._build(
+            patient_ids=["p1"], data_types=[],
+            date_start="2026-07-24", date_end="2026-07-24",
+        )
+        assert self._plan_branch(f) is not None  # active plan surfaced
+        # the date-filtered branch (has start_time/end_time) excludes plan types
+        date_branch = next(
+            b for b in self._branches(f)
+            if "start_time" in self._keys(b) or "end_time" in self._keys(b)
+        )
+        mn = getattr(date_branch, "must_not", None) or []
+        excluded = set()
+        for c in mn:
+            if c.key == "data_type":
+                excluded |= set(getattr(c.match, "any", None) or [getattr(c.match, "value", None)])
+        assert {"diet_plan", "fitness_plan"} <= excluded
+
+    def test_unrelated_query_has_no_plan_branch(self):
+        """A glucose-only query must not pull plans in."""
+        f = self._build(
+            patient_ids=["p1"], data_types=["cgm_summary_stats"],
+            date_start="2026-07-24", date_end="2026-07-24",
+        )
+        assert self._plan_branch(f) is None
+
+    def test_plan_status_not_leaked_into_timeseries_branch(self):
+        """plan_status must not become a match condition on meals/glucose."""
+        f = self._build(
+            patient_ids=["p1"], data_types=["meal"],
+            filters={"plan_status": "ACTIVE"},
+        )
+        for b in self._branches(f):
+            if "data_type" in self._keys(b):
+                dc = self._cond(b, "data_type")
+                vals = set(getattr(dc.match, "any", None) or [getattr(dc.match, "value", None)])
+                if "meal" in vals:  # the timeseries branch
+                    assert "plan_status" not in self._keys(b)

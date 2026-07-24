@@ -29,6 +29,7 @@ def get_all_tasks() -> List[Callable]:
     from lib.workers.tasks.weightloss_agent_tasks import get_tasks as get_weightloss_agent_tasks
     from lib.workers.tasks.proactive_monitor import get_tasks as get_proactive_monitor_tasks
     from lib.workers.tasks.reengagement import get_tasks as get_reengagement_tasks
+    from lib.workers.tasks.plans import get_tasks as get_plans_tasks
     from lib.workers.tasks.gamification.tasks import (
         process_streaks_for_all,
         generate_daily_tasks_for_all,
@@ -57,6 +58,7 @@ def get_all_tasks() -> List[Callable]:
     tasks.extend(get_weightloss_agent_tasks())
     tasks.extend(get_proactive_monitor_tasks())
     tasks.extend(get_reengagement_tasks())
+    tasks.extend(get_plans_tasks())
     tasks.extend([
         process_streaks_for_all,
         generate_daily_tasks_for_all,

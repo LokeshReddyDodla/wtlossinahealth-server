@@ -59,9 +59,8 @@ async def firebase_login(
             detail=str(e),
         )
 
-    # Patient rows store phone numbers without the leading '+' (the app has
-    # always sent rawFullNumber, e.g. "9198..."); Firebase tokens carry
-    # E.164 ("+9198...") — strip it or existing users get duplicate accounts.
+    # Patient rows store phone numbers without the leading '+'; Firebase
+    # tokens carry E.164 — strip it or existing users get duplicate accounts.
     phone_number = (decoded_token.get("phone_number") or "").lstrip("+")
     if not phone_number:
         raise_http_exception(
