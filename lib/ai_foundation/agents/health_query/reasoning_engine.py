@@ -353,6 +353,37 @@ class ReasoningEngine:
                     plan["plan_obj"].domains_involved,
                 )
 
+        # ── Base fetch ──
+        # Seed the intent extractor's data_types once before the thinker
+        # loop: it reliably tags every domain a question needs, including
+        # both sides of a compound query. Left to decide the base fetch
+        # itself the thinker under-fetches compound queries, so from here it
+        # only follows the trail (investigate_day, compare_baseline).
+        if intent_data_types and "look_up:seed" not in seen_calls:
+            if emit_events and tier_cfg.show_reasoning:
+                yield sse_tool_call("look_up", {"data_types": intent_data_types})
+            seed_args = {"data_types": intent_data_types, "limit": settings.LOOKUP_DEFAULT_LIMIT}
+            with _track_perf(perf, "tool_exec_ms"):
+                seed_result = await self._tools.execute(
+                    "look_up", seed_args, patient_ids, patient_names=patient_names,
+                )
+            seen_calls.add("look_up:seed")
+            total_tools += 1
+            evidence_ledger.append(extract_evidence_from_fallback("look_up", seed_args, seed_result))
+            steps.append(ReasoningStep(
+                round=0,
+                thought="Fetching the data the question requires.",
+                tool_calls=[{"tool": "look_up", "args": {"data_types": intent_data_types}}],
+                tool_results=[{"tool": "look_up", "result": seed_result[:settings.STEP_LOG_TRUNCATION_CHARS]}],
+            ))
+            if emit_events and tier_cfg.show_reasoning:
+                yield sse_tool_result("look_up", self._summarize_result("look_up", seed_result))
+            messages.append({
+                "role": "system",
+                "content": f"Health data retrieved:\n\n{seed_result}",
+                "_meta": {"type": "tool_result", "round": 0, "tool": "look_up"},
+            })
+
         for round_num in range(1, budget_remaining + 1):
             # Prune before thinker call
             messages = self._prune_if_needed(messages, tier_cfg.thinker_model)
@@ -374,40 +405,6 @@ class ReasoningEngine:
             total_cost += safe_cost(response)
 
             if not response.has_tool_calls:
-                # Round 1 with no tool calls = lazy LLM. Force a lookup.
-                if round_num == 1 and intent_data_types and not seen_calls:
-                    if emit_events and tier_cfg.show_reasoning:
-                        yield sse_tool_call("look_up", {"data_types": intent_data_types})
-                    with _track_perf(perf, "tool_exec_ms"):
-                        fallback_result = await self._tools.execute(
-                            "look_up",
-                            {"data_types": intent_data_types, "limit": settings.LOOKUP_DEFAULT_LIMIT},
-                            patient_ids,
-                            patient_names=patient_names,
-                        )
-                    seen_calls.add("look_up:fallback")
-                    total_tools += 1
-                    evidence_ledger.append(extract_evidence_from_fallback(
-                        "look_up",
-                        {"data_types": intent_data_types, "limit": settings.LOOKUP_DEFAULT_LIMIT},
-                        fallback_result,
-                    ))
-                    steps.append(ReasoningStep(
-                        round=round_num,
-                        thought="Fetching data based on query intent.",
-                        tool_calls=[{"tool": "look_up", "args": {"data_types": intent_data_types}}],
-                        tool_results=[{"tool": "look_up", "result": fallback_result[:settings.STEP_LOG_TRUNCATION_CHARS]}],
-                    ))
-                    if emit_events and tier_cfg.show_reasoning:
-                        summary = self._summarize_result("look_up", fallback_result)
-                        yield sse_tool_result("look_up", summary)
-                    messages.append({
-                        "role": "system",
-                        "content": f"Health data retrieved:\n\n{fallback_result}",
-                        "_meta": {"type": "tool_result", "round": round_num, "tool": "look_up"},
-                    })
-                    continue  # Let the thinker see the data and try again
-
                 if response.content:
                     steps.append(ReasoningStep(
                         round=round_num, thought=response.content,

@@ -139,8 +139,8 @@ class TestDefaultRegistry:
     def test_intent_extraction_route(self, registry):
         spec = registry.route(ModelTask.INTENT_EXTRACTION)
         # Primary thinker is configurable via REASONING_THINKER_MODEL;
-        # default is gpt-4.1-mini with claude-haiku-4-5 in the fallback chain.
-        assert spec.model_id == "gpt-4.1-mini"
+        # default is gpt-5.4-nano with claude-haiku-4-5 in the fallback chain.
+        assert spec.model_id == "gpt-5.4-nano"
 
     def test_response_generation_route(self, registry):
         spec = registry.route(ModelTask.RESPONSE_GENERATION)
