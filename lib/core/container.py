@@ -221,13 +221,6 @@ container.register(
     scope=Scope.singleton,
 )
 container.register(
-    "ai_conversation_messages_collection",
-    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
-        "ai_conversation_messages"
-    ),
-    scope=Scope.singleton,
-)
-container.register(
     "chat_messages_collection",
     factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
         "chat_messages"
@@ -256,29 +249,6 @@ container.register(
     scope=Scope.singleton,
 )
 
-# Weight Loss Agent Collections
-container.register(
-    "inbody_reports_collection",
-    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
-        "wtloss_inbody_reports"
-    ),
-    scope=Scope.singleton,
-)
-container.register(
-    "weight_loss_interactions_collection",
-    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
-        "wtloss_weight_loss_interactions"
-    ),
-    scope=Scope.singleton,
-)
-container.register(
-    "weight_loss_progress_analyses_collection",
-    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
-        "wtloss_weight_loss_progress_analyses"
-    ),
-    scope=Scope.singleton,
-)
-
 # Profile Update Agent Collection
 container.register(
     "profile_update_conversations_collection",
@@ -298,91 +268,6 @@ container.register(
     scope=Scope.singleton,
 )
 
-# Intake + patient app collections
-container.register(
-    "exercise_preferences_collection",
-    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
-        "wtloss_exercise_preferences"
-    ),
-    scope=Scope.singleton,
-)
-container.register(
-    "fitness_screen_collection",
-    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
-        "wtloss_fitness_screen"
-    ),
-    scope=Scope.singleton,
-)
-container.register(
-    "willingness_commitment_collection",
-    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
-        "wtloss_willingness_commitment"
-    ),
-    scope=Scope.singleton,
-)
-container.register(
-    "plan_snapshots_collection",
-    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
-        "wtloss_plan_snapshots"
-    ),
-    scope=Scope.singleton,
-)
-container.register(
-    "weightloss_flow_instances_collection",
-    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
-        "wtloss_flow_instances"
-    ),
-    scope=Scope.singleton,
-)
-container.register(
-    "weightloss_tasks_collection",
-    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
-        "wtloss_tasks"
-    ),
-    scope=Scope.singleton,
-)
-container.register(
-    "weightloss_glp_injection_collection",
-    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
-        "wtloss_glpinjection_login"
-    ),
-    scope=Scope.singleton,
-)
-container.register(
-    "weightloss_symptom_daily_collection",
-    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
-        "wtloss_symptom_daily"
-    ),
-    scope=Scope.singleton,
-)
-container.register(
-    "suggestion_cards_collection",
-    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
-        "wtloss_suggestion_cards"
-    ),
-    scope=Scope.singleton,
-)
-container.register(
-    "weekly_symptoms_glp1_collection",
-    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
-        "wtloss_weekly_symptoms_glp1"
-    ),
-    scope=Scope.singleton,
-)
-container.register(
-    "audit_traces_collection",
-    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
-        "wtloss_audit_traces"
-    ),
-    scope=Scope.singleton,
-)
-container.register(
-    "analytics_events_collection",
-    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
-        "wtloss_analytics_events"
-    ),
-    scope=Scope.singleton,
-)
 
 
 
