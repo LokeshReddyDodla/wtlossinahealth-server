@@ -1,7 +1,6 @@
 """Schemas for the unified Profile Agent.
 
-Replaces `patient_onboarding_agent` and `profile_update_agent`. This agent
-discovers missing fields by introspecting `CompletePatientProfile` and
+Discovers missing fields by introspecting `CompletePatientProfile` and
 auto-detects its mode (onboarding vs update) from the patient's current
 state.
 """

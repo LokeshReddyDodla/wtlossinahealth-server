@@ -111,26 +111,6 @@ NotificationCategoryLiteral = Literal[
 
 NotificationSeverityLiteral = Literal["info", "warning", "alert"]
 
-AiConversationRoleLiteral = Literal["system", "human", "ai"]
-
-
-AiConversationMessageTypeLiteral = Literal[
-    "text", "image", "file", "audio", "custom", "markdown"
-]
-
-AiConversationTypeLiteral = Literal[
-    "smbg",
-    "meal",
-    "prescription",
-    "report",
-    "sleep",
-    "health-tip",
-    "other",
-    "patient",
-    "care-provider",
-    "weight-loss-agent",
-]
-
 OpenAIModelLiteral = Literal[
     "gpt-5.1",
     "gpt-5",

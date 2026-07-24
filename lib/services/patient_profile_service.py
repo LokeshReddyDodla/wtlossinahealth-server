@@ -177,7 +177,6 @@ class PatientProfileService:
                     joinedload(PatientModel.connected_apps).joinedload(
                         PatientConnectedApp.other_app
                     ),
-                    selectinload(PatientModel.weight_loss_enrollment),
                 )
 
             patient = await postgres_session.scalar(stmt)
