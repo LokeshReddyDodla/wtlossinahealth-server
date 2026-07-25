@@ -774,9 +774,3 @@ def get_product_bot_agent():
     from lib.ai_foundation.agents.product_bot import ProductBotAgent
 
     return cast(ProductBotAgent, container.resolve(ProductBotAgent))
-
-
-def get_model_gateway():
-    from lib.ai_foundation.models.gateway import ModelGateway
-
-    return cast(ModelGateway, container.resolve(ModelGateway))
