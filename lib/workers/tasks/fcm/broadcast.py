@@ -1,10 +1,10 @@
 """Broadcast FCM notification to all patients with active devices."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from firebase_admin import messaging
 from loguru import logger
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from lib.core.postgres_store import PostgresStore
 from lib.core.types import (
@@ -35,13 +35,18 @@ async def process_broadcast_notification(
         store = PostgresStore()
         try:
             async with store.get_session() as session:
-                result = await session.execute(
-                    select(UserDevice.fcm_token).where(
-                        UserDevice.fcm_token.isnot(None),
-                        UserDevice.is_active.is_(True),
-                        UserDevice.profile_type == "patient",
-                    )
+                q = select(UserDevice.fcm_token).where(
+                    UserDevice.fcm_token.isnot(None),
+                    UserDevice.is_active.is_(True),
+                    UserDevice.profile_type == "patient",
                 )
+                platform = notification_info.get("platform", "all")
+                if platform == "android":
+                    q = q.where(func.lower(UserDevice.device_type) == "android")
+                elif platform == "ios":
+                    q = q.where(func.lower(UserDevice.device_type).in_(["ios", "iphone", "ipad"]))
+
+                result = await session.execute(q)
                 tokens = [row[0] for row in result.all()]
         finally:
             await store.close()
@@ -123,6 +128,7 @@ async def enqueue_broadcast_notification(
     body: str,
     channel_key: FCMNotificationChannelKeyLiteral = "other",
     group_key: FCMNotificationGroupKeyLiteral = "other_group",
+    platform: Literal["all", "android", "ios"] = "all",
     data: Optional[dict] = None,
 ) -> Optional[str]:
     notification_info = {
@@ -130,6 +136,7 @@ async def enqueue_broadcast_notification(
         "body": body,
         "channel_key": channel_key,
         "group_key": group_key,
+        "platform": platform,
         "data": data or {},
     }
 
