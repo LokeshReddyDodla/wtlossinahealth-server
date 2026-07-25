@@ -82,6 +82,9 @@ async def get_platform_usage_summary(
 async def get_usage_by_patient(
     start_date: date = Query(...),
     end_date: date = Query(...),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    q: str = Query("", description="Search by name or user_id"),
     current_actor: Actor = Depends(
         get_current_actor(
             allowed_roles=[ProfileTypeEnum.ADMIN],
@@ -93,19 +96,21 @@ async def get_usage_by_patient(
 ):
     lf = gateway._langfuse_client
     if not lf:
-        return SuccessResponse(message="Langfuse not configured", data=[])
+        return SuccessResponse(message="Langfuse not configured", data={
+            "patients": [], "total": 0, "page": page, "page_size": page_size, "total_cost": 0,
+        })
 
     from_ts = datetime.combine(start_date, time.min)
     to_ts = datetime.combine(end_date, time.max)
 
     user_agg: dict[str, dict] = {}
-    page = 1
+    lf_page = 1
     while True:
         resp = lf.fetch_traces(
             from_timestamp=from_ts,
             to_timestamp=to_ts,
             limit=100,
-            page=page,
+            page=lf_page,
         )
         for trace in resp.data:
             uid = trace.user_id
@@ -116,26 +121,45 @@ async def get_usage_by_patient(
             user_agg[uid]["total_cost"] += trace.total_cost
             user_agg[uid]["total_traces"] += 1
 
-        if page * resp.meta.limit >= resp.meta.total_items:
+        if lf_page * resp.meta.limit >= resp.meta.total_items:
             break
-        page += 1
+        lf_page += 1
 
     patient_ids = list(user_agg.keys())
     profiles = await patient_service.fetch_patient_profiles(patient_ids) if patient_ids else {}
 
-    result = []
+    all_rows = []
+    platform_cost = 0.0
     for uid, agg in user_agg.items():
         profile = profiles.get(uid)
         name = None
         if profile:
             name = " ".join(filter(None, [profile.first_name, profile.last_name])) or None
-        result.append({
+        platform_cost += agg["total_cost"]
+        all_rows.append({
             "user_id": uid,
             "name": name,
             "total_cost": round(agg["total_cost"], 6),
             "total_traces": agg["total_traces"],
         })
 
-    result.sort(key=lambda r: r["total_cost"], reverse=True)
+    all_rows.sort(key=lambda r: r["total_cost"], reverse=True)
 
-    return SuccessResponse(message="Usage by patient", data=result)
+    search = q.strip().lower()
+    if search:
+        all_rows = [
+            r for r in all_rows
+            if search in (r["name"] or "").lower() or search in r["user_id"].lower()
+        ]
+
+    total = len(all_rows)
+    start = (page - 1) * page_size
+    patients = all_rows[start : start + page_size]
+
+    return SuccessResponse(message="Usage by patient", data={
+        "patients": patients,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_cost": round(platform_cost, 2),
+    })
