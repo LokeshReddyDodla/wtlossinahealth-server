@@ -55,7 +55,6 @@ class PatientDataExportService:
         "patient_summaries",
         "patient_documents",
         "patient_document_summary_interactions",
-        "profile_update_conversations",
     ]
 
     MONGO_USER_ID_COLLECTIONS: list[str] = []

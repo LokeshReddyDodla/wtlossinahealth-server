@@ -10,7 +10,6 @@ from rest_server.health import health_check
 from rest_server.health_facility.router import router as health_facility_router
 from rest_server.patients.router import router as patients_router
 from rest_server.admin.router import router as admin_router
-from rest_server.profile_update_agent.router import router as profile_update_agent_router
 from rest_server.profile_agent.router import router as profile_agent_router
 from rest_server.system_management import reload_cache
 from rest_server.test import test
@@ -79,12 +78,7 @@ def import_routes(app: FastAPI) -> None:
     app.include_router(v1_router)
 
     ###########################################################################
-    # Profile Update Agent
-    ###########################################################################
-    app.include_router(profile_update_agent_router)
-
-    ###########################################################################
-    # Profile Agent (unified replacement for onboarding + profile-update)
+    # Profile Agent (unified onboarding + update)
     ###########################################################################
     app.include_router(profile_agent_router)
 

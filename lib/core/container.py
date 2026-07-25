@@ -81,7 +81,6 @@ from lib.services.patient_package_assignment_service import (
 from lib.services.patient_diet_plan_service import PatientDietPlanService
 from lib.services.patient_fitness_plan_service import PatientFitnessPlanService
 from lib.services.patient_profile_service import PatientProfileService
-from lib.services.profile_update_agent import ProfileUpdateAgentService
 from lib.services.profile_agent import ProfileAgentService
 from lib.services.vector import PatientProfileVectorService
 from lib.services.vector.plans import PlansVectorService
@@ -248,16 +247,6 @@ container.register(
     ),
     scope=Scope.singleton,
 )
-
-# Profile Update Agent Collection
-container.register(
-    "profile_update_conversations_collection",
-    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
-        "profile_update_conversations"
-    ),
-    scope=Scope.singleton,
-)
-
 
 # Profile Agent Collection (unified onboarding + update)
 container.register(
@@ -1054,20 +1043,6 @@ container.register(
 
 # 🔹 File Content Extractor Service
 container.register(FileContentExtractorService, FileContentExtractorService)
-
-# 🔹 Profile Update Agent Service
-container.register(
-    ProfileUpdateAgentService,
-    lambda: ProfileUpdateAgentService(
-        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
-        patient_profile_service=cast(
-            PatientProfileService, container.resolve(PatientProfileService)
-        ),
-        conversation_collection=container.resolve(
-            "profile_update_conversations_collection"
-        ),
-    ),
-)
 
 # 🔹 Profile Agent Service (unified onboarding + update)
 container.register(

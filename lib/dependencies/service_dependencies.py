@@ -99,7 +99,6 @@ from lib.services.reports import (
     SMBGStatsProcessor,
 )
 
-from lib.services.profile_update_agent import ProfileUpdateAgentService
 from lib.services.profile_agent import ProfileAgentService
 
 from lib.ai_foundation.agents.health_query import HealthQueryAgent
@@ -569,14 +568,6 @@ def get_research_agent() -> ResearchAgent:
         ResearchAgent,
         container.resolve(ResearchAgent),
     )
-
-
-def get_profile_update_agent_service() -> ProfileUpdateAgentService:
-    return cast(
-        ProfileUpdateAgentService,
-        container.resolve(ProfileUpdateAgentService),
-    )
-
 
 
 def get_profile_agent_service() -> ProfileAgentService:
