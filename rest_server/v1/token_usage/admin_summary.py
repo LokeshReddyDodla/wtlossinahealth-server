@@ -1,14 +1,18 @@
+import logging
 from datetime import date, datetime, time
 
 from fastapi import Depends, Query
 
 from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.actor import Actor, get_current_actor
-from lib.dependencies.service_dependencies import get_model_gateway
+from lib.dependencies.service_dependencies import get_model_gateway, get_patient_profile_service
 from lib.ai_foundation.models.gateway import ModelGateway
+from lib.services.patient_profile_service import PatientProfileService
 from rest_server.response_models import SuccessResponse
 
 from .router import router
+
+logger = logging.getLogger(__name__)
 
 
 @router.get("/admin/summary", response_model=SuccessResponse)
@@ -72,3 +76,66 @@ async def get_platform_usage_summary(
         message="Platform usage summary",
         data={"daily": daily, "by_model": by_model},
     )
+
+
+@router.get("/admin/by-patient", response_model=SuccessResponse)
+async def get_usage_by_patient(
+    start_date: date = Query(...),
+    end_date: date = Query(...),
+    current_actor: Actor = Depends(
+        get_current_actor(
+            allowed_roles=[ProfileTypeEnum.ADMIN],
+            check_permissions=False,
+        )
+    ),
+    gateway: ModelGateway = Depends(get_model_gateway),
+    patient_service: PatientProfileService = Depends(get_patient_profile_service),
+):
+    lf = gateway._langfuse_client
+    if not lf:
+        return SuccessResponse(message="Langfuse not configured", data=[])
+
+    from_ts = datetime.combine(start_date, time.min)
+    to_ts = datetime.combine(end_date, time.max)
+
+    user_agg: dict[str, dict] = {}
+    page = 1
+    while True:
+        resp = lf.fetch_traces(
+            from_timestamp=from_ts,
+            to_timestamp=to_ts,
+            limit=100,
+            page=page,
+        )
+        for trace in resp.data:
+            uid = trace.user_id
+            if not uid:
+                continue
+            if uid not in user_agg:
+                user_agg[uid] = {"user_id": uid, "total_cost": 0.0, "total_traces": 0}
+            user_agg[uid]["total_cost"] += trace.total_cost
+            user_agg[uid]["total_traces"] += 1
+
+        if page * resp.meta.limit >= resp.meta.total_items:
+            break
+        page += 1
+
+    patient_ids = list(user_agg.keys())
+    profiles = await patient_service.fetch_patient_profiles(patient_ids) if patient_ids else {}
+
+    result = []
+    for uid, agg in user_agg.items():
+        profile = profiles.get(uid)
+        name = None
+        if profile:
+            name = " ".join(filter(None, [profile.first_name, profile.last_name])) or None
+        result.append({
+            "user_id": uid,
+            "name": name,
+            "total_cost": round(agg["total_cost"], 6),
+            "total_traces": agg["total_traces"],
+        })
+
+    result.sort(key=lambda r: r["total_cost"], reverse=True)
+
+    return SuccessResponse(message="Usage by patient", data=result)
