@@ -28,13 +28,14 @@ class ClickHouseStore:
         self.client.execute("""
         CREATE TABLE IF NOT EXISTS aihealth.cgm_data (
             patient_id String,
-            time DateTime,
+            time DateTime64(3),
             glucose_level Float32,
-            record_type String,
-            source String DEFAULT 'unknown',
+            record_type LowCardinality(String),
+            source LowCardinality(String) DEFAULT 'unknown',
             INDEX idx_record_type record_type TYPE set(100) GRANULARITY 4,
             INDEX idx_source source TYPE set(100) GRANULARITY 4
         ) ENGINE = ReplacingMergeTree()
+        PARTITION BY toYYYYMM(time)
         ORDER BY (patient_id, time, source, record_type);
         """)
 
@@ -42,16 +43,17 @@ class ClickHouseStore:
         self.client.execute("""
         CREATE TABLE IF NOT EXISTS aihealth.fitness_data (
             patient_id String,
-            type String,
-            source_name String,
-            source_platform String,
-            unit String,
+            type LowCardinality(String),
+            source_name LowCardinality(String),
+            source_platform LowCardinality(String),
+            unit LowCardinality(String),
             value Float64,
-            start_datetime DateTime,
-            end_datetime DateTime,
+            start_datetime DateTime64(3),
+            end_datetime DateTime64(3),
             INDEX idx_type type TYPE set(100) GRANULARITY 4,
             INDEX idx_source_name source_name TYPE set(100) GRANULARITY 4
         ) ENGINE = ReplacingMergeTree()
+        PARTITION BY toYYYYMM(start_datetime)
         ORDER BY (patient_id, type, start_datetime, source_name);
         """)
 
@@ -59,15 +61,16 @@ class ClickHouseStore:
         self.client.execute("""
         CREATE TABLE IF NOT EXISTS aihealth.sleep_data (
             patient_id String,
-            type String,
-            source_name String,
-            source_platform String,
+            type LowCardinality(String),
+            source_name LowCardinality(String),
+            source_platform LowCardinality(String),
             sleep_duration Float64,
-            sleep_start_time DateTime,
-            sleep_end_time DateTime,
+            sleep_start_time DateTime64(3),
+            sleep_end_time DateTime64(3),
             INDEX idx_type type TYPE set(100) GRANULARITY 4,
             INDEX idx_source_name source_name TYPE set(100) GRANULARITY 4
         ) ENGINE = ReplacingMergeTree()
+        PARTITION BY toYYYYMM(sleep_start_time)
         ORDER BY (patient_id, type, sleep_start_time, source_name);
         """)
 
@@ -76,14 +79,15 @@ class ClickHouseStore:
         CREATE TABLE IF NOT EXISTS aihealth.vitals_data (
             patient_id String,
             vital_id String DEFAULT '',
-            type String,
+            type LowCardinality(String),
             value Float64,
-            time DateTime,
-            source_name String DEFAULT '',
-            source_platform String DEFAULT '',
+            time DateTime64(3),
+            source_name LowCardinality(String) DEFAULT '',
+            source_platform LowCardinality(String) DEFAULT '',
             INDEX idx_type type TYPE set(100) GRANULARITY 4,
             INDEX idx_source source_name TYPE set(100) GRANULARITY 4
         ) ENGINE = ReplacingMergeTree()
+        PARTITION BY toYYYYMM(time)
         ORDER BY (patient_id, type, time, source_name);
         """)
 

@@ -23,7 +23,7 @@ from lib.ai_foundation.config import settings
 from lib.ai_foundation.retrieval.base import RetrievalRequest, RetrievalResult
 
 if TYPE_CHECKING:
-    from lib.ai_foundation.models.gateway import LLMToolResponse, ToolCall
+    from lib.ai_foundation.models.gateway import LLMToolResponse
     from lib.ai_foundation.retrieval.qdrant import QdrantRetriever
     from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTracker
     from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
@@ -36,7 +36,22 @@ logger = logging.getLogger(__name__)
 NO_DATA_PREFIX = "[NO_DATA] "
 
 # Keys excluded when formatting payloads for LLM consumption
-_PAYLOAD_EXCLUDE = frozenset({"data_type", "source", "patient_id", "embedding", "start_time", "end_time"})
+_PAYLOAD_EXCLUDE = frozenset(
+    {
+        "data_type",
+        "source",
+        "patient_id",
+        "embedding",
+        "start_time",
+        "end_time",
+        # Raw epoch-ms internals — the LLM can only mangle these into wrong
+        # dates; human-readable date/time fields are already in the payload.
+        "vector_updated_at",
+        "uploaded_at",
+    }
+)
+
+_WEEKDAY_NAMES = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 
 
 def _format_payload(
@@ -64,6 +79,10 @@ def _format_payload(
         elif isinstance(v, list):
             if include_nested and v and isinstance(v[0], dict):
                 parts.append(f"{k}: {len(v)} items")
+        elif k == "day_of_week" and isinstance(v, int) and 0 <= v <= 6:
+            # Python weekday int (Mon=0) — models misread the convention
+            # (e.g. assume Sun=0), so spell out the name.
+            parts.append(f"{k}: {_WEEKDAY_NAMES[v]}")
         else:
             parts.append(f"{k}: {v}")
     return ", ".join(parts)
@@ -640,7 +659,7 @@ class ToolExecutor:
                 tzs = await self._patient_resolver.resolve_timezones(patient_ids[:1])
                 tz_name = tzs.get(patient_ids[0], tz_name)
             except Exception:
-                logger.debug("Timezone resolution failed for %s", patient_ids, exc_info=True)
+                logger.warning("Timezone resolution failed for %s", patient_ids, exc_info=True)
         try:
             tz = ZoneInfo(tz_name)
         except Exception:

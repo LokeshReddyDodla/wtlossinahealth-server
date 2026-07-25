@@ -24,13 +24,13 @@ from lib.ai_foundation.models.registry import ModelTask
 from lib.ai_foundation.streaming.sse import (
     PipelineStage,
     SSEDonePayload,
-    sse_done,
     sse_error,
     sse_plan,
     sse_reflection,
     sse_specialist_done,
     sse_specialist_start,
     sse_status,
+    sse_bubble,
     sse_token,
 )
 
@@ -41,6 +41,7 @@ from lib.ai_foundation.agents.health_query.evidence import (
     format_data_gaps,
 )
 
+from lib.ai_foundation.agents.core.bubbles import BubbleStreamFilter, extract_await, strip_bubbles
 from lib.ai_foundation.agents.core.chart_processor import process_charts
 from lib.ai_foundation.agents.core.context_loader import build_context_messages
 from lib.ai_foundation.agents.core.context_pruner import ContextPruner, MIN_TRUNCATION_CHARS as _MIN_TRUNCATION_CHARS
@@ -150,8 +151,13 @@ class Coordinator:
         patient_names: dict[str, str] | None = None,
         user_role: str = "patient",
         trace_id: str | None = None,
-    ) -> AsyncIterator[str]:
-        """Streaming orchestration with SSE events."""
+        delta_sink: list[str] | None = None,
+    ) -> AsyncIterator[str | SSEDonePayload]:
+        """Streaming orchestration with SSE events.
+
+        Yields formatted SSE strings, then a terminal SSEDonePayload carrying
+        the structured result (full response, cost, evidence metrics).
+        """
         async for item in self._orchestrate_core(
             user_message=user_message,
             system_prompt=system_prompt,
@@ -165,8 +171,9 @@ class Coordinator:
             user_role=user_role,
             emit_events=True,
             trace_id=trace_id,
+            delta_sink=delta_sink,
         ):
-            if isinstance(item, str):
+            if isinstance(item, (str, SSEDonePayload)):
                 yield item
 
     # ── Core loop (shared implementation) ─────────────────────────────
@@ -186,6 +193,7 @@ class Coordinator:
         user_role: str = "patient",
         emit_events: bool = False,
         trace_id: str | None = None,
+        delta_sink: list[str] | None = None,
     ) -> AsyncIterator[str | ReasoningResult]:
         """Unified orchestration loop that yields SSE strings and/or a ReasoningResult."""
         tier_cfg = TIER_CONFIGS[tier]
@@ -239,27 +247,24 @@ class Coordinator:
                 if emit_events:
                     yield sse_specialist_start(domain, budget_per_specialist)
 
-        # Run specialists in parallel, collect findings
+        # Run specialists in parallel, collect findings. Timeout is applied
+        # per specialist so one straggler can't discard finished work.
         if active_specialists:
             tasks = [
-                spec.investigate(
-                    messages=base_messages,
-                    patient_ids=patient_ids,
-                    max_rounds=budget_per_specialist,
-                    model_id=tier_cfg.thinker_model,
-                    patient_names=patient_names,
-                    trace_id=trace_id,
+                asyncio.wait_for(
+                    spec.investigate(
+                        messages=base_messages,
+                        patient_ids=patient_ids,
+                        max_rounds=budget_per_specialist,
+                        model_id=tier_cfg.thinker_model,
+                        patient_names=patient_names,
+                        trace_id=trace_id,
+                    ),
+                    timeout=settings.SPECIALIST_TIMEOUT_SECONDS,
                 )
                 for _, spec in active_specialists
             ]
-            try:
-                results = await asyncio.wait_for(
-                    asyncio.gather(*tasks, return_exceptions=True),
-                    timeout=settings.SPECIALIST_TIMEOUT_SECONDS,
-                )
-            except asyncio.TimeoutError:
-                logger.warning("Specialist investigations timed out after %.0fs", settings.SPECIALIST_TIMEOUT_SECONDS)
-                results = [asyncio.TimeoutError("Specialist timeout") for _ in active_specialists]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
 
             findings: list[SpecialistFindings] = []
             failed_domains: list[str] = []
@@ -324,6 +329,7 @@ class Coordinator:
                     tier_cfg=tier_cfg,
                     patient_ids=patient_ids,
                     patient_names=patient_names,
+                    trace_id=trace_id,
                 )
                 if synthesis["findings"]:
                     combined_data += f"\n\n---\n\n## CROSS-DOMAIN ANALYSIS\n\n{synthesis['findings']}"
@@ -352,17 +358,27 @@ class Coordinator:
             yield sse_status(PipelineStage.GENERATING_RESPONSE, "Building personalized insights...")
 
             full_response_parts: list[str] = []
+            # Visible stream never carries the bubble sentinel (see
+            # reasoning_engine — same protocol).
+            bubble_filter = BubbleStreamFilter()
 
             try:
                 async for chunk in self._gateway.stream(
                     messages=responder_messages,
                     task=ModelTask.RESPONSE_GENERATION,
                     model_id=tier_cfg.responder_model,
-                    timeout=60.0,
+                    timeout=settings.RESPONDER_TIMEOUT_SECONDS,
+                    trace_id=trace_id,
                 ):
                     if chunk.delta:
                         full_response_parts.append(chunk.delta)
-                        yield sse_token(chunk.delta)
+                        if delta_sink is not None:
+                            delta_sink.append(chunk.delta)
+                        for kind, piece in bubble_filter.feed_events(chunk.delta):
+                            if kind == "bubble":
+                                yield sse_bubble()
+                            elif piece:
+                                yield sse_token(piece)
                     if chunk.finished and chunk.usage:
                         total_cost += safe_cost(chunk)
             except Exception as exc:
@@ -373,14 +389,20 @@ class Coordinator:
                 yield sse_error(
                     message="The response was interrupted. Please try again.",
                     code="stream_error",
-                    fallback_text="".join(full_response_parts) or None,
+                    fallback_text=strip_bubbles(extract_await("".join(full_response_parts))[0]) or None,
                 )
                 return
+
+            tail = bubble_filter.flush()
+            if tail:
+                yield sse_token(tail)
 
             # Compute evidence confidence for SSE done payload
             evidence = self._compute_evidence_metrics(findings, reflection_result)
 
-            yield sse_done(SSEDonePayload(
+            # Yield the structured payload — the agent builds the final done
+            # event itself (no serialize → string-parse → re-serialize round-trip).
+            yield SSEDonePayload(
                 cost_usd=total_cost,
                 data={
                     "rounds_used": len(findings),
@@ -390,13 +412,18 @@ class Coordinator:
                     "full_response": process_charts("".join(full_response_parts)),
                     **evidence,
                 },
-            ))
+            )
         else:
-            # Non-streaming: single responder call
+            # Non-streaming: single responder call. Explicit timeout — the
+            # spec default (15s) is too tight for long multi-domain answers,
+            # and explicit model_id disables fallback, so a timeout here
+            # fails the whole query.
             final_response = await self._gateway.complete(
                 messages=responder_messages,
                 task=ModelTask.RESPONSE_GENERATION,
                 model_id=tier_cfg.responder_model,
+                timeout=settings.RESPONDER_TIMEOUT_SECONDS,
+                trace_id=trace_id,
             )
             total_cost += safe_cost(final_response)
 
@@ -500,6 +527,7 @@ class Coordinator:
         tier_cfg: Any,
         patient_ids: list[str],
         patient_names: dict[str, str] | None = None,
+        trace_id: str | None = None,
     ) -> dict[str, Any]:
         """LLM-driven cross-domain follow-up after specialists complete.
 
@@ -570,6 +598,7 @@ class Coordinator:
                 task=ModelTask.CLASSIFICATION,
                 model_id=tier_cfg.thinker_model,
                 timeout=settings.REASONING_TIMEOUT_SECONDS,
+                trace_id=trace_id,
             )
             cost += safe_cost(response)
 
@@ -721,10 +750,8 @@ class Coordinator:
     ) -> list[dict[str, Any]]:
         """Build messages for the responder model."""
         from lib.ai_foundation.agents.health_query.evidence import (
-            build_summary_from_findings,
-            format_coverage_note,
-            format_patient,
-            format_provider,
+            evidence_items_from_findings,
+            format_evidence_block,
         )
 
         messages: list[dict[str, Any]] = []
@@ -768,13 +795,10 @@ class Coordinator:
                 "_meta": {"type": "data_gap"},
             })
 
-        # Inject evidence summary from specialist findings
+        # Shared evidence block — treatment must not diverge between the
+        # coordinator and reasoning-engine responders.
         if findings:
-            summary = build_summary_from_findings(findings)
-            evidence_text = format_provider(summary) if user_role in ("care_provider", "research") else format_patient(summary)
-            coverage_note = format_coverage_note(summary)
-            if coverage_note:
-                evidence_text = f"{evidence_text}\n{coverage_note}" if evidence_text else coverage_note
+            evidence_text = format_evidence_block(evidence_items_from_findings(findings), user_role)
             if evidence_text:
                 messages.append({
                     "role": "system",

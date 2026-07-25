@@ -47,14 +47,14 @@ class ArqTaskManager:
         )
 
     async def enqueue_meal_vector(
-        self, patient_id: str, meal_id: str, meal_data: Dict[str, Any]
+        self, patient_id: str, meal_id: str
     ) -> Optional[str]:
         """Enqueue meal vector generation (async)."""
         from lib.workers.tasks.meal.enqueue import enqueue_meal_vector_async
-        return await enqueue_meal_vector_async(patient_id, meal_id, meal_data)
+        return await enqueue_meal_vector_async(patient_id, meal_id)
 
     def enqueue_meal_vector_sync(
-        self, patient_id: str, meal_id: str, meal_data: Dict[str, Any]
+        self, patient_id: str, meal_id: str
     ) -> Optional[str]:
         """Enqueue meal vector generation (sync)."""
         import asyncio
@@ -63,7 +63,7 @@ class ArqTaskManager:
         nest_asyncio.apply()
         loop = asyncio.get_event_loop()
         return loop.run_until_complete(
-            self.enqueue_meal_vector(patient_id, meal_id, meal_data)
+            self.enqueue_meal_vector(patient_id, meal_id)
         )
 
     async def health_check(self) -> bool:

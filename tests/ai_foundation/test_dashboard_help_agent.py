@@ -31,6 +31,15 @@ def _response(content: str):
     )
 
 
+# Langfuse trace helpers are no-ops on the real gateway when disabled; the
+# stub just needs them to exist so the agent can call them.
+_LF = {
+    "set_langfuse_context": lambda **k: None,
+    "langfuse_trace_input": lambda **k: None,
+    "langfuse_trace_output": lambda **k: None,
+}
+
+
 def _gateway(*, answer: str, video: str):
     """Gateway whose ``complete`` returns ``answer`` for RESPONSE_GENERATION and
     ``video`` (an id or NONE) for the CLASSIFICATION video-picker call."""
@@ -40,7 +49,7 @@ def _gateway(*, answer: str, video: str):
             return _response(video)
         return _response(answer)
 
-    return SimpleNamespace(complete=AsyncMock(side_effect=complete))
+    return SimpleNamespace(complete=AsyncMock(side_effect=complete), **_LF)
 
 
 def _agent(gateway) -> DashboardHelpAgent:
@@ -140,7 +149,7 @@ async def test_answer_failure_returns_graceful_message():
             raise RuntimeError("LLM down")
         return _response("NONE")
 
-    gw = SimpleNamespace(complete=AsyncMock(side_effect=boom))
+    gw = SimpleNamespace(complete=AsyncMock(side_effect=boom), **_LF)
     out = await _agent(gw).run(_input("anything"))
 
     assert out.is_ready is False
@@ -154,7 +163,7 @@ async def test_video_pick_failure_does_not_break_answer():
             raise RuntimeError("classifier down")
         return _response("the answer")
 
-    gw = SimpleNamespace(complete=AsyncMock(side_effect=partial))
+    gw = SimpleNamespace(complete=AsyncMock(side_effect=partial), **_LF)
     out = await _agent(gw).run(_input("how do I add a patient"))
 
     assert out.message == "the answer"

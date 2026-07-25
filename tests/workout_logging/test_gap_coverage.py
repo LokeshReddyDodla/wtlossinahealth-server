@@ -27,7 +27,10 @@ from tests.workout_logging.conftest import FakeResult, FakeSession
 
 def _make_service(monkeypatch):
     service = PatientWorkoutService(postgres_store=SimpleNamespace())
-    monkeypatch.setattr(service, "_fire_vector", lambda *a, **k: None)
+    async def _noop_vector(*a, **k):
+        return None
+
+    monkeypatch.setattr(service, "_fire_vector", _noop_vector)
 
     async def _noop(_pid):
         return None

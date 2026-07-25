@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from lib.ai_foundation.agents.core.persistence_service import PersistenceService
+from lib.ai_foundation.agents.core.persistence_service import PersistenceService, ThreadDigest
 from lib.ai_foundation.memory.base import ThreadSummary
 
 
@@ -28,6 +28,11 @@ def _make_service(*, turn_count: int = 0, summary_text: str = "", title: str = "
     memory.append_turns_batch = AsyncMock()
 
     gateway.complete = AsyncMock(return_value=MagicMock(content="Summary text."))
+    gateway.extract = AsyncMock(return_value=(
+        ThreadDigest(summary="Summary text.", goal="lose 5 kg",
+                     domains=["glucose"], date_scope="this_week"),
+        MagicMock(),
+    ))
 
     svc = PersistenceService(memory=memory, gateway=gateway)
     return svc
@@ -104,7 +109,7 @@ class TestTurnCountFromQuery:
         await svc.compact_if_needed(thread_id="t1")
 
         # Should have compacted (6 >= threshold 4, 6 % 2 == 0)
-        svc._gateway.complete.assert_called_once()
+        svc._gateway.extract.assert_called_once()
 
 
 # ── Test: Compaction threshold config ────────────────────────────────────
@@ -119,7 +124,7 @@ class TestCompactionThreshold:
         await svc.compact_if_needed(thread_id="t1")
 
         # Gateway.complete should NOT have been called (no LLM summarization)
-        svc._gateway.complete.assert_not_called()
+        svc._gateway.extract.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_skips_off_interval(self):
@@ -128,7 +133,7 @@ class TestCompactionThreshold:
 
         await svc.compact_if_needed(thread_id="t1")
 
-        svc._gateway.complete.assert_not_called()
+        svc._gateway.extract.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_compacts_at_threshold(self):
@@ -142,7 +147,7 @@ class TestCompactionThreshold:
         await svc.compact_if_needed(thread_id="t1")
 
         # Gateway.complete should have been called once for summarization (title already exists)
-        svc._gateway.complete.assert_called_once()
+        svc._gateway.extract.assert_called_once()
 
 
 # ── Test: Background task wrapper ────────────────────────────────────────
@@ -191,21 +196,21 @@ class TestDistributedLock:
         """If Redis lock is held, compaction should skip."""
         svc = _make_service(turn_count=6, title="Title")
         cache = MagicMock()
-        cache.set_key = MagicMock(return_value=False)  # lock NOT acquired
+        cache.aset_key = AsyncMock(return_value=False)  # lock NOT acquired
         svc._cache = cache
 
         await svc.compact_if_needed(thread_id="t1")
 
         # Gateway should NOT have been called (lock not acquired)
-        svc._gateway.complete.assert_not_called()
+        svc._gateway.extract.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_redis_lock_acquired_and_released(self):
         """Lock should be acquired before compaction and released after."""
         svc = _make_service(turn_count=6, title="Title")
         cache = MagicMock()
-        cache.set_key = MagicMock(return_value=True)  # lock acquired
-        cache.delete_key = MagicMock()
+        cache.aset_key = AsyncMock(return_value=True)  # lock acquired
+        cache.adelete_key = AsyncMock()
         svc._cache = cache
         svc._memory.get_thread_turns = AsyncMock(return_value=[
             MagicMock(role="user", content="msg"),
@@ -214,15 +219,15 @@ class TestDistributedLock:
 
         await svc.compact_if_needed(thread_id="t1")
 
-        cache.set_key.assert_called_once()
-        cache.delete_key.assert_called_once()
+        cache.aset_key.assert_called_once()
+        cache.adelete_key.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_redis_failure_falls_back_to_local(self):
         """If Redis is down, should fall back to in-memory lock (not crash)."""
         svc = _make_service(turn_count=6, title="Title")
         cache = MagicMock()
-        cache.set_key = MagicMock(side_effect=ConnectionError("Redis down"))
+        cache.aset_key = AsyncMock(side_effect=ConnectionError("Redis down"))
         svc._cache = cache
         svc._memory.get_thread_turns = AsyncMock(return_value=[
             MagicMock(role="user", content="msg"),
@@ -231,7 +236,7 @@ class TestDistributedLock:
 
         # Should still run compaction via local lock fallback
         await svc.compact_if_needed(thread_id="t1")
-        svc._gateway.complete.assert_called_once()
+        svc._gateway.extract.assert_called_once()
 
 
 class TestCompactionGuard:
@@ -243,4 +248,4 @@ class TestCompactionGuard:
         # Summary already exists with turn_count=6, which >= 6-1
         await svc.compact_if_needed(thread_id="t1")
 
-        svc._gateway.complete.assert_not_called()
+        svc._gateway.extract.assert_not_called()

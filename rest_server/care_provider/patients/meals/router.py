@@ -6,6 +6,5 @@ router = APIRouter(
 )
 
 
-from .analyze import *
 from .read import *
 from .delete import *

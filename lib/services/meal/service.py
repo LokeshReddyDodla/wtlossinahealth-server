@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import date, datetime
 from typing import Any, List, Optional
 from uuid import UUID
@@ -28,14 +29,13 @@ from lib.models.patient_meal import (
 )
 from lib.schemas.patient import CorePatientProfile
 from lib.schemas.meal import MealCreateRequest
+
+logger = logging.getLogger(__name__)
 from lib.schemas.patient_meal import MealAnalysisResponse
 from lib.schemas.patient_meal import PatientMeal as PatientMealSchema
-from lib.services.ai_conversation_service.ai_conversation_service import (
-    AiConversationService,
-)
 from lib.services.vector import MealVectorService
 from lib.services.patient_profile_service import PatientProfileService
-from lib.workers.tasks.meal.enqueue import enqueue_daily_meal_report_sync
+from lib.workers.tasks.meal.enqueue import enqueue_daily_meal_report_async
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.postgres_session_decorator import with_postgres_session
 from rest_server.patients.meals.api_schema import (
@@ -43,10 +43,9 @@ from rest_server.patients.meals.api_schema import (
     PatientMealUploadRequest,
 )
 
-from .analysis import MealAnalysisService
 from .helpers import (
     create_food_item,
-    generate_conversation_flow,
+    serialize_meal_for_vector,
     trigger_meal_tasks,
 )
 
@@ -72,19 +71,12 @@ class MealService:
     def __init__(
         self,
         postgres_store: PostgresStore,
-        meal_analysis_service: MealAnalysisService,
         patient_profile_service: PatientProfileService,
         meal_vector_service: MealVectorService,
     ):
         self.postgres_store = postgres_store
-        self.meal_analysis_service = meal_analysis_service
         self.patient_profile_service = patient_profile_service
         self.meal_vector_service = meal_vector_service
-        self.ai_conversation_service = AiConversationService(
-            conversation_type="meal",
-            selected_ai_model="gpt-4.1-mini",
-            ai_model_provider="openai",
-        )
 
     @with_postgres_session
     async def fetch_meals(
@@ -194,6 +186,35 @@ class MealService:
         return meal
 
     @with_postgres_session
+    async def get_meal_vector_data(
+        self, meal_id: str, *, postgres_session: AsyncSession
+    ) -> dict | None:
+        """Serialize a meal into the Qdrant vector payload, macros included.
+
+        Reads Postgres (source of truth) with macro/micro relationships
+        eager-loaded, so the vector can never drift from the report. Returns
+        None when the meal no longer exists (deleted before the worker ran).
+        """
+        query = (
+            select(PatientMealModel)
+            .where(PatientMealModel.id == meal_id)
+            .options(
+                selectinload(PatientMealModel.items).selectinload(
+                    PatientFoodItemModel.macro_nutritional_values
+                ),
+                selectinload(PatientMealModel.items).selectinload(
+                    PatientFoodItemModel.micro_nutritional_values
+                ),
+                selectinload(PatientMealModel.total_macro_nutritional_value),
+                selectinload(PatientMealModel.total_micro_nutritional_value),
+            )
+        )
+        meal = (await postgres_session.execute(query)).scalars().first()
+        if meal is None:
+            return None
+        return serialize_meal_for_vector(meal)
+
+    @with_postgres_session
     async def get_meal_counts_by_date(
         self,
         patient_id: str,
@@ -259,17 +280,31 @@ class MealService:
             await postgres_session.commit()
             await postgres_session.refresh(meal)
 
-            enqueue_daily_meal_report_sync(str(patient_id), meal.date)
+            await enqueue_daily_meal_report_async(str(patient_id), meal.date)
 
-            # Gamification hook (fire-and-forget)
+            # EventBus publish — gamification (and any future subscribers)
+            # react from here, same as the save_from_preview flow.
             try:
-                from uuid import UUID as _UUID
+                from lib.ai_foundation.events.bus import EventBus
+                from lib.ai_foundation.events.schemas import HealthEvent, HealthEventType
                 from lib.core.container import container
-                from lib.services.gamification.event_handler import GamificationEventHandler
-                handler = container.resolve(GamificationEventHandler)
-                await handler.on_meal_logged(_UUID(patient_id))
+
+                bus = container.resolve(EventBus)
+                await bus.publish(
+                    HealthEvent(
+                        event_type=HealthEventType.MEAL_LOGGED.value,
+                        patient_id=str(patient_id),
+                        data={
+                            "meal_id": str(meal.id),
+                            "slot": meal.type,
+                            "consumed_at": meal_data.datetime.isoformat(),
+                            "source": meal.source,
+                        },
+                        source_agent="meal_upload",
+                    )
+                )
             except Exception:
-                pass
+                logger.exception("MEAL_LOGGED publish failed for %s", patient_id)
 
             return meal
 
@@ -322,7 +357,14 @@ class MealService:
             await postgres_session.commit()
             await postgres_session.refresh(meal)
 
-            enqueue_daily_meal_report_sync(str(patient_id), meal.date)
+            # Re-upsert the Qdrant point (deterministic id → overwrite):
+            # every write path that changes a meal must refresh its vector,
+            # or the agent keeps citing the pre-edit meal.
+            await trigger_meal_tasks(
+                patient_id=str(patient_id),
+                meal_id=str(meal.id),
+                meal_date=meal.date,
+            )
 
             # Refresh macro task progress (totals changed)
             try:
@@ -343,148 +385,6 @@ class MealService:
                 message="Database Error",
                 detail=str(e),
             )
-
-    @with_postgres_session
-    async def analyze_or_reanalyze_meal(
-        self,
-        meal_id: str,
-        patient_id: str,
-        re_analyze: Optional[bool] = False,
-        update_fields: Optional[dict] = None,
-        *,
-        postgres_session: AsyncSession,
-    ) -> PatientMealModel:
-        try:
-            meal = await self.fetch_meal(meal_id, postgres_session=postgres_session)
-            meal_orm = PatientMealSchema.model_validate(meal)
-
-            if meal_orm.analyzed and not re_analyze:
-                return meal
-
-            parsed_ai_response = await self._perform_meal_analysis(
-                meal, meal_orm, patient_id, update_fields
-            )
-
-            if not parsed_ai_response:
-                raise_http_exception(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    message=f"Meal with ID {meal_id} failed to be analyzed",
-                )
-
-            updated_meal = await self.save_meal_analysis(
-                meal, parsed_ai_response, postgres_session=postgres_session
-            )
-
-            if re_analyze:
-                await self.ai_conversation_service.delete_conversation_messages(
-                    conversation_id=meal_id
-                )
-
-            await self._create_meal_conversation(meal_orm, meal_id, parsed_ai_response)
-            trigger_meal_tasks(str(patient_id), str(meal_id), meal.date, updated_meal)
-
-            # Refresh macro task progress (nutritional values changed after analysis)
-            try:
-                from uuid import UUID as _UUID
-                from lib.core.container import container
-                from lib.services.gamification.event_handler import GamificationEventHandler
-                handler = container.resolve(GamificationEventHandler)
-                await handler._refresh_macro_progress(_UUID(patient_id))
-            except Exception:
-                pass
-
-            return updated_meal
-        except (json.JSONDecodeError, SQLAlchemyError) as e:
-            await postgres_session.rollback()
-            status_code = (
-                status.HTTP_400_BAD_REQUEST
-                if isinstance(e, json.JSONDecodeError)
-                else status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-            raise_http_exception(
-                status_code=status_code,
-                message="Invalid JSON"
-                if isinstance(e, json.JSONDecodeError)
-                else "Database Error",
-                detail=str(e),
-            )
-
-    async def _perform_meal_analysis(
-        self,
-        meal: PatientMealModel,
-        meal_orm: PatientMealSchema,
-        patient_id: str,
-        update_fields: Optional[dict],
-    ) -> MealAnalysisResponse:
-        if update_fields:
-            if "description" in update_fields:
-                meal.description = update_fields["description"]
-            return await self.meal_analysis_service.reanalyze_meal(
-                patient_id, meal_orm.model_dump(), update_fields
-            )
-
-        patient = await self.patient_profile_service.fetch_patient_profile(
-            patient_id=patient_id, detailed=True
-        )
-        patient_profile_json = CorePatientProfile.from_orm(patient).model_dump()
-
-        return await self.meal_analysis_service.analyze_meal(
-            patient_id,
-            patient_profile_json,
-            meal.time,
-            meal.image_urls[0] if meal.image_urls else meal.image_url,
-            meal.type,
-            meal.description,
-        )
-
-    async def _create_meal_conversation(
-        self,
-        meal_orm: PatientMealSchema,
-        meal_id: str,
-        parsed_ai_response: MealAnalysisResponse,
-    ):
-        message_sequence = generate_conversation_flow(
-            meal_orm, meal_id, parsed_ai_response
-        )
-        await self.ai_conversation_service.add_multiple_messages_to_conversation(
-            messages=message_sequence,
-        )
-
-    @with_postgres_session
-    async def save_meal_analysis(
-        self,
-        meal: Any,
-        analysis_data: MealAnalysisResponse,
-        *,
-        postgres_session: AsyncSession,
-    ) -> PatientMealModel:
-        self._normalize_carb_distribution(analysis_data)
-
-        meal.items = [
-            create_food_item(meal, item_data) for item_data in analysis_data.items
-        ]
-
-        total_macro = analysis_data.total_macro_nutritional_value.model_dump()
-        meal.total_macro_nutritional_value = PatientTotalMacroNutritionalValueModel(
-            meal_id=meal.id, **total_macro
-        )
-
-        total_micro = analysis_data.total_micro_nutritional_value.model_dump()
-        meal.total_micro_nutritional_value = PatientTotalMicroNutritionalValueModel(
-            meal_id=meal.id, **total_micro
-        )
-
-        meal.name = analysis_data.meal_name
-        meal.feedback = analysis_data.feedback
-        meal.tags = analysis_data.tags
-        meal.score = float(analysis_data.score)
-        meal.analyzed = True
-        meal.analyzed_at = datetime.now()
-
-        await postgres_session.merge(meal)
-        await postgres_session.commit()
-
-        return meal
 
     @with_postgres_session
     async def save_from_preview(
@@ -525,11 +425,10 @@ class MealService:
             await postgres_session.commit()
             await postgres_session.refresh(meal)
 
-            trigger_meal_tasks(
+            await trigger_meal_tasks(
                 patient_id=str(patient_id),
                 meal_id=str(meal.id),
                 meal_date=meal.date,
-                meal_obj=meal,
             )
 
             # EventBus publish — gamification and any future subscribers
@@ -635,15 +534,14 @@ class MealService:
             await postgres_session.commit()
             await postgres_session.refresh(meal)
 
-            trigger_meal_tasks(
+            await trigger_meal_tasks(
                 patient_id=str(patient_id),
                 meal_id=str(meal.id),
                 meal_date=meal.date,
-                meal_obj=meal,
             )
             if old_date != meal.date:
                 try:
-                    enqueue_daily_meal_report_sync(str(patient_id), old_date)
+                    await enqueue_daily_meal_report_async(str(patient_id), old_date)
                 except Exception:
                     pass
 
@@ -760,8 +658,19 @@ class MealService:
             await postgres_session.delete(meal)
             await postgres_session.commit()
 
-            enqueue_daily_meal_report_sync(str(patient_id), meal_date)
-            await self.meal_vector_service.delete_meal_vector(str(meal_id))
+            await enqueue_daily_meal_report_async(str(patient_id), meal_date)
+            try:
+                await self.meal_vector_service.delete_meal_vector(str(meal_id))
+            except Exception:
+                # PG row is already gone — an orphaned Qdrant point would be
+                # cited by the agent forever. Hand cleanup to a retryable job.
+                logger.exception("Inline vector delete failed for meal %s — enqueuing retry", meal_id)
+                from lib.workers.arq.redis import enqueue_job
+
+                await enqueue_job(
+                    "delete_meal_vector_task", str(meal_id),
+                    _job_id=f"meal:vector:delete:{meal_id}",
+                )
 
             # Clean up linked proactive insights
             try:

@@ -317,6 +317,29 @@ class PatientDietPlanService:
             )
 
     @with_postgres_session
+    async def expire_ended_plans(self, *, postgres_session: AsyncSession) -> int:
+        """Flip ACTIVE diet plans whose end_date has passed to EXPIRED and
+        re-vectorize them (syncs plan_status into Qdrant). Ongoing plans
+        (end_date NULL) never expire. Returns the number expired. Idempotent."""
+        today = datetime_date.today()
+        plans = (await postgres_session.execute(
+            select(PatientDietPlanModel).where(
+                PatientDietPlanModel.status == "ACTIVE",
+                PatientDietPlanModel.end_date.isnot(None),
+                PatientDietPlanModel.end_date < today,
+            )
+        )).scalars().all()
+        if not plans:
+            return 0
+        for plan in plans:
+            plan.status = "EXPIRED"
+        await postgres_session.commit()
+        for plan in plans:
+            await postgres_session.refresh(plan)
+            await self._vectorize_diet_plan(plan)
+        return len(plans)
+
+    @with_postgres_session
     async def delete_diet_plan(
         self,
         diet_plan_id: str,

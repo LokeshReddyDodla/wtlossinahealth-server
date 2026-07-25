@@ -1,6 +1,5 @@
 """Unified Profile Agent service.
 
-Replaces `ProfileUpdateAgentService` and `PatientOnboardingAgentService`.
 Schema-driven field discovery, mode-aware conversation, single Postgres
 transaction apply.
 
@@ -395,14 +394,14 @@ class ProfileAgentService:
             logger.warning("chat notify failed for %s", patient_id, exc_info=True)
 
         try:
-            from lib.workers.tasks.profile.enqueue import enqueue_generate_profile_vector_sync
+            from lib.workers.tasks.profile.enqueue import enqueue_generate_profile_vector_async
 
             await postgres_session.refresh(patient)
             detailed = await self.patient_profile_service.fetch_patient_profile(
                 patient_id, detailed=True, postgres_session=postgres_session
             )
             profile_data = CorePatientProfile.from_orm(detailed).model_dump(mode="json")
-            enqueue_generate_profile_vector_sync(patient_id, profile_data)
+            await enqueue_generate_profile_vector_async(patient_id, profile_data)
         except Exception:
             logger.warning("vector enqueue failed for %s", patient_id, exc_info=True)
 
@@ -426,7 +425,7 @@ class ProfileAgentService:
             for k in (
                 "permissions", "connected_apps", "care_providers",
                 "package_assignments", "current_package", "smbgs",
-                "weight_loss_enrollment", "diet_plans", "fitness_plans",
+                "diet_plans", "fitness_plans",
             ):
                 data.pop(k, None)
             return json.dumps(data, indent=2, default=str)

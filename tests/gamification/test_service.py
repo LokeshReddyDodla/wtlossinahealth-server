@@ -214,8 +214,8 @@ class TestGamificationService:
                 FakeScalarResult(values=[SimpleNamespace(Achievement=SimpleNamespace(slug="streak_14"))]),
                 FakeScalarResult(
                     values=[
-                        SimpleNamespace(status="completed"),
-                        SimpleNamespace(status="pending"),
+                        SimpleNamespace(status="completed", title="Log breakfast"),
+                        SimpleNamespace(status="pending", title="Take a 10-min walk"),
                     ]
                 ),
                 FakeScalarResult(

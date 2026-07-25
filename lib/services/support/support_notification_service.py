@@ -9,7 +9,7 @@ service additionally pushes FCM to the wider queue:
                             whose role is ``support_staff``
 
 Each agent's existing FCM token registry is reused via
-``enqueue_fcm_notification_sync`` (same path used for normal chat messages).
+``enqueue_fcm_notification_async`` (same path used for normal chat messages).
 """
 
 from typing import Optional
@@ -23,7 +23,7 @@ from lib.dependencies.database import get_async_postgres_session
 from lib.models.admin import Admin
 from lib.models.care_provider import CareProvider
 from lib.schemas.fcm_notification_info import FCMNotificationInfo
-from lib.workers.tasks.fcm.enqueue import enqueue_fcm_notification_sync
+from lib.workers.tasks.fcm.enqueue import enqueue_fcm_notification_async
 
 
 class SupportNotificationService:
@@ -91,7 +91,7 @@ class SupportNotificationService:
         if not recipients:
             return
 
-        enqueue_fcm_notification_sync(
+        await enqueue_fcm_notification_async(
             participants=recipients,
             notification_info=notification_info.dict(),
         )

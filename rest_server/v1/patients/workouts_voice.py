@@ -160,6 +160,7 @@ async def workout_voice_input(
             audio_format=audio_format,
             session=session,
             text=text,
+            patient_id=pid,
         ),
         s3_task,
         return_exceptions=True,

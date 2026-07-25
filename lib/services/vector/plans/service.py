@@ -115,6 +115,7 @@ class PlansVectorService(BaseVectorService):
         end_date = plan_data.get("end_date")
 
         start_dt = self._parse_date(start_date)
+        # Dates are display/ordering only — plan_status drives retrieval.
         end_dt = self._parse_date(end_date) if end_date else start_dt
 
         text_repr = PlansTextReprBuilder.build_diet_plan(plan_data)
@@ -154,6 +155,7 @@ class PlansVectorService(BaseVectorService):
         end_date = plan_data.get("end_date")
 
         start_dt = self._parse_date(start_date)
+        # Dates are display/ordering only — plan_status drives retrieval.
         end_dt = self._parse_date(end_date) if end_date else start_dt
 
         text_repr = PlansTextReprBuilder.build_fitness_plan(plan_data)

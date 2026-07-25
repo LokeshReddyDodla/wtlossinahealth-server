@@ -16,10 +16,15 @@ async def generate_meal_vector(
     ctx: Dict[str, Any],
     patient_id: str,
     meal_id: str,
-    meal_data: Dict[str, Any],
 ) -> TaskResult:
-    """Generate and store meal vector embedding."""
+    """Generate and store meal vector embedding.
+
+    The meal is re-read from Postgres here (not passed in) so the Qdrant
+    point always reflects the committed row — including macros the report
+    shows — regardless of the caller's session state.
+    """
     from lib.dependencies.service_dependencies import (
+        get_meal_service,
         get_meal_vector_service,
         get_patient_profile_service,
     )
@@ -27,6 +32,24 @@ async def generate_meal_vector(
     try:
         vector_service = get_meal_vector_service()
         patient_service = get_patient_profile_service()
+        meal_service = get_meal_service()
+
+        meal_data = await meal_service.get_meal_vector_data(meal_id)
+        if meal_data is None:
+            logger.warning(f"Meal {meal_id} gone before vectorization ({patient_id})")
+            return TaskResult(
+                success=False,
+                error="Meal not found",
+                data={"patient_id": patient_id, "meal_id": meal_id},
+            )
+
+        # An analyzed meal with no macros means the write path stored a row
+        # the report can render but the monitor would read as "macros
+        # missing" — surface it loudly instead of poisoning Qdrant silently.
+        if meal_data.get("analyzed") and not meal_data.get("total_macro_nutritional_value"):
+            logger.error(
+                f"Analyzed meal {meal_id} has no macros at vectorization ({patient_id})"
+            )
 
         patient_profile = await patient_service.fetch_patient_profile(patient_id)
         if not patient_profile:
@@ -49,11 +72,16 @@ async def generate_meal_vector(
 
         # Event-driven proactive insight — deferred 30s for Qdrant indexing.
         try:
+            # event_time = when the meal was CONSUMED (date + time from the
+            # meal record) — retro-logged meals diverge from scan time.
+            meal_event_time = None
+            if meal_data.get("date") and meal_data.get("time"):
+                meal_event_time = f"{meal_data['date']}T{meal_data['time']}"
             await enqueue_job(
                 "handle_proactive_event",
                 patient_id,
                 EventTrigger.MEAL_LOGGED.value,
-                {"meal_id": meal_id},
+                {"meal_id": meal_id, "event_time": meal_event_time},
                 _job_id=f"insight:{EventTrigger.MEAL_LOGGED.value}:{patient_id}:{meal_id}",
                 _defer_by=30,
                 _queue_name=Queues.DEFAULT,
@@ -69,17 +97,32 @@ async def generate_meal_vector(
         )
 
     except Exception as e:
+        # Re-raise so arq's retry machinery engages (retry_jobs/max_tries):
+        # the upsert is idempotent, and this task is the only path that gets
+        # the meal into Qdrant AND fires its proactive insight.
         logger.error(f"Failed to generate meal vector for {patient_id}: {e}")
-        return TaskResult(
-            success=False,
-            error=str(e),
-            data={"patient_id": patient_id, "meal_id": meal_id},
-        )
+        raise
 
 
-async def _enqueue_meal_vector(
-    patient_id: str, meal_id: str, meal_data: Dict[str, Any]
-) -> str | None:
+@task_with_logging
+async def delete_meal_vector_task(
+    ctx: Dict[str, Any],
+    meal_id: str,
+) -> TaskResult:
+    """Retryable Qdrant point delete — used when the inline delete after a
+    Postgres meal delete fails, so the point can't survive as an orphan the
+    agent keeps citing."""
+    from lib.dependencies.service_dependencies import get_meal_vector_service
+
+    try:
+        await get_meal_vector_service().delete_meal_vector(meal_id)
+        return TaskResult(success=True, data={"meal_id": meal_id})
+    except Exception as e:
+        logger.error(f"Failed to delete meal vector {meal_id}: {e}")
+        raise  # idempotent — let arq retry
+
+
+async def _enqueue_meal_vector(patient_id: str, meal_id: str) -> str | None:
     """Internal: Enqueue meal vector generation."""
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
     job_id = f"meal:vector:{patient_id}:{meal_id}:{timestamp}"
@@ -88,7 +131,6 @@ async def _enqueue_meal_vector(
         "generate_meal_vector",
         patient_id,
         meal_id,
-        meal_data,
         _job_id=job_id,
         _queue_name=Queues.VECTORS,
     )

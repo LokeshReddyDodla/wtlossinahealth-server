@@ -12,9 +12,11 @@ from fastapi import Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from lib.core.constants import ProfileTypeEnum
-from lib.core.container import container
 from lib.dependencies.actor import Actor, get_current_actor
-from lib.dependencies.service_dependencies import get_care_provider_access_service
+from lib.dependencies.service_dependencies import (
+    get_care_provider_access_service,
+    get_memory_store,
+)
 from lib.ai_foundation.memory.mongo_store import MongoMemoryStore
 from lib.services.care_provider_access_service import CareProviderAccessService
 from lib.utils.care_provider_permissions import (
@@ -56,6 +58,7 @@ async def reset_conversation_v3(
     care_provider_access_service: CareProviderAccessService = Depends(
         get_care_provider_access_service
     ),
+    memory: MongoMemoryStore = Depends(get_memory_store),
 ):
     """Reset a conversation thread — deletes all turns and summary.
 
@@ -77,8 +80,6 @@ async def reset_conversation_v3(
     thread_id = _resolve_thread_id(current_actor, resolved_patient_ids)
 
     # Delete turns and summary
-    memory: MongoMemoryStore = container.resolve(MongoMemoryStore)
-
     turns_collection = memory.get_collection("ai_conversation_turns")
     result = await turns_collection.delete_many({"thread_id": thread_id})
     turns_deleted = result.deleted_count

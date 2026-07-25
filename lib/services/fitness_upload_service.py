@@ -1,15 +1,13 @@
 from datetime import datetime
-from typing import Optional
-
 from dateutil.parser import parse
-from sqlalchemy import delete
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from lib.core.postgres_store import PostgresStore
 from lib.models.patient_smbg import PatientSMBG
 from lib.workers.tasks.fitness.enqueue import (
-    enqueue_process_fitness_upload_sync,
+    enqueue_process_fitness_upload_async,
 )
-from lib.workers.tasks.sleep.enqueue import enqueue_process_sleep_upload_sync
+from lib.workers.tasks.sleep.enqueue import enqueue_process_sleep_upload_async
 from lib.utils.postgres_session_decorator import with_postgres_session
 from rest_server.patients.fitness.api_schema import FitnessDataRequest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -39,9 +37,6 @@ class FitnessUploadService:
             fitness_data.end_datetime,
         )
 
-        await self.delete_existing_data(
-            patient_id, start_datetime, end_datetime, postgres_session=postgres_session
-        )
         await self.insert_new_data(
             patient_id, fitness_data, postgres_session=postgres_session
         )
@@ -51,9 +46,9 @@ class FitnessUploadService:
         await postgres_session.commit()
 
         # Trigger report generation asynchronously
-        enqueue_process_fitness_upload_sync(patient_id, start_datetime, end_datetime)
+        await enqueue_process_fitness_upload_async(patient_id, start_datetime, end_datetime)
 
-        enqueue_process_sleep_upload_sync(patient_id, start_datetime, end_datetime)
+        await enqueue_process_sleep_upload_async(patient_id, start_datetime, end_datetime)
 
         # Gamification hook (fire-and-forget)
         try:
@@ -86,32 +81,16 @@ class FitnessUploadService:
             # Weight via HealthKit
             if fitness_data.weight:
                 await handler.on_weight_logged(_UUID(patient_id))
+                try:
+                    from lib.utils.sync_profile_weight import sync_profile_weight
+                    latest = max(fitness_data.weight, key=lambda w: w.end_datetime)
+                    await sync_profile_weight(patient_id, float(latest.value))
+                except Exception:
+                    pass
         except Exception:
             pass
 
         return end_datetime
-
-    @with_postgres_session
-    async def delete_existing_data(
-        self,
-        patient_id: str,
-        start_datetime: datetime,
-        end_datetime: datetime,
-        source_name: Optional[str] = None,
-        *,
-        postgres_session: AsyncSession,
-    ):
-        smbg_query = delete(PatientSMBG).where(
-            PatientSMBG.patient_id == patient_id,
-            PatientSMBG.reading_time.between(start_datetime, end_datetime),
-        )
-
-        if source_name:
-            smbg_query = smbg_query.where(PatientSMBG.source_name == source_name)
-        else:
-            smbg_query = smbg_query.where(PatientSMBG.source_name != "manual")
-
-        await postgres_session.execute(smbg_query)
 
     @with_postgres_session
     async def insert_new_data(
@@ -215,19 +194,28 @@ class FitnessUploadService:
         if vitals_data_points:
             self.clickhouse_store.write_data("aihealth.vitals_data", vitals_data_points)
 
-        smbg_records = [
-            PatientSMBG(
-                patient_id=patient_id,
-                glucose_level=item.value,
-                reading_time=parse(item.start_datetime).replace(tzinfo=None),
-                source_name=item.source_name,
-                source_platform=item.source_platform,
-                type="Unspecified",
+        if fitness_data.blood_glucose:
+            values = [
+                {
+                    "patient_id": patient_id,
+                    "glucose_level": item.value,
+                    "reading_time": parse(item.start_datetime).replace(tzinfo=None),
+                    "source_name": item.source_name,
+                    "source_platform": item.source_platform,
+                    "type": "Unspecified",
+                }
+                for item in fitness_data.blood_glucose
+            ]
+            stmt = pg_insert(PatientSMBG).values(values)
+            stmt = stmt.on_conflict_do_update(
+                constraint="uq_smbg_patient_time_source",
+                set_={
+                    "glucose_level": stmt.excluded.glucose_level,
+                    "source_platform": stmt.excluded.source_platform,
+                    "type": stmt.excluded.type,
+                },
             )
-            for item in fitness_data.blood_glucose
-        ]
-
-        postgres_session.add_all(smbg_records)
+            await postgres_session.execute(stmt)
 
     async def update_last_sync(self, patient_id: str, dateTo: datetime):
         fitness_sync_key = f"fitness_sync:{patient_id}"

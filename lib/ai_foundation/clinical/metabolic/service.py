@@ -9,6 +9,7 @@ Usage:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Any
@@ -25,17 +26,9 @@ from .lenses import apply_lenses
 from .nudge import build_nudges
 from .outcome import OutcomeRepository, advice_event_from_contract
 from .render import build_prompt
+from .util import meal_slot as _meal_slot
 
 logger = logging.getLogger(__name__)
-
-_SLOT_MAP = {0: "breakfast", 1: "lunch", 2: "dinner", 3: "snack"}
-
-
-def _meal_slot(hour: float | None) -> str:
-    if hour is None:
-        return "lunch"
-    h = int(hour)
-    return "breakfast" if 5 <= h < 11 else "lunch" if 11 <= h < 16 else "dinner" if 16 <= h < 22 else "snack"
 
 
 class MetabolicService:
@@ -52,6 +45,8 @@ class MetabolicService:
         self._assembler = DataAssembler(retriever=retriever, postgres_store=postgres_store)
         self._outcome = OutcomeRepository(postgres_store)
         self._clickhouse = clickhouse_store
+        # Strong refs for fire-and-forget bookkeeping (loop only weak-refs tasks)
+        self._bg_tasks: set = set()
 
     async def assess(
         self,
@@ -75,9 +70,11 @@ class MetabolicService:
         contract = enrich(contract, patient_state, meal, live_pre=live_pre)
         contract["lenses"] = apply_lenses(patient_state)
 
-        # -- outcome loop: process follow-ups + log advice --
-        await self._process_followups(patient_id)
-        await self._log_advice_if_suggest(patient_id, contract, meal)
+        # -- outcome loop: follow-ups of PAST advice + audit of this one are
+        # independent of this result — never block the interactive
+        # meal-preview response on them.
+        self._spawn_bookkeeping(self._process_followups(patient_id))
+        self._spawn_bookkeeping(self._log_advice_if_suggest(patient_id, contract, meal))
 
         # -- clinical decision audit (append-only, never fails the request) --
         try:
@@ -151,8 +148,32 @@ class MetabolicService:
         """Convenience: map a meal payload to engine input format."""
         return self._assembler.build_meal_dict(meal_data, hour)
 
-    def to_glucose_prediction(self, contract: EngineContract | dict[str, Any], band_mgdl: int = 12) -> dict[str, Any] | None:
-        """Map engine contract to the production GlucosePrediction shape."""
+    # Uncertainty band around the predicted rise, by engine confidence.
+    # The band IS the uncertainty statement — a cold-start prediction must
+    # not claim the same precision as one learned from 20+ paired meals.
+    # An observed (already measured) response carries only sensor noise.
+    _BAND_BY_CONFIDENCE: dict[str, int] = {"high": 8, "moderate": 12, "cold-start": 18}
+    _BAND_OBSERVED = 5
+
+    def to_glucose_prediction(
+        self,
+        contract: EngineContract | dict[str, Any],
+        *,
+        live_pre: float | None = None,
+    ) -> dict[str, Any] | None:
+        """Map engine contract to the production GlucosePrediction shape.
+
+        Three-tier display policy (clinical rule: never present a number as
+        measured when part of it is assumed):
+
+        1. ``live_pre`` given (real CGM reading at meal time) → ABSOLUTE
+           range anchored on it: "you're at 102 → expect ~103-115".
+        2. No live reading → RISE range ("+3-15 above your current level").
+           The twin prior is deliberately NOT used as an absolute anchor —
+           it is an estimate, and presenting it as measured would mislead.
+        3. Not enough data → the existing ``_show_number`` gate suppresses
+           the number entirely (caller falls back).
+        """
         c = contract.model_dump() if isinstance(contract, EngineContract) else contract
         pr = c.get("prediction") or {}
         rise = pr.get("observed_mgdl")
@@ -164,8 +185,26 @@ class MetabolicService:
             return None
 
         rise = float(rise)
+        conf_raw = str(pr.get("confidence", "moderate")).lower()
         conf_map = {"high": "high", "moderate": "medium", "cold-start": "low"}
-        conf = conf_map.get(str(pr.get("confidence", "moderate")).lower(), "medium")
+        conf = conf_map.get(conf_raw, "medium")
+        band = (
+            self._BAND_OBSERVED if kind == "observed"
+            else self._BAND_BY_CONFIDENCE.get(conf_raw, 12)
+        )
+
+        rise_low = int(round(max(0.0, rise - band)))
+        rise_high = int(round(rise + band))
+
+        if live_pre is not None:
+            basis = "absolute"
+            range_low = int(round(live_pre + max(0.0, rise - band)))
+            range_high = int(round(live_pre + rise + band))
+            pre_meal = int(round(live_pre))
+        else:
+            basis = "rise"
+            range_low, range_high = rise_low, rise_high
+            pre_meal = None
 
         lever = c.get("lever") or {}
         rationale = c.get("fact", "")
@@ -174,12 +213,38 @@ class MetabolicService:
 
         v31 = c.get("v31") or {}
 
+        # The twin prior is exposed ONLY as a labeled estimate for
+        # orientation — never merged into the range, never presented as
+        # measured, and ONLY when it is a true time-of-day pattern
+        # ("90d_prior"). The flat 90-day mean is NOT time-specific, so
+        # surfacing it under "at this time" copy would mislabel it.
+        prior = (v31.get("pre_prior") or {}) if isinstance(c.get("v31"), dict) else {}
+        if prior.get("provenance") != "90d_prior":
+            prior = {}
+
+        # "Similar meals" must mean similar meals: the top-k same-slot,
+        # carb-proximate past meals (evidence_meals) — NOT n_meals_learned,
+        # which is the personal model's total training count.
+        n_similar = len(v31.get("evidence_meals") or [])
+
         return {
-            "range_mg_dl_low": int(round(max(0.0, rise - band_mgdl))),
-            "range_mg_dl_high": int(round(rise + band_mgdl)),
+            "range_mg_dl_low": range_low,
+            "range_mg_dl_high": range_high,
+            "basis": basis,
+            "pre_meal_mg_dl": pre_meal,
+            "pre_meal_estimate_mg_dl": (
+                int(round(float(prior["value"])))
+                if pre_meal is None and prior.get("value") is not None else None
+            ),
+            "pre_meal_estimate_source": (
+                prior.get("provenance") if pre_meal is None and prior.get("value") is not None else None
+            ),
+            "rise_mg_dl_low": rise_low,
+            "rise_mg_dl_high": rise_high,
             "peak_minutes_after": v31.get("peak_minutes", 60),
             "confidence": conf,
-            "n_similar_meals": pr.get("n_meals_learned", 0),
+            "n_similar_meals": n_similar,
+            "n_meals_learned": pr.get("n_meals_learned", 0),
             "evidence": [],
             "_evidence_meals": v31.get("evidence_meals") or [],
             "rationale": rationale.strip(),
@@ -212,6 +277,19 @@ class MetabolicService:
         except Exception:
             logger.warning("advice logging failed for %s, continuing", patient_id, exc_info=True)
 
+    def _spawn_bookkeeping(self, coro) -> None:
+        import asyncio
+
+        async def _guarded():
+            try:
+                await coro
+            except Exception:
+                logger.warning("metabolic bookkeeping task failed", exc_info=True)
+
+        task = asyncio.create_task(_guarded())
+        self._bg_tasks.add(task)
+        task.add_done_callback(self._bg_tasks.discard)
+
     async def _process_followups(self, patient_id: str) -> None:
         """Check for pending advice events and follow up with CGM data if available."""
         if not self._clickhouse:
@@ -229,13 +307,14 @@ class MetabolicService:
             return
         try:
             from lib.services.reports.cgm.queries import generate_readings_around_meal_query
-            query = generate_readings_around_meal_query(
+            query, params = generate_readings_around_meal_query(
                 str(event.patient_id),
                 event.meal_time.strftime("%Y-%m-%d %H:%M:%S"),
                 before_minutes=15,
                 after_minutes=120,
             )
-            results = self._clickhouse.client.execute(query)
+            # clickhouse-driver is sync — run off the event loop
+            results = await asyncio.to_thread(self._clickhouse.client.execute, query, params)
             if not results:
                 return
 

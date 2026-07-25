@@ -9,7 +9,7 @@ from lib.core.clickhouse_store import ClickHouseStore
 from lib.schemas.patient_vital import PatientVitalCreate
 from lib.services.patient_summary.enum import StaleReason
 from lib.utils.patient_summary_stale import mark_summary_stale_and_enqueue
-from lib.workers.tasks.vitals.enqueue import enqueue_generate_vital_vector_sync
+from lib.workers.tasks.vitals.enqueue import enqueue_generate_vital_vector_async
 
 # Vital fields that map to ClickHouse type+value rows
 _VITAL_FIELDS: list[str] = [
@@ -101,14 +101,19 @@ class PatientVitalService:
             "source_platform": vital_data.source_platform or "",
             "uploaded_at": datetime.utcnow(),
         })
-        enqueue_generate_vital_vector_sync(
+        await enqueue_generate_vital_vector_async(
             patient_id=patient_id,
             vital_id=vital_id,
             vital_data=vital_data_dict,
         )
 
-        # Gamification hook — check if weight was logged (fire-and-forget)
+        # Weight sync + gamification (fire-and-forget)
         if vital_data.weight is not None:
+            try:
+                from lib.utils.sync_profile_weight import sync_profile_weight
+                await sync_profile_weight(patient_id, float(vital_data.weight))
+            except Exception:
+                pass
             try:
                 from uuid import UUID as _UUID
                 from lib.core.container import container

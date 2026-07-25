@@ -51,14 +51,22 @@ _STATS_EVENTS_PAIRS = {
 # Data types that don't support time-based filtering
 _NON_FILTERABLE_TYPES = {"profile", "patient_document"}
 
+# Plans are current config, not time-series events: they are matched by
+# plan_status (default ACTIVE), never by date overlap. Handled in a dedicated
+# should-branch and excluded from the date-filtered branch.
+_PLAN_TYPES = {"diet_plan", "fitness_plan"}
+
 
 def _date_to_epoch_ms(dt: datetime) -> float:
     """Convert datetime to epoch milliseconds."""
     return dt.timestamp() * 1000
 
 
-def _date_str_to_epoch_ms(date_str: str, *, end_of_day: bool = False) -> float | None:
+def _date_str_to_epoch_ms(date_str: str, *, end_of_day: bool = False) -> float:
     """Convert ISO date string to epoch milliseconds.
+
+    Raises ValueError on an unparseable date — silently dropping the filter
+    would widen a medical query's scope without anyone noticing.
 
     Args:
         date_str: ISO date or datetime string.
@@ -78,8 +86,8 @@ def _date_str_to_epoch_ms(date_str: str, *, end_of_day: bool = False) -> float |
             if end_of_day:
                 dt = dt.replace(hour=23, minute=59, second=59)
         return dt.timestamp() * 1000
-    except (ValueError, AttributeError):
-        return None
+    except (ValueError, AttributeError) as exc:
+        raise ValueError(f"Unparseable date filter: {date_str!r}") from exc
 
 
 def _expand_data_types(data_types: list[str]) -> list[str]:
@@ -230,15 +238,18 @@ class QdrantRetriever:
         """Build date_start/date_end/month filter conditions."""
         conditions: list[FieldCondition] = []
 
+        # OVERLAP semantics, not containment: a record matches when its
+        # [start_time, end_time] span intersects the query window. Point
+        # records (meals, readings) are unaffected (start == end); range
+        # records (a 23:00→07:00 sleep session) must match BOTH days'
+        # single-day queries.
         if request.date_start:
             start_ms = _date_str_to_epoch_ms(request.date_start)
-            if start_ms is not None:
-                conditions.append(FieldCondition(key="start_time", range=Range(gte=start_ms)))
+            conditions.append(FieldCondition(key="end_time", range=Range(gte=start_ms)))
 
         if request.date_end:
             end_ms = _date_str_to_epoch_ms(request.date_end, end_of_day=True)
-            if end_ms is not None:
-                conditions.append(FieldCondition(key="end_time", range=Range(lte=end_ms)))
+            conditions.append(FieldCondition(key="start_time", range=Range(lte=end_ms)))
 
         month_filters = request.filters.get("month_filters")
         if month_filters:
@@ -281,8 +292,11 @@ class QdrantRetriever:
                     if range_kwargs:
                         conditions.append(FieldCondition(key=key, range=Range(**range_kwargs)))
 
-        # Other pass-through filters
-        _HANDLED = frozenset(("month_filters", "time_buckets", "hour_start", "hour_end", "numeric_filters"))
+        # plan_status is handled by the plan should-branch, not applied here.
+        _HANDLED = frozenset((
+            "month_filters", "time_buckets", "hour_start", "hour_end",
+            "numeric_filters", "plan_status",
+        ))
         for key, value in request.filters.items():
             if key in _HANDLED:
                 continue
@@ -304,10 +318,14 @@ class QdrantRetriever:
             return None
 
         data_types = _expand_data_types(request.data_types) if request.data_types else []
+        all_types = not data_types
 
-        # Separate filterable vs non-filterable types
+        plan_types = [dt for dt in data_types if dt in _PLAN_TYPES]
         non_filterable = [dt for dt in data_types if dt in _NON_FILTERABLE_TYPES]
-        filterable = [dt for dt in data_types if dt not in _NON_FILTERABLE_TYPES]
+        filterable = [
+            dt for dt in data_types
+            if dt not in _NON_FILTERABLE_TYPES and dt not in _PLAN_TYPES
+        ]
 
         should_filters: list[Filter] = []
 
@@ -324,8 +342,21 @@ class QdrantRetriever:
                 FieldCondition(key="data_type", match=MatchAny(any=non_filterable)),
             ]))
 
-        # Filterable types (timeseries data with date/time filters)
-        if filterable or not data_types:
+        # Plans are matched by plan_status (default ACTIVE), never date-filtered.
+        if plan_types or all_types:
+            plan_must = [
+                FieldCondition(key="patient_id", match=MatchAny(any=request.patient_ids)),
+                FieldCondition(key="data_type", match=MatchAny(any=sorted(_PLAN_TYPES))),
+            ]
+            status = request.filters.get("plan_status", "ACTIVE")
+            if isinstance(status, list):
+                plan_must.append(FieldCondition(key="plan_status", match=MatchAny(any=status)))
+            elif status:  # falsy => history (no status constraint)
+                plan_must.append(FieldCondition(key="plan_status", match=MatchValue(value=status)))
+            should_filters.append(Filter(must=plan_must))
+
+        # Filterable timeseries types (date/time filtered).
+        if filterable or all_types:
             must: list[FieldCondition] = [
                 FieldCondition(key="patient_id", match=MatchAny(any=request.patient_ids)),
             ]
@@ -336,7 +367,13 @@ class QdrantRetriever:
             must.extend(self._time_range_conditions(request))
             must.extend(self._pass_through_conditions(request))
 
-            should_filters.append(Filter(must=must))
+            # A sweep has no data_type restriction; keep plans out so they
+            # come only via the status branch above.
+            must_not = (
+                [FieldCondition(key="data_type", match=MatchAny(any=sorted(_PLAN_TYPES)))]
+                if all_types else None
+            )
+            should_filters.append(Filter(must=must, must_not=must_not))
 
         # Combine with should (OR logic: match profile OR timeseries OR documents)
         if len(should_filters) == 1:
@@ -356,10 +393,10 @@ class QdrantRetriever:
 
     async def _get_embedding(self, text: str) -> list[float]:
         if self._embed_cache:
-            cached = self._embed_cache.get(text)
+            cached = await self._embed_cache.get(text)
             if cached is not None:
                 return cached
             vector = await self._embed_fn(text)
-            self._embed_cache.set(text, vector)
+            await self._embed_cache.set(text, vector)
             return vector
         return await self._embed_fn(text)

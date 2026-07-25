@@ -27,16 +27,16 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, AsyncIterator
 
 from lib.ai_foundation.config import settings
-from lib.ai_foundation.models.gateway import LLMToolResponse, safe_cost
+from lib.ai_foundation.models.gateway import safe_cost
 from lib.ai_foundation.models.registry import ModelTask
 from lib.ai_foundation.streaming.sse import (
     PipelineStage,
     SSEDonePayload,
-    sse_done,
     sse_plan,
     sse_reasoning,
     sse_reflection,
     sse_status,
+    sse_bubble,
     sse_error,
     sse_token,
     sse_tool_call,
@@ -58,16 +58,15 @@ from lib.ai_foundation.agents.health_query.evidence import (
     detect_conflicts,
     extract_evidence_from_fallback,
     extract_evidence_from_tool_round,
-    format_coverage_note,
     format_data_gaps,
-    format_patient,
-    format_provider,
+    format_evidence_block,
 )
 
 logger = logging.getLogger(__name__)
 
+from lib.ai_foundation.agents.core.bubbles import BubbleStreamFilter, extract_await, strip_bubbles
 from lib.ai_foundation.agents.core.chart_processor import process_charts
-from lib.ai_foundation.agents.core.context_pruner import ContextPruner, CRITICAL_TYPES as _CRITICAL_TYPES, MIN_TRUNCATION_CHARS as _MIN_TRUNCATION_CHARS
+from lib.ai_foundation.agents.core.context_pruner import ContextPruner
 
 
 @contextmanager
@@ -213,6 +212,7 @@ class ReasoningEngine:
         intent_data_types: list[str] | None = None,
         patient_names: dict[str, str] | None = None,
         user_role: str = "patient",
+        trace_id: str | None = None,
     ) -> ReasoningResult:
         """Run the full reasoning loop and return the result."""
         async for item in self._reason_core(
@@ -226,6 +226,7 @@ class ReasoningEngine:
             intent_data_types=intent_data_types,
             patient_names=patient_names,
             user_role=user_role,
+            trace_id=trace_id,
             emit_events=False,
         ):
             if isinstance(item, ReasoningResult):
@@ -246,8 +247,14 @@ class ReasoningEngine:
         intent_data_types: list[str] | None = None,
         patient_names: dict[str, str] | None = None,
         user_role: str = "patient",
-    ) -> AsyncIterator[str]:
-        """Run the reasoning loop, yielding SSE events as the doctor thinks."""
+        trace_id: str | None = None,
+        delta_sink: list[str] | None = None,
+    ) -> AsyncIterator[str | SSEDonePayload]:
+        """Run the reasoning loop, yielding SSE events as the doctor thinks.
+
+        Yields formatted SSE strings, then a terminal SSEDonePayload carrying
+        the structured result (full response, cost, evidence metrics).
+        """
         async for item in self._reason_core(
             user_message=user_message,
             system_prompt=system_prompt,
@@ -259,9 +266,11 @@ class ReasoningEngine:
             intent_data_types=intent_data_types,
             patient_names=patient_names,
             user_role=user_role,
+            trace_id=trace_id,
             emit_events=True,
+            delta_sink=delta_sink,
         ):
-            if isinstance(item, str):
+            if isinstance(item, (str, SSEDonePayload)):
                 yield item
 
     # ── Core loop (shared implementation) ─────────────────────────────
@@ -279,7 +288,9 @@ class ReasoningEngine:
         intent_data_types: list[str] | None = None,
         patient_names: dict[str, str] | None = None,
         user_role: str = "patient",
+        trace_id: str | None = None,
         emit_events: bool = False,
+        delta_sink: list[str] | None = None,
     ) -> AsyncIterator[str | ReasoningResult]:
         """Unified reasoning loop that yields SSE strings and/or a ReasoningResult."""
         tier_cfg = TIER_CONFIGS[tier]
@@ -325,6 +336,7 @@ class ReasoningEngine:
                     seen_calls=seen_calls,
                     patient_names=patient_names,
                     is_voice=is_voice,
+                    trace_id=trace_id,
                 )
             total_cost += plan["cost"]
             total_tools += plan["tools_called"]
@@ -340,6 +352,37 @@ class ReasoningEngine:
                     len(plan["plan_obj"].steps),
                     plan["plan_obj"].domains_involved,
                 )
+
+        # ── Base fetch ──
+        # Seed the intent extractor's data_types once before the thinker
+        # loop: it reliably tags every domain a question needs, including
+        # both sides of a compound query. Left to decide the base fetch
+        # itself the thinker under-fetches compound queries, so from here it
+        # only follows the trail (investigate_day, compare_baseline).
+        if intent_data_types and "look_up:seed" not in seen_calls:
+            if emit_events and tier_cfg.show_reasoning:
+                yield sse_tool_call("look_up", {"data_types": intent_data_types})
+            seed_args = {"data_types": intent_data_types, "limit": settings.LOOKUP_DEFAULT_LIMIT}
+            with _track_perf(perf, "tool_exec_ms"):
+                seed_result = await self._tools.execute(
+                    "look_up", seed_args, patient_ids, patient_names=patient_names,
+                )
+            seen_calls.add("look_up:seed")
+            total_tools += 1
+            evidence_ledger.append(extract_evidence_from_fallback("look_up", seed_args, seed_result))
+            steps.append(ReasoningStep(
+                round=0,
+                thought="Fetching the data the question requires.",
+                tool_calls=[{"tool": "look_up", "args": {"data_types": intent_data_types}}],
+                tool_results=[{"tool": "look_up", "result": seed_result[:settings.STEP_LOG_TRUNCATION_CHARS]}],
+            ))
+            if emit_events and tier_cfg.show_reasoning:
+                yield sse_tool_result("look_up", self._summarize_result("look_up", seed_result))
+            messages.append({
+                "role": "system",
+                "content": f"Health data retrieved:\n\n{seed_result}",
+                "_meta": {"type": "tool_result", "round": 0, "tool": "look_up"},
+            })
 
         for round_num in range(1, budget_remaining + 1):
             # Prune before thinker call
@@ -357,44 +400,11 @@ class ReasoningEngine:
                     task=ModelTask.CLASSIFICATION,
                     model_id=tier_cfg.thinker_model,
                     timeout=settings.REASONING_TIMEOUT_SECONDS,
+                    trace_id=trace_id,
                 )
             total_cost += safe_cost(response)
 
             if not response.has_tool_calls:
-                # Round 1 with no tool calls = lazy LLM. Force a lookup.
-                if round_num == 1 and intent_data_types and not seen_calls:
-                    if emit_events and tier_cfg.show_reasoning:
-                        yield sse_tool_call("look_up", {"data_types": intent_data_types})
-                    with _track_perf(perf, "tool_exec_ms"):
-                        fallback_result = await self._tools.execute(
-                            "look_up",
-                            {"data_types": intent_data_types, "limit": settings.LOOKUP_DEFAULT_LIMIT},
-                            patient_ids,
-                            patient_names=patient_names,
-                        )
-                    seen_calls.add("look_up:fallback")
-                    total_tools += 1
-                    evidence_ledger.append(extract_evidence_from_fallback(
-                        "look_up",
-                        {"data_types": intent_data_types, "limit": settings.LOOKUP_DEFAULT_LIMIT},
-                        fallback_result,
-                    ))
-                    steps.append(ReasoningStep(
-                        round=round_num,
-                        thought="Fetching data based on query intent.",
-                        tool_calls=[{"tool": "look_up", "args": {"data_types": intent_data_types}}],
-                        tool_results=[{"tool": "look_up", "result": fallback_result[:settings.STEP_LOG_TRUNCATION_CHARS]}],
-                    ))
-                    if emit_events and tier_cfg.show_reasoning:
-                        summary = self._summarize_result("look_up", fallback_result)
-                        yield sse_tool_result("look_up", summary)
-                    messages.append({
-                        "role": "system",
-                        "content": f"Health data retrieved:\n\n{fallback_result}",
-                        "_meta": {"type": "tool_result", "round": round_num, "tool": "look_up"},
-                    })
-                    continue  # Let the thinker see the data and try again
-
                 if response.content:
                     steps.append(ReasoningStep(
                         round=round_num, thought=response.content,
@@ -490,6 +500,7 @@ class ReasoningEngine:
                     total_tools=total_tools,
                     patient_names=patient_names,
                     evidence_ledger=evidence_ledger,
+                    trace_id=trace_id,
                 )
             total_cost = reflection["total_cost"]
             total_tools = reflection["total_tools"]
@@ -521,17 +532,27 @@ class ReasoningEngine:
 
             full_response_parts: list[str] = []
             responder_start = time.perf_counter()
+            # Visible stream never carries the bubble sentinel; the raw text
+            # (with sentinels) is kept for done-payload splitting.
+            bubble_filter = BubbleStreamFilter()
 
             try:
                 async for chunk in self._gateway.stream(
                     messages=responder_messages,
                     task=ModelTask.RESPONSE_GENERATION,
                     model_id=tier_cfg.responder_model,
-                    timeout=60.0,
+                    timeout=settings.RESPONDER_TIMEOUT_SECONDS,
+                    trace_id=trace_id,
                 ):
                     if chunk.delta:
                         full_response_parts.append(chunk.delta)
-                        yield sse_token(chunk.delta)
+                        if delta_sink is not None:
+                            delta_sink.append(chunk.delta)
+                        for kind, piece in bubble_filter.feed_events(chunk.delta):
+                            if kind == "bubble":
+                                yield sse_bubble()
+                            elif piece:
+                                yield sse_token(piece)
                     if chunk.finished and chunk.usage:
                         total_cost += safe_cost(chunk)
             except Exception as exc:
@@ -542,10 +563,13 @@ class ReasoningEngine:
                 yield sse_error(
                     message="The response was interrupted. Please try again.",
                     code="stream_error",
-                    fallback_text="".join(full_response_parts) or None,
+                    fallback_text=strip_bubbles(extract_await("".join(full_response_parts))[0]) or None,
                 )
                 return
 
+            tail = bubble_filter.flush()
+            if tail:
+                yield sse_token(tail)
             perf["responder_ms"] += int((time.perf_counter() - responder_start) * 1000)
         else:
             # Non-streaming: single responder call
@@ -556,6 +580,7 @@ class ReasoningEngine:
                     model_id=tier_cfg.responder_model,
                     user_role=user_role,
                     evidence_ledger=evidence_ledger,
+                    trace_id=trace_id,
                 )
             total_cost += safe_cost(final_response)
 
@@ -576,14 +601,16 @@ class ReasoningEngine:
         )
 
         if emit_events:
-            yield sse_done(SSEDonePayload(
+            # Yield the structured payload — the agent builds the final done
+            # event itself (no serialize → string-parse → re-serialize round-trip).
+            yield SSEDonePayload(
                 cost_usd=total_cost,
                 data={
                     **evidence,
                     "tier": tier.value,
                     "full_response": process_charts("".join(full_response_parts)),
                 },
-            ))
+            )
         else:
             yield ReasoningResult(
                 response=process_charts(final_response.content or ""),
@@ -636,6 +663,7 @@ class ReasoningEngine:
         seen_calls: set[str],
         patient_names: dict[str, str] | None = None,
         is_voice: bool = False,
+        trace_id: str | None = None,
     ) -> dict[str, Any]:
         """Generate an investigation plan and add it as context for the thinker.
 
@@ -658,6 +686,7 @@ class ReasoningEngine:
                 tool_schemas=tool_schemas,
                 planning_prompt=planning_prompt,
                 model_id=tier_cfg.thinker_model,
+                trace_id=trace_id,
             )
 
             # Add plan as context — the thinker reads this and executes with proper tool calls
@@ -702,6 +731,7 @@ class ReasoningEngine:
         total_tools: int,
         patient_names: dict[str, str] | None = None,
         evidence_ledger: list | None = None,
+        trace_id: str | None = None,
     ) -> dict[str, Any]:
         """Run reflection and optional gap-filling follow-up.
 
@@ -718,6 +748,7 @@ class ReasoningEngine:
                 user_question=user_message,
                 reflection_prompt=reflection_prompt,
                 model_id=tier_cfg.thinker_model,
+                trace_id=trace_id,
             )
 
             # If gaps found, do targeted follow-up (budget permitting)
@@ -750,17 +781,25 @@ class ReasoningEngine:
                     task=ModelTask.CLASSIFICATION,
                     model_id=tier_cfg.thinker_model,
                     timeout=settings.REASONING_TIMEOUT_SECONDS,
+                    trace_id=trace_id,
                 )
                 total_cost += safe_cost(response)
 
                 if response.has_tool_calls:
                     tool_round = await self._tools.execute_tool_round(response, patient_ids, seen_calls, patient_names=patient_names)
-                    messages.append({**tool_round.assistant_message, "_meta": {"type": "assistant_tool_calls", "round": 0}})
+                    # Continue the main loop's round numbering — round 0 would
+                    # fall through the pruner (neither summarized nor protected
+                    # as recent).
+                    followup_round = 1 + max(
+                        (m.get("_meta", {}).get("round", 0) for m in messages),
+                        default=0,
+                    )
+                    messages.append({**tool_round.assistant_message, "_meta": {"type": "assistant_tool_calls", "round": followup_round}})
                     tc_by_id = {tc.id: tc for tc in response.tool_calls}
                     for msg in tool_round.tool_messages:
                         tc = tc_by_id.get(msg.get("tool_call_id", ""))
                         tool_name = tc.function_name if tc else "unknown"
-                        messages.append({**msg, "_meta": {"type": "tool_result", "round": 0, "tool": tool_name}})
+                        messages.append({**msg, "_meta": {"type": "tool_result", "round": followup_round, "tool": tool_name}})
                     total_tools += tool_round.executed_count
                     if evidence_ledger is not None:
                         evidence_ledger.extend(extract_evidence_from_tool_round(response, tool_round.tool_messages))
@@ -772,6 +811,7 @@ class ReasoningEngine:
                         user_question=user_message,
                         reflection_prompt=reflection_prompt,
                         model_id=tier_cfg.thinker_model,
+                        trace_id=trace_id,
                     )
 
             # Add safety concerns to context if found
@@ -866,16 +906,7 @@ class ReasoningEngine:
 
         # Inject evidence summary (pruning-safe — built from ledger, not messages)
         if evidence_ledger is not None:
-            summary = build_summary(evidence_ledger)
-            evidence_text = format_provider(summary) if user_role in ("care_provider", "research") else format_patient(summary)
-            coverage_note = format_coverage_note(summary)
-            if coverage_note:
-                evidence_text = f"{evidence_text}\n{coverage_note}" if evidence_text else coverage_note
-            # Append conflict notes if any
-            conflicts = detect_conflicts(evidence_ledger)
-            if conflicts:
-                conflict_text = "\n".join(f"- {c}" for c in conflicts)
-                evidence_text = f"{evidence_text}\n⚠ DATA NOTES:\n{conflict_text}" if evidence_text else f"⚠ DATA NOTES:\n{conflict_text}"
+            evidence_text = format_evidence_block(evidence_ledger, user_role)
             if evidence_text:
                 messages.append({
                     "role": "system",
@@ -895,6 +926,7 @@ class ReasoningEngine:
         model_id: str,
         user_role: str = "patient",
         evidence_ledger: list | None = None,
+        trace_id: str | None = None,
     ) -> Any:
         """Generate the final polished response from the responder model."""
         responder_messages = self._build_responder_messages(
@@ -908,11 +940,100 @@ class ReasoningEngine:
         logger.info("LLM call [responder]: %d tokens (budget=%d, %.0f%%)",
                     tokens, budget, tokens / max(budget, 1) * 100)
 
-        return await self._gateway.complete(
+        resp = await self._gateway.complete(
             messages=responder_messages,
             task=ModelTask.RESPONSE_GENERATION,
             model_id=model_id,
+            # Long final answers exceed the model spec's default timeout;
+            # explicit model_id also disables fallback, so a timeout here
+            # would fail the whole query.
+            timeout=settings.RESPONDER_TIMEOUT_SECONDS,
+            trace_id=trace_id,
         )
+        # Grounding gate: a health reply must not fabricate patient data, confirm
+        # a false patient claim, or disavow real data. Verify against the same
+        # evidence it was built from and correct once on a violation. Runs
+        # even with an empty ledger: no-tool turns are exactly where the
+        # responder spontaneously retracts its own prior-turn data, and the
+        # verifier sees history/context as grounded sources.
+        if (
+            settings.GROUNDING_VERIFY_ENABLED and evidence_ledger is not None
+            and (getattr(resp, "content", "") or "").strip()
+        ):
+            resp = await self._verify_and_correct(
+                resp, responder_messages, evidence_ledger, user_role, model_id,
+                trace_id=trace_id,
+            )
+        return resp
+
+    async def _verify_and_correct(
+        self, resp: Any, responder_messages: list[dict[str, Any]],
+        evidence_ledger: list, user_role: str, model_id: str,
+        *, trace_id: str | None = None,
+    ) -> Any:
+        """Verify the draft against evidence; regenerate once with a targeted
+        correction if it fabricates / confirms-a-false-claim / disavows real
+        data. Any failure in the gate leaves the original response untouched —
+        the gate can only improve the answer, never block it."""
+        from lib.ai_foundation.agents.health_query.evidence import format_evidence_block
+        from lib.ai_foundation.agents.health_query.grounding import (
+            build_correction,
+            verify_grounding,
+        )
+        try:
+            evidence_text = format_evidence_block(evidence_ledger, user_role)
+            # The responder legitimately grounds on more than this turn's tool
+            # evidence: pre-loaded patient context (care intents, meds, memory
+            # facts) and its OWN earlier turns. Verifying against tool evidence
+            # alone forces false retractions of prior-turn data.
+            context_parts = [
+                m["content"] for m in responder_messages
+                if m.get("_meta", {}).get("type") in (
+                    "context", "gathered_data", "fact", "summary",
+                    "insight", "pinned_ref", "evidence_summary",
+                )
+            ]
+            history_parts = [
+                f"[{m['role']}] {m['content']}" for m in responder_messages
+                if m.get("_meta", {}).get("type") == "history"
+            ]
+            if context_parts:
+                evidence_text += (
+                    "\n\n## PRE-LOADED PATIENT CONTEXT (grounded sources)\n"
+                    + "\n\n".join(context_parts)
+                )
+            if history_parts:
+                evidence_text += (
+                    "\n\n## EARLIER CONVERSATION (assistant statements here were "
+                    "grounded when made — retracting them is a violation)\n"
+                    + "\n".join(history_parts)
+                )
+            verdict = await verify_grounding(
+                self._gateway, response=resp.content, evidence_text=evidence_text,
+                trace_id=trace_id,
+            )
+            if verdict.grounded:
+                return resp
+            logger.info(
+                "Grounding gate: correcting (ungrounded=%d, wrongly_denied=%d)",
+                len(verdict.ungrounded_claims), len(verdict.wrongly_denied),
+            )
+            # The draft rides INSIDE the correction instruction — appending it
+            # as an assistant message anchors it as an already-sent turn, and
+            # the model then writes a conversational apology ("sorry, those
+            # numbers were wrong") instead of a clean rewrite.
+            corrected = await self._gateway.complete(
+                messages=responder_messages
+                + [{"role": "system", "content": build_correction(verdict, draft=resp.content)}],
+                task=ModelTask.RESPONSE_GENERATION,
+                model_id=model_id,
+                timeout=settings.RESPONDER_TIMEOUT_SECONDS,
+                trace_id=trace_id,
+            )
+            return corrected if (corrected.content or "").strip() else resp
+        except Exception as exc:
+            logger.warning("Grounding gate failed, using original response: %s", exc)
+            return resp
 
     @staticmethod
     def _summarize_result(tool_name: str, result: str) -> str:

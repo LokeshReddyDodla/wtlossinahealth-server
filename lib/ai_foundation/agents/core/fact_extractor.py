@@ -1,15 +1,15 @@
 """
 Fact Extractor — LLM-based patient memory extraction from every message.
 
-Runs in the background (asyncio.ensure_future) so it never blocks the
-response. The LLM decides whether memories exist — no hardcoded keywords.
+Runs as a background task (spawned with a strong reference by the agent)
+so it never blocks the response. The LLM decides whether memories exist — no hardcoded keywords.
 Cost: ~$0.0002 per call (classification model). Worth it to never miss a fact.
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
+from uuid import uuid4
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
@@ -72,9 +72,21 @@ _EXTRACTION_PROMPT = (
     '- "I\'m [DIET_PREF]" → key: dietary_preference, value: [DIET_PREF]\n'
     '- "My goal is to lose [N] kg" → key: weight_goal, value: lose [N] kg\n'
     '- "I\'m allergic to [FOOD]" → key: food_allergy, value: [FOOD]\n'
-    '- "I have [CONDITION]" → key: diabetes_type OR medical_condition, value: [CONDITION]\n'
+    '- "I have [CONDITION]" → key: medical_condition (or diabetes_type ONLY for explicit diabetes mentions), value: [CONDITION]\n'
     '- "I [ACTIVITY] every [TIME]" → key: activity_preference, value: [ACTIVITY]\n'
     '- "Show me my meals" → no memories (this is a data query)\n\n'
+    "CONVERSATIONAL ANSWERS: when an assistant message is provided as context, "
+    "the user may be ANSWERING it. Resolve short replies against the assistant's "
+    "question and store a SELF-CONTAINED fact — subject and meaning come from the "
+    "question, value from the answer:\n"
+    '- Assistant: "Did dinner run late on [DAY]?" / User: "yes, around [TIME]" '
+    "→ key: meal_timing, value: sometimes eats dinner late (around [TIME])\n"
+    '- Assistant: "Are you [DIET_PREF]?" / User: "yes" → key: dietary_preference, value: [DIET_PREF]\n'
+    '- Assistant: "Are you [DIET_PREF]?" / User: "no" → NO fact (a denial is not a fact '
+    "unless the user states an alternative)\n"
+    "Never store a fact the user did not confirm. Acknowledgments and closers "
+    '("ok", "thanks", "got it") contain no facts. If the user ignores the '
+    "question and says something new, extract only from what they actually said.\n\n"
     "Set has_facts=true if ANY memories are found. "
     "Set has_facts=false if the message is just a data query with no personal facts."
 )
@@ -113,10 +125,16 @@ class FactExtractor:
         message: str,
         patient_id: str | None,
         agent_id: str = "health_query_v3",
+        preceding_assistant_message: str | None = None,
     ) -> None:
         """Extract memories from the message. Always runs — LLM decides if facts exist.
 
-        This is called via asyncio.ensure_future so it never blocks the response.
+        ``preceding_assistant_message`` is the agent's reply the user is
+        responding to — without it, answers to the agent's own questions
+        ("yes, around 1am") are contextless and evaporate. The companion
+        flywheel depends on this parameter.
+
+        Runs as an agent-spawned background task — never blocks the response.
         """
         if not self._memory or not self._gateway or not patient_id:
             return
@@ -124,13 +142,27 @@ class FactExtractor:
         try:
             from lib.ai_foundation.models.registry import ModelTask
 
+            if preceding_assistant_message:
+                user_content = (
+                    "Assistant's previous message (the user may be answering it):\n"
+                    f"{preceding_assistant_message[:1500]}\n\n"
+                    f"User's message:\n{message}"
+                )
+            else:
+                user_content = message
+
+            _mem_trace = f"trc_{uuid4().hex[:16]}"
+            self._gateway.langfuse_trace_input(
+                trace_id=_mem_trace, name="memory_fact_extraction", input_text=user_content,
+            )
             result, _ = await self._gateway.extract(
                 messages=[
                     {"role": "system", "content": _EXTRACTION_PROMPT},
-                    {"role": "user", "content": message},
+                    {"role": "user", "content": user_content},
                 ],
                 response_model=ExtractedFacts,
                 task=ModelTask.CLASSIFICATION,
+                trace_id=_mem_trace,
             )
 
             if not result.has_facts or not result.facts:
@@ -171,9 +203,17 @@ class FactExtractor:
                 # patient facts. Grep `fact_extractor.permanent_fact`.
                 for f in facts:
                     if f.is_permanent:
+                        # DEBUG: the value + source message are PHI — keep the
+                        # audit trail available (enable DEBUG to investigate
+                        # the wrong-fact class of bug) without writing health
+                        # content to INFO logs. Key alone stays at INFO.
                         logger.info(
-                            "fact_extractor.permanent_fact | patient=%s key=%s value=%r source_msg=%r",
-                            patient_id[:8], f.key, f.value, (message or "")[:200],
+                            "fact_extractor.permanent_fact | patient=%s key=%s",
+                            patient_id[:8], f.key,
+                        )
+                        logger.debug(
+                            "fact_extractor.permanent_fact.detail | value=%r source_msg=%r",
+                            f.value, (message or "")[:200],
                         )
                 await self._memory.upsert_patient_facts(patient_id, facts)
                 logger.debug("Persisted %d memories for patient %s", len(facts), patient_id[:8])
@@ -182,7 +222,7 @@ class FactExtractor:
             await self._compact_if_needed(patient_id)
 
         except Exception as exc:
-            logger.debug("Memory extraction failed (non-blocking): %s", exc)
+            logger.warning("Memory extraction failed (non-blocking): %s", exc)
 
     # -- Memory compaction --------------------------------------------------
 
@@ -230,9 +270,25 @@ class FactExtractor:
                 if not to_summarize:
                     continue
 
+                # Include the PREVIOUS summary in the input — the new summary
+                # replaces it, so leaving it out would permanently drop
+                # everything compacted in earlier cycles.
+                prior_summary = next(
+                    (f for f in facts if f.key == f"{cat}_summary"), None,
+                )
+
                 # Summarize old memories via LLM
                 items_text = "\n".join(f"- {f.key}: {f.value}" for f in to_summarize)
+                if prior_summary:
+                    items_text = (
+                        f"- earlier {cat} summary (merge this in): {prior_summary.value}\n"
+                        + items_text
+                    )
                 try:
+                    _mem_trace = f"trc_{uuid4().hex[:16]}"
+                    self._gateway.langfuse_trace_input(
+                        trace_id=_mem_trace, name="memory_summarization", input_text=items_text,
+                    )
                     response = await self._gateway.complete(
                         messages=[
                             {"role": "system", "content": (
@@ -242,6 +298,7 @@ class FactExtractor:
                             {"role": "user", "content": items_text},
                         ],
                         task=ModelTask.SUMMARIZATION,
+                        trace_id=_mem_trace,
                     )
 
                     # Insert summary FIRST — if this fails, individual memories are preserved.
@@ -255,16 +312,15 @@ class FactExtractor:
                     )
                     await self._memory.upsert_patient_facts(patient_id, [summary_fact])
 
-                    # Delete old individual memories only after summary is safely persisted.
-                    delete_tasks = [
-                        self._memory.delete_patient_fact(patient_id, f.key)
-                        for f in to_summarize
-                    ]
-                    delete_results = await asyncio.gather(*delete_tasks, return_exceptions=True)
-                    for i, res in enumerate(delete_results):
-                        if isinstance(res, Exception):
-                            logger.warning("Failed to delete memory %s during compaction: %s", to_summarize[i].key, res)
-                    logger.info("Compacted %d %s memories → summary for %s", len(to_summarize), cat, patient_id[:8])
+                    # Delete old individual memories only after summary is
+                    # safely persisted — one bulk delete, not N round trips.
+                    deleted = await self._memory.delete_patient_facts(
+                        patient_id, [f.key for f in to_summarize],
+                    )
+                    logger.info(
+                        "Compacted %d %s memories → summary for %s (deleted %d)",
+                        len(to_summarize), cat, patient_id[:8], deleted,
+                    )
 
                 except Exception as exc:
                     logger.debug("Compaction failed for category %s: %s", cat, exc)

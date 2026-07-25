@@ -91,7 +91,7 @@ class FitnessReportService:
             end_iso = end_date.isoformat()
 
             if regenerate:
-                self._trigger_report_generation(
+                await self._trigger_report_generation(
                     patient_id, start_date, end_date, FitnessReportType.DAILY
                 )
                 return None
@@ -106,7 +106,7 @@ class FitnessReportService:
                 {"_id": 0},
             )
             if not report:
-                self._trigger_report_generation(
+                await self._trigger_report_generation(
                     patient_id, start_date, end_date, FitnessReportType.DAILY
                 )
                 return None
@@ -134,7 +134,7 @@ class FitnessReportService:
                 {"_id": 0},
             )
             if not report:
-                self._trigger_report_generation(
+                await self._trigger_report_generation(
                     patient_id, start_date, end_date, FitnessReportType.WEEKLY
                 )
 
@@ -161,7 +161,7 @@ class FitnessReportService:
                 {"_id": 0},
             )
             if not report:
-                self._trigger_report_generation(
+                await self._trigger_report_generation(
                     patient_id, start_date, end_date, FitnessReportType.MONTHLY
                 )
             return report
@@ -171,7 +171,7 @@ class FitnessReportService:
             )
             return None
 
-    def _trigger_report_generation(
+    async def _trigger_report_generation(
         self,
         patient_id: str,
         start_date: datetime,
@@ -180,10 +180,10 @@ class FitnessReportService:
     ):
         try:
             from lib.workers.tasks.fitness.enqueue import (
-                enqueue_process_fitness_upload_sync,
+                enqueue_process_fitness_upload_async,
             )
 
-            enqueue_process_fitness_upload_sync(patient_id, start_date, end_date)
+            await enqueue_process_fitness_upload_async(patient_id, start_date, end_date)
 
             logging.info(
                 f"Triggered fitness report generation for {patient_id} from {start_date} to {end_date}"
@@ -253,7 +253,7 @@ class FitnessReportService:
 
     async def save_reports_bulk(self, patient_id: str, reports: List[FitnessStats]):
         try:
-            from pymongo import UpdateOne
+            from pymongo import ReplaceOne
 
             if not reports:
                 logging.warning("No Fitness reports to save")
@@ -281,8 +281,10 @@ class FitnessReportService:
                     }
                 )
 
+                # Full replace: a regenerated report must not inherit fields that
+                # exclude_none omits this time but a prior version had set.
                 ops.append(
-                    UpdateOne({"_id": report_id}, {"$set": report_dict}, upsert=True)
+                    ReplaceOne({"_id": report_id}, report_dict, upsert=True)
                 )
 
             await self.fitness_report_collection.bulk_write(ops)

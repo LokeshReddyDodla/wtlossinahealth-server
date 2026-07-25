@@ -14,10 +14,12 @@ Two call modes:
   - assess(state, meal) with meal['observed_peak'] present  -> post-hoc / follow-up: full attribution.
   - assess(state, meal) without observed_peak               -> live (meal just logged): predicted rise.
 """
-import os, json, math
-from datetime import date, datetime
+import json
+import logging
+import os
 
 from .bmiq import BmiqScorer
+from .util import num as _num, slot_index as slot
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 def _load(name, default):
@@ -25,6 +27,9 @@ def _load(name, default):
     try:
         with open(p, "r", encoding="utf-8") as f: return json.load(f)
     except Exception:
+        # Degraded clinical mode must be LOUD: with the default, the engine
+        # runs with no levers / no spike model and nothing explains why.
+        logging.getLogger(__name__).error("metabolic data file %s failed to load — running degraded", name, exc_info=True)
         return default
 
 LEVERS_DATA = _load("levers.json", {"levers": {}, "circadian_breakfast_mgdl": 12.35})
@@ -89,14 +94,6 @@ PRIOR_SLOPE = 0.40                               # population carb slope (mg/dL 
 SHRINK_K = 10.0                                  # cold-start shrinkage strength
 IN_RANGE_RISE = 40.0                             # below this = no problem rise
 CIRCADIAN_BF = LEVERS_DATA.get("circadian_breakfast_mgdl", 12.35)  # q2
-
-def slot(h): return 0 if 5 <= h < 11 else 1 if 11 <= h < 16 else 2 if 16 <= h < 22 else 3
-
-def _num(x):
-    try:
-        v = float(x)
-        return v if math.isfinite(v) else None
-    except Exception: return None
 
 _GLP1 = ("glp", "semaglutide", "liraglutide", "dulaglutide", "tirzepatide", "exenatide",
          "ozempic", "rybelsus", "mounjaro", "wegovy", "trulicity", "victoza", "saxenda")
@@ -201,10 +198,10 @@ class MetabolicEngine:
             drv = ("mostly carbs" if carb_comp >= max(circ, pre_term) and carb_comp > 1 else
                    "morning circadian" if circ >= pre_term and circ > 0 else
                    "baseline glucose" if pre_term > 0 else "a small expected rise")
-            return "%dg carb, pre %s. Predicted peak about +%d mg/dL (driver: %s). Predicted, not yet observed." % (
+            return "%dg carb, pre %s. Predicted rise of about +%d mg/dL (driver: %s). Predicted, not yet observed." % (
                 carb, prestr, round(max(0.0, rise)), drv)
         if rise < 15:
-            f = "%dg carb, pre %s — no meaningful rise (observed peak %+d). This meal sat flat." % (carb, prestr, round(rise))
+            f = "%dg carb, pre %s — no meaningful rise (observed %+d). This meal sat flat." % (carb, prestr, round(rise))
             if pre is not None and pre >= 180:
                 f += " Pre-meal %d is high on its own — a baseline issue, not this plate." % pre
             return f
@@ -212,7 +209,7 @@ class MetabolicEngine:
         z = max(0.0, min(circ, rise - c))
         b = max(0.0, min(pre_term, rise - c - z))
         rem = max(0.0, rise - c - z - b)
-        base = "%dg carb, pre %s, observed peak +%d. Carbs explain about +%d" % (carb, prestr, round(rise), round(c))
+        base = "%dg carb, pre %s, observed rise +%d. Carbs explain about +%d" % (carb, prestr, round(rise), round(c))
         if z > 0: base += ", breakfast timing +%d" % round(z)
         if b > 0: base += ", baseline +%d" % round(b)
         base += "; the remaining +%d is other physiology." % round(rem)

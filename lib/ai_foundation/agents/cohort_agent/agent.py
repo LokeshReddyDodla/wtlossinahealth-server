@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import datetime as _dt
-import os
 from functools import lru_cache
 from typing import Any
 
@@ -18,9 +17,11 @@ from .tools import ALL_TOOLS, CohortContext
 # provider API key from the standard env vars (OPENAI_API_KEY, ANTHROPIC_API_KEY,
 # ...) — the same ones the backend already sets for its ModelGateway. Only set
 # COHORT_AGENT_API_KEY to override that explicitly.
-COHORT_AGENT_MODEL = os.getenv("COHORT_AGENT_MODEL", "gpt-5.2")
-COHORT_AGENT_API_KEY = os.getenv("COHORT_AGENT_API_KEY") or None
-COHORT_AGENT_MAX_TURNS = int(os.getenv("COHORT_AGENT_MAX_TURNS", "30"))
+from lib.ai_foundation.config import settings as _ai_settings
+
+COHORT_AGENT_MODEL = _ai_settings.COHORT_AGENT_MODEL
+COHORT_AGENT_API_KEY = _ai_settings.COHORT_AGENT_API_KEY or None
+COHORT_AGENT_MAX_TURNS = _ai_settings.COHORT_AGENT_MAX_TURNS
 
 _INSTRUCTIONS = """
 You are the AIHealth Cohort Agent, helping a CARE PROVIDER analyze their patient
@@ -91,7 +92,7 @@ async def run_cohort_query(
         )
         return {"answer": result.final_output or "", "history": result.to_input_list()}
     finally:
-        client.close()
+        await client.close()
 
 
 # re-exported for callers / the router

@@ -12,9 +12,6 @@ Endpoints:
     POST /query/v3/stream — SSE streaming (token-by-token)
 """
 
-import logging
-import time as _time
-
 from fastapi import Depends
 from starlette.responses import StreamingResponse
 
@@ -25,20 +22,20 @@ from lib.dependencies.service_dependencies import (
     get_care_provider_access_service,
 )
 from lib.ai_foundation.agents.health_query import HealthQueryAgent
-from lib.ai_foundation.agents.state import AgentContext, AgentInput, RequestPriority
+from lib.ai_foundation.agents.state import AgentContext, AgentInput
 from lib.ai_foundation.streaming.sse import SSE_RESPONSE_HEADERS
 from lib.services.care_provider_access_service import CareProviderAccessService
 from lib.utils.care_provider_permissions import (
     CareProviderFeature,
     CareProviderPermissionAction,
 )
-from fastapi import HTTPException
 from rest_server.response_models import SuccessResponse
 from rest_server.v1.utils import resolve_patient_ids_for_query
 from lib.ai_foundation.agents.thread_utils import resolve_thread_id as _foundation_resolve_thread_id
 
 from .router import router
 from .api_schema import QueryRequest
+from .utils import enforce_rate_limit, resolve_priority as _resolve_priority
 
 
 def _resolve_agent_role(role: ProfileTypeEnum) -> str:
@@ -52,15 +49,6 @@ def _resolve_agent_role(role: ProfileTypeEnum) -> str:
     if role == ProfileTypeEnum.CARE_PROVIDER:
         return "care_provider"
     return "patient"
-
-
-def _resolve_priority(role: ProfileTypeEnum) -> RequestPriority:
-    """Map actor role to request priority."""
-    if role == ProfileTypeEnum.ADMIN:
-        return RequestPriority.CRITICAL
-    if role == ProfileTypeEnum.CARE_PROVIDER:
-        return RequestPriority.HIGH
-    return RequestPriority.NORMAL
 
 
 def _build_agent_input(
@@ -102,29 +90,6 @@ def _build_agent_input(
     )
 
 
-def _check_rate_limit(current_actor: Actor, priority: RequestPriority) -> None:
-    """Check rate limit and raise 429 if exceeded."""
-    try:
-        from lib.core.container import container
-        from lib.ai_foundation.rate_limit.limiter import RateLimiter
-        limiter: RateLimiter = container.resolve(RateLimiter)
-        tenant_id = current_actor.id
-        result = limiter.check_and_record(tenant_id, priority)
-        if not result.allowed:
-            retry_after = max(1, int(result.reset_at - _time.time()))
-            raise HTTPException(
-                status_code=429,
-                detail=f"Rate limit exceeded. Limit: {result.limit}/hour. Try again later.",
-                headers={"Retry-After": str(retry_after)},
-            )
-    except HTTPException:
-        raise
-    except (ConnectionError, TimeoutError, OSError) as exc:
-        logging.getLogger(__name__).warning("Rate limiter unavailable: %s", exc)
-    except Exception as exc:
-        logging.getLogger(__name__).warning("Rate limiter unexpected error: %s", exc)
-
-
 def _resolve_thread_id(current_actor: Actor, resolved_patient_ids: list[str]) -> str:
     """Resolve thread_id — delegates to the single source of truth."""
     return _foundation_resolve_thread_id(
@@ -161,7 +126,7 @@ async def process_query_v3(
     - Admin: queries any patient(s) across all facilities
     """
     priority = _resolve_priority(current_actor.role)
-    _check_rate_limit(current_actor, priority)
+    await enforce_rate_limit(current_actor, priority)
 
     resolved_patient_ids = await resolve_patient_ids_for_query(
         current_actor=current_actor,
@@ -207,7 +172,7 @@ async def process_query_v3_stream(
     - Admin: queries any patient(s) across all facilities
     """
     priority = _resolve_priority(current_actor.role)
-    _check_rate_limit(current_actor, priority)
+    await enforce_rate_limit(current_actor, priority)
 
     resolved_patient_ids = await resolve_patient_ids_for_query(
         current_actor=current_actor,

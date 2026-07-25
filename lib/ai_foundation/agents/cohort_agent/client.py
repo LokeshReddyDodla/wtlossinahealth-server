@@ -5,18 +5,23 @@ endpoints over loopback (http://localhost:8000 by default) — NOT the public
 Cloudflare URL (which would loop through the edge and get bot-challenged). The
 caller's JWT + device id are forwarded so every call is scoped to the same
 care provider, exactly as if the browser had made it.
+
+Fully async: a blocking client here doesn't just stall the worker — because
+the request loops back to THIS server, a blocked event loop can never serve
+its own loopback call (self-deadlock on a single worker).
 """
 
 from __future__ import annotations
 
-import os
-import time
+import asyncio
 from typing import Any
 
 import httpx
 
 # Loopback base for in-process API calls. Override with COHORT_AGENT_API_BASE.
-INTERNAL_API_BASE = os.getenv("COHORT_AGENT_API_BASE", "http://localhost:8000").rstrip("/")
+from lib.ai_foundation.config import settings as _ai_settings
+
+INTERNAL_API_BASE = _ai_settings.COHORT_AGENT_API_BASE.rstrip("/")
 
 _RETRY_STATUSES = {502, 503, 504}
 
@@ -24,11 +29,17 @@ _RETRY_STATUSES = {502, 503, 504}
 class InternalAPIClient:
     """Authenticated, loopback HTTP client used by the agent's tools."""
 
+    # One connection pool for the process — a cohort run makes dozens of
+    # loopback calls and per-query pools pay TCP setup for every one.
+    _shared_http: httpx.AsyncClient | None = None
+
     def __init__(self, token: str, device_id: str | None, base_url: str | None = None) -> None:
         self.base_url = (base_url or INTERNAL_API_BASE).rstrip("/")
         self.token = token
         self.device_id = device_id
-        self._http = httpx.Client(timeout=60.0)
+        if InternalAPIClient._shared_http is None:
+            InternalAPIClient._shared_http = httpx.AsyncClient(timeout=60.0)
+        self._http = InternalAPIClient._shared_http
 
     def _headers(self) -> dict[str, str]:
         h: dict[str, str] = {}
@@ -38,20 +49,20 @@ class InternalAPIClient:
             h["x-device-id"] = self.device_id
         return h
 
-    def get(self, path: str, params: dict[str, Any] | None = None) -> Any:
+    async def get(self, path: str, params: dict[str, Any] | None = None) -> Any:
         """GET an API path and return parsed JSON, unwrapping the standard
         ``{status, data, message}`` envelope to ``data`` when present."""
         url = path if path.startswith("http") else f"{self.base_url}/{path.lstrip('/')}"
         last_exc: Exception | None = None
         for attempt in range(3):
             try:
-                r = self._http.get(url, params=params, headers=self._headers())
+                r = await self._http.get(url, params=params, headers=self._headers())
             except httpx.TransportError as e:  # transient network blip
                 last_exc = e
-                time.sleep(0.4 * (attempt + 1))
+                await asyncio.sleep(0.4 * (attempt + 1))
                 continue
             if r.status_code in _RETRY_STATUSES and attempt < 2:
-                time.sleep(0.4 * (attempt + 1))
+                await asyncio.sleep(0.4 * (attempt + 1))
                 continue
             r.raise_for_status()
             body = r.json()
@@ -66,8 +77,5 @@ class InternalAPIClient:
             raise last_exc
         raise RuntimeError(f"GET {path} failed after retries")
 
-    def close(self) -> None:
-        try:
-            self._http.close()
-        except Exception:  # noqa: BLE001
-            pass
+    async def close(self) -> None:
+        """No-op: the pool is process-shared and long-lived by design."""

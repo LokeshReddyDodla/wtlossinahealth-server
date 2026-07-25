@@ -1,6 +1,5 @@
 """Tests for the Proactive Monitor Agent (v2 — direct Qdrant fetch + single LLM)."""
 
-from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
@@ -20,11 +19,6 @@ from lib.ai_foundation.agents.proactive_monitor.contracts import (
 from lib.ai_foundation.agents.proactive_monitor.insight_tracker import (
     InsightTracker,
     COLLECTION_NAME,
-    _DEDUP_HOURS,
-    _CONSECUTIVE_TOLERANCE_HOURS,
-    _ESCALATE_ATTENTION_DAYS,
-    _ESCALATE_WARNING_DAYS,
-    _TTL_SECONDS,
 )
 from lib.ai_foundation.agents.state import AgentContext, AgentInput
 from lib.ai_foundation.models.gateway import LLMResponse, LLMUsage
@@ -190,6 +184,17 @@ def _make_insight_tracker(*, should_send_result=(True, "info", 1)):
     return tracker
 
 
+def _make_health_agent(narration=None):
+    """The one brain. run_proactive returns a push-shaped narration; the monitor
+    stamps category/severity deterministically and wraps it in a ScanResult."""
+    from lib.ai_foundation.agents.health_query.contracts import ProactiveNarration
+    brain = AsyncMock()
+    brain.run_proactive = AsyncMock(return_value=narration or ProactiveNarration(
+        notify=True, title="Your check-in", body="Here's your day so far.",
+        suggested_query="How am I doing?"))
+    return brain
+
+
 def _make_agent(**overrides):
     return ProactiveMonitorAgent(
         gateway=overrides.get("gateway", _make_gateway()),
@@ -197,6 +202,7 @@ def _make_agent(**overrides):
         memory=overrides.get("memory", _make_memory()),
         event_bus=overrides.get("event_bus", _make_event_bus()),
         insight_tracker=overrides.get("insight_tracker", None),
+        health_agent=overrides.get("health_agent", _make_health_agent()),
     )
 
 
@@ -246,57 +252,22 @@ class TestProactiveMonitorAgent:
         assert result.has_insights is True
 
     @pytest.mark.asyncio
-    async def test_scan_fetches_from_qdrant(self):
-        qdrant = _make_qdrant()
-        agent = _make_agent(qdrant=qdrant)
-        await agent.scan_patient("p123", "Sarah")
-
-        qdrant.retrieve_filtered.assert_called_once()
-        call_args = qdrant.retrieve_filtered.call_args[0][0]
-        assert call_args.patient_ids == ["p123"]
-        assert "meal" in call_args.data_types
-
-    @pytest.mark.asyncio
-    async def test_scan_patient_no_data(self):
-        """No data in Qdrant → engagement_drop insight without LLM."""
-        qdrant = _make_qdrant(results=[])
-        gateway = _make_gateway()
-        agent = _make_agent(qdrant=qdrant, gateway=gateway)
+    async def test_brain_declining_yields_no_digest(self):
+        """When the brain judges nothing noteworthy, the cron scan sends nothing."""
+        from lib.ai_foundation.agents.health_query.contracts import ProactiveNarration
+        agent = _make_agent(health_agent=_make_health_agent(ProactiveNarration(notify=False)))
         result = await agent.scan_patient("p_empty", "Sarah")
-
-        assert result.data_available is False
-        assert result.has_insights is True
-        assert result.insights[0].category == InsightCategory.ENGAGEMENT_DROP
-        # Gateway.extract should NOT be called (no-data path skips LLM)
-        gateway.extract.assert_not_called()
+        assert result.has_insights is False
+        assert result.error is None
 
     @pytest.mark.asyncio
-    async def test_scan_llm_failure_fallback(self):
-        """If LLM extraction fails, return static fallback insight."""
-        gateway = AsyncMock()
-        gateway.extract = AsyncMock(side_effect=Exception("LLM down"))
-        gateway.set_langfuse_context = MagicMock()
-        gateway.langfuse_trace_input = MagicMock()
-        gateway.langfuse_trace_output = MagicMock()
-
-        agent = _make_agent(gateway=gateway)
+    async def test_scan_brain_failure_produces_no_insight(self):
+        """A brain failure never crashes the scan; it just yields no insight."""
+        brain = _make_health_agent()
+        brain.run_proactive = AsyncMock(side_effect=Exception("brain down"))
+        agent = _make_agent(health_agent=brain)
         result = await agent.scan_patient("p_fail", "Sarah")
-
-        assert result.error is None  # outer scan didn't crash
-        assert result.has_insights is True
-        assert result.insights[0].category == InsightCategory.GENERAL
-        assert "health check" in result.insights[0].title.lower() or "morning brief" in result.insights[0].title.lower()
-
-    @pytest.mark.asyncio
-    async def test_scan_publishes_events(self):
-        event_bus = _make_event_bus()
-        agent = _make_agent(event_bus=event_bus)
-        await agent.scan_patient("p123")
-
-        assert event_bus.publish.call_count >= 1
-        published_event = event_bus.publish.call_args_list[0][0][0]
-        assert published_event.event_type == "proactive_insight"
-        assert published_event.patient_id == "p123"
+        assert result.has_insights is False
 
     @pytest.mark.asyncio
     async def test_scan_batch(self):
@@ -317,17 +288,6 @@ class TestProactiveMonitorAgent:
             patient_timezones={"p1": "Asia/Kolkata", "p2": "Europe/London"},
         )
         assert batch.scanned == 2
-
-    @pytest.mark.asyncio
-    async def test_scan_handles_qdrant_error(self):
-        qdrant = AsyncMock()
-        qdrant.retrieve_filtered = AsyncMock(side_effect=Exception("Qdrant down"))
-        agent = _make_agent(qdrant=qdrant)
-        result = await agent.scan_patient("p_error")
-
-        assert result.error is not None
-        assert "Qdrant down" in result.error
-        assert result.data_available is False
 
     @pytest.mark.asyncio
     async def test_no_event_bus_still_works(self):
@@ -371,57 +331,6 @@ class TestProactiveMonitorAgent:
         input = AgentInput(message="scan", context=AgentContext())
         output = await agent.run(input)
         assert output.is_ready is False
-
-
-# ---------------------------------------------------------------------------
-# Dedup + Escalation Integration Tests
-# ---------------------------------------------------------------------------
-
-
-class TestDedupEscalationIntegration:
-    @pytest.mark.asyncio
-    async def test_no_tracker_passes_all_insights(self):
-        agent = _make_agent(insight_tracker=None)
-        result = await agent.scan_patient("p1")
-        assert len(result.insights) >= 1
-
-    @pytest.mark.asyncio
-    async def test_tracker_allows_first_time_insights(self):
-        tracker = _make_insight_tracker(should_send_result=(True, "info", 1))
-        agent = _make_agent(insight_tracker=tracker)
-        result = await agent.scan_patient("p1")
-        assert len(result.insights) >= 1
-
-    @pytest.mark.asyncio
-    async def test_tracker_blocks_duplicate_insights(self):
-        tracker = _make_insight_tracker(should_send_result=(False, "info", 1))
-        agent = _make_agent(insight_tracker=tracker)
-        result = await agent.scan_patient("p1")
-        assert len(result.insights) == 0  # all blocked by dedup
-
-    @pytest.mark.asyncio
-    async def test_tracker_escalates_severity(self):
-        tracker = _make_insight_tracker(should_send_result=(True, "attention", 3))
-        agent = _make_agent(insight_tracker=tracker)
-        result = await agent.scan_patient("p1")
-        for insight in result.insights:
-            # Morning briefs use LLM-set severity; afternoon insights get escalated
-            assert insight.severity.value in ("attention", "info")
-
-    @pytest.mark.asyncio
-    async def test_tracker_never_downgrades_warning(self):
-        tracker = _make_insight_tracker(should_send_result=(True, "attention", 3))
-        warning_only = [
-            HealthInsight(
-                category=InsightCategory.GLUCOSE_SPIKE,
-                severity=InsightSeverity.WARNING,
-                title="Spike",
-                body="High glucose after lunch.",
-            ),
-        ]
-        agent = _make_agent(insight_tracker=tracker, gateway=_make_gateway(insights=warning_only))
-        result = await agent.scan_patient("p1")
-        assert result.insights[0].severity == InsightSeverity.WARNING
 
 
 # ---------------------------------------------------------------------------
@@ -575,7 +484,7 @@ class TestInsightTracker:
         store, collection = _make_mock_mongo_store()
         tracker = InsightTracker(store)
         await tracker.ensure_indexes()
-        assert collection.create_index.call_count == 4
+        assert collection.create_index.call_count == 6
 
     @pytest.mark.asyncio
     async def test_collection_name(self):
@@ -632,3 +541,100 @@ class TestTimezoneScheduling:
         from lib.ai_foundation.agents.proactive_monitor.scheduling import is_within_scan_window
         result = is_within_scan_window(None)
         assert isinstance(result, bool)
+
+
+class TestMealTotalsComputed:
+    """Meal arithmetic happens in code, not in the LLM — wrong sums in a
+    notification are a clinical-credibility bug (dietitian review 30/06)."""
+
+    def test_macros_from_production_nutrition_dict_and_flat_keys(self):
+        prod = {"nutrition": {"calories": 480, "carbohydrates": 74, "proteins": 9, "fiber": 5}}
+        flat = {"calories": 240, "carbs_g": 14, "protein_g": 11, "fiber_g": 5}
+        assert ProactiveMonitorAgent._meal_macros(prod) == (480.0, 74.0, 9.0, 5.0)
+        assert ProactiveMonitorAgent._meal_macros(flat) == (240.0, 14.0, 11.0, 5.0)
+        assert ProactiveMonitorAgent._meal_macros({}) == (None, None, None, None)
+
+    def test_sitting_totals_within_window_only(self):
+        from lib.ai_foundation.agents.proactive_monitor.contracts import EventTrigger
+        agent = _make_agent()
+        t0 = 1_000_000_000_000.0
+        trigger_rec = {"start_time": t0, "calories": 60, "carbs_g": 12, "protein_g": 2, "fiber_g": 4}
+        meals = [
+            {"start_time": t0 - 20 * 60 * 1000, "calories": 240, "carbs_g": 14, "protein_g": 11, "fiber_g": 5},
+            {"start_time": t0 - 60 * 60 * 1000, "calories": 95, "carbs_g": 18, "protein_g": 3, "fiber_g": 1},
+            # 7 hours earlier — a different meal, must NOT be in the sitting
+            {"start_time": t0 - 7 * 3600 * 1000, "calories": 480, "carbs_g": 74, "protein_g": 9, "fiber_g": 5},
+        ]
+        section = agent._meal_totals_section(
+            meals, trigger=EventTrigger.MEAL_LOGGED, trigger_record=trigger_rec,
+            scan_date="2026-07-21",
+        )
+        assert "THIS SITTING" in section and "2 co-logged" in section
+        assert "395 kcal" in section      # 60+240+95, excludes the 480
+        assert "44g carbs" in section     # 12+14+18
+        assert "16g protein" in section
+        assert "10g fiber" in section
+
+    def test_single_item_sitting_returns_none(self):
+        from lib.ai_foundation.agents.proactive_monitor.contracts import EventTrigger
+        agent = _make_agent()
+        assert agent._meal_totals_section(
+            [], trigger=EventTrigger.MEAL_LOGGED,
+            trigger_record={"start_time": 1.0, "calories": 300},
+            scan_date="2026-07-21",
+        ) is None
+
+    def test_cron_day_totals(self):
+        agent = _make_agent()
+        meals = [
+            {"meal_date": "2026-07-21", "nutrition": {"calories": 180, "carbohydrates": 32, "proteins": 4, "fiber": 2}},
+            {"meal_date": "2026-07-21", "nutrition": {"calories": 240, "carbohydrates": 38, "proteins": 9, "fiber": 5}},
+        ]
+        section = agent._meal_totals_section(
+            meals, trigger=None, trigger_record=None, scan_date="2026-07-21",
+        )
+        assert "MEALS ON 2026-07-21" in section
+        assert "420 kcal" in section and "13g protein" in section
+
+    def test_day_total_excludes_other_days(self):
+        """Event scans fetch two days of meals; the day total must count only
+        the reported day, or the LLM reports the two-day sum as 'today'."""
+        agent = _make_agent()
+        meals = [
+            {"meal_date": "2026-07-21", "nutrition": {"calories": 240, "carbohydrates": 38, "proteins": 27, "fiber": 5}},
+            # yesterday's meals are context only — must not enter the total
+            {"meal_date": "2026-07-20", "nutrition": {"calories": 500, "carbohydrates": 60, "proteins": 40, "fiber": 8}},
+            {"meal_date": "2026-07-20", "nutrition": {"calories": 400, "carbohydrates": 50, "proteins": 26, "fiber": 7}},
+        ]
+        section = agent._meal_totals_section(
+            meals, trigger=None, trigger_record=None, scan_date="2026-07-21",
+        )
+        assert "27g protein" in section          # today only
+        assert "93g protein" not in section      # not the two-day sum
+        assert "1 items" in section              # only the one Jul-21 meal counted
+
+    def test_missing_macro_is_unknown_not_zero(self):
+        """A record with no fiber field must not produce '0g fiber' — the
+        LLM turns that into 'your meal had 0g fiber' (dietitian-visible bug)."""
+        agent = _make_agent()
+        meals = [
+            {"meal_date": "2026-07-21", "calories": 320, "carbs_g": 28, "protein_g": 18},  # no fiber field
+            {"meal_date": "2026-07-21", "calories": 200, "carbs_g": 30, "protein_g": 6},
+        ]
+        section = agent._meal_totals_section(
+            meals, trigger=None, trigger_record=None, scan_date="2026-07-21",
+        )
+        assert "fiber" not in section
+        assert "520 kcal" in section and "24g protein" in section
+
+    def test_partial_macro_data_marked(self):
+        agent = _make_agent()
+        meals = [
+            {"meal_date": "2026-07-21", "calories": 300, "fiber_g": 6},
+            {"meal_date": "2026-07-21", "calories": 200},  # no fiber
+        ]
+        section = agent._meal_totals_section(
+            meals, trigger=None, trigger_record=None, scan_date="2026-07-21",
+        )
+        assert "at least 6g fiber" in section
+        assert "lack full macro data" in section

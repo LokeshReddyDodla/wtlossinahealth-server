@@ -6,7 +6,7 @@ def generate_total_sessions_query(
 ) -> str:
     return f"""
     SELECT count() AS total_sessions
-    FROM aihealth.sleep_data
+    FROM aihealth.sleep_data FINAL
     WHERE patient_id = '{patient_id}'
         AND sleep_start_time >= '{start_datetime}'
         AND sleep_end_time <= '{end_datetime}'
@@ -22,7 +22,7 @@ def generate_duration_stats_query(
         avg(sleep_duration) AS avg_duration,
         max(sleep_duration) AS max_duration,
         min(sleep_duration) AS min_duration
-    FROM aihealth.sleep_data
+    FROM aihealth.sleep_data FINAL
     WHERE patient_id = '{patient_id}'
         AND sleep_start_time >= '{start_datetime}'
         AND sleep_end_time <= '{end_datetime}'
@@ -36,7 +36,7 @@ def generate_type_distribution_query(
     SELECT
         type,
         sum(sleep_duration) AS duration
-    FROM aihealth.sleep_data
+    FROM aihealth.sleep_data FINAL
     WHERE patient_id = '{patient_id}'
         AND sleep_start_time >= '{start_datetime}'
         AND sleep_end_time <= '{end_datetime}'
@@ -60,7 +60,7 @@ def generate_timing_stats_query(
             formatDateTime(toDateTime(toUInt32(avg(toUnixTimestamp(toTime(sleep_end_time))))), '%H:%M:%S'),
             ''
         ) AS avg_end
-    FROM aihealth.sleep_data
+    FROM aihealth.sleep_data FINAL
     WHERE patient_id = '{patient_id}'
         AND sleep_start_time >= '{start_datetime}'
         AND sleep_end_time <= '{end_datetime}'
@@ -76,7 +76,7 @@ def generate_quality_stats_query(
     SELECT
         type,
         sum(sleep_duration) AS duration
-    FROM aihealth.sleep_data
+    FROM aihealth.sleep_data FINAL
     WHERE patient_id = '{patient_id}'
         AND sleep_start_time >= '{start_datetime}'
         AND sleep_end_time <= '{end_datetime}'

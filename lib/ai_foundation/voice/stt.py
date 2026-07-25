@@ -10,16 +10,22 @@ share the same TranscriptionResult contract so callers never know which ran.
 
 from __future__ import annotations
 
-import base64
 import io
 import logging
 import wave
+
+import litellm
 from abc import ABC, abstractmethod
 from typing import Literal
 
 from pydantic import BaseModel
 
 from lib.ai_foundation.voice.config import VoiceSettings
+from lib.ai_foundation.voice.providers import (
+    AudioProvider,
+    SARVAM_INPUT_CODECS,
+    SARVAM_STT_LANGUAGE_MAP,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -56,8 +62,6 @@ class OpenAISpeechToText(BaseSpeechToText):
     """Async OpenAI Whisper STT client."""
 
     def __init__(self, settings: VoiceSettings) -> None:
-        from openai import AsyncOpenAI
-        self._client = AsyncOpenAI()
         self._settings = settings
 
     async def transcribe_file(
@@ -92,7 +96,10 @@ class OpenAISpeechToText(BaseSpeechToText):
             lang,
         )
 
-        response = await self._client.audio.transcriptions.create(**kwargs)
+        # Explicit timeout: a hung provider call must not stall a live voice turn.
+        response = await litellm.atranscription(
+            **kwargs, timeout=self._settings.PROVIDER_TIMEOUT_SECONDS,
+        )
 
         result = TranscriptionResult(
             text=response.text,
@@ -148,7 +155,10 @@ class OpenAISpeechToText(BaseSpeechToText):
             len(audio_bytes), audio_format, filename, len(upload_bytes), lang or "auto",
         )
 
-        response = await self._client.audio.transcriptions.create(**kwargs)
+        # Explicit timeout: a hung provider call must not stall a live voice turn.
+        response = await litellm.atranscription(
+            **kwargs, timeout=self._settings.PROVIDER_TIMEOUT_SECONDS,
+        )
 
         result = TranscriptionResult(
             text=response.text,
@@ -165,26 +175,13 @@ class OpenAISpeechToText(BaseSpeechToText):
 
 # ── Sarvam AI ───────────────────────────────────────────────────────────────
 
-_SARVAM_LANGUAGE_MAP: dict[str, str] = {
-    "hi": "hi-IN", "bn": "bn-IN", "kn": "kn-IN", "ml": "ml-IN",
-    "mr": "mr-IN", "od": "od-IN", "pa": "pa-IN", "ta": "ta-IN",
-    "te": "te-IN", "en": "en-IN", "gu": "gu-IN", "as": "as-IN",
-    "ur": "ur-IN", "ne": "ne-IN",
-}
-
-_FORMAT_TO_SARVAM_CODEC: dict[str, str] = {
-    "pcm": "pcm_s16le", "wav": "wav", "mp3": "mp3", "mp4": "mp4",
-    "m4a": "mp4", "webm": "webm", "ogg": "ogg", "flac": "flac",
-    "mpeg": "mpeg", "mpga": "mpeg",
-}
-
 
 class SarvamSpeechToText(BaseSpeechToText):
     """Async Sarvam AI STT client."""
 
     def __init__(self, settings: VoiceSettings) -> None:
         from sarvamai import AsyncSarvamAI
-        self._client = AsyncSarvamAI(api_subscription_key=settings.SARVAM_API_KEY)
+        self._client = AsyncSarvamAI(api_subscription_key=settings.SARVAM_API_KEY, timeout=settings.PROVIDER_TIMEOUT_SECONDS)
         self._settings = settings
 
     async def transcribe(
@@ -205,8 +202,8 @@ class SarvamSpeechToText(BaseSpeechToText):
             upload_bytes = audio_bytes
 
         lang = language or self._settings.STT_LANGUAGE
-        sarvam_lang = _SARVAM_LANGUAGE_MAP.get(lang, "unknown") if lang else "unknown"
-        sarvam_codec = _FORMAT_TO_SARVAM_CODEC.get(audio_format, "wav")
+        sarvam_lang = SARVAM_STT_LANGUAGE_MAP.get(lang, "unknown") if lang else "unknown"
+        sarvam_codec = SARVAM_INPUT_CODECS.get(audio_format, "wav")
 
         logger.debug(
             "STT [sarvam]: transcribing %d bytes (format=%s, lang=%s)",
@@ -242,8 +239,6 @@ class SarvamSpeechToText(BaseSpeechToText):
 
 def build_stt(settings: VoiceSettings) -> BaseSpeechToText:
     """Build the STT client based on the configured provider."""
-    from lib.ai_foundation.voice.providers import AudioProvider
-
     provider = AudioProvider(settings.STT_PROVIDER)
     if provider == AudioProvider.SARVAM:
         try:

@@ -21,9 +21,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from twilio.rest import Client as TwilioClient
 
+from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
 from lib.ai_foundation.agents.health_query import HealthQueryAgent
 from lib.ai_foundation.agents.state import AgentContext, AgentInput, RequestPriority
+from lib.ai_foundation.translation import TranslationService
 from lib.core.container import container
+from lib.core.types import DEFAULT_AI_LANGUAGE
 from lib.dependencies.database import get_async_postgres_session
 from lib.models.patient import Patient
 
@@ -54,6 +57,27 @@ def _verify_payload_signature(payload: bytes, signature_header: str) -> bool:
         WHATSAPP_APP_SECRET.encode(), payload, hashlib.sha256
     ).hexdigest()
     return hmac.compare_digest(f"sha256={expected}", signature_header)
+
+
+def _get_resolver() -> "PatientNameResolver":
+    return container.resolve(PatientNameResolver)
+
+
+def _get_translator() -> "TranslationService":
+    return container.resolve(TranslationService)
+
+
+async def _localize_for_patient(patient_id: str | None, text: str) -> str:
+    """Canned strings to a KNOWN patient go out in their AI language."""
+    if not patient_id:
+        return text
+    try:
+        lang = await _get_resolver().resolve_language(patient_id)
+        if lang == DEFAULT_AI_LANGUAGE:
+            return text
+        return await _get_translator().translate_cached(text, lang)
+    except Exception:
+        return text
 
 
 async def _lookup_patient_by_phone(phone: str) -> Patient | None:
@@ -137,11 +161,14 @@ async def receive_message(request: Request) -> dict:
     """Handle incoming WhatsApp messages."""
     body = await request.body()
 
-    # TODO: re-enable signature verification once WHATSAPP_APP_SECRET is confirmed
-    # if WHATSAPP_APP_SECRET:
-    #     signature = request.headers.get("x-hub-signature-256", "")
-    #     if not _verify_payload_signature(body, signature):
-    #         raise HTTPException(status_code=403, detail="Invalid signature")
+    # Fail closed: an unsigned webhook would let anyone chat as any patient
+    # whose phone number they know. No secret configured = endpoint disabled.
+    if not WHATSAPP_APP_SECRET:
+        logger.error("WHATSAPP_APP_SECRET not configured — rejecting webhook")
+        raise HTTPException(status_code=403, detail="Webhook not configured")
+    signature = request.headers.get("x-hub-signature-256", "")
+    if not _verify_payload_signature(body, signature):
+        raise HTTPException(status_code=403, detail="Invalid signature")
 
     data = await request.json()
 
@@ -160,10 +187,14 @@ async def receive_message(request: Request) -> dict:
 
                 if msg.get("type") != "text":
                     await _mark_as_read(message_id)
+                    media_patient = await _lookup_patient_by_phone(sender_phone)
                     await _send_whatsapp_message(
                         sender_phone,
-                        "I can only read text messages for now. "
-                        "Please type your question and I'll be happy to help!",
+                        await _localize_for_patient(
+                            str(media_patient.patient_id) if media_patient else None,
+                            "I can only read text messages for now. "
+                            "Please type your question and I'll be happy to help!",
+                        ),
                     )
                     continue
 
@@ -214,20 +245,25 @@ async def _process_patient_message(
         stream=False,
     )
 
+    output = None
     try:
         agent = _get_agent()
         output = await agent.run(agent_input)
         response_text = output.message
     except Exception:
         logger.exception("Health agent error for WhatsApp patient %s", patient_id)
-        response_text = (
+        response_text = await _localize_for_patient(
+            patient_id,
             "I'm having trouble processing your request right now. "
-            "Please try again in a moment."
+            "Please try again in a moment.",
         )
 
     if message_id:
         await _react_to_message(phone, message_id, "")
-    await _send_whatsapp_message(phone, response_text)
+    # Companion bubbles: send each part as its own WhatsApp message.
+    bubbles = ((output.data or {}).get("messages") if output else None) or [response_text]
+    for bubble in bubbles:
+        await _send_whatsapp_message(phone, bubble)
 
 
 # -- Twilio Sandbox -----------------------------------------------------------
@@ -271,20 +307,40 @@ async def _send_twilio_message(to: str, text: str) -> None:
 
 @router.post("/twilio/webhook")
 async def twilio_receive_message(
+    request: Request,
     Body: str = Form(""),
     From: str = Form(""),
     To: str = Form(""),
     NumMedia: int = Form(0),
 ) -> Response:
     """Handle incoming WhatsApp messages from Twilio sandbox."""
+    # Fail closed: unsigned requests could impersonate any patient by phone.
+    if not TWILIO_AUTH_TOKEN:
+        logger.error("TWILIO_AUTH_TOKEN not configured — rejecting webhook")
+        raise HTTPException(status_code=403, detail="Webhook not configured")
+    from twilio.request_validator import RequestValidator
+
+    form = await request.form()
+    validator = RequestValidator(TWILIO_AUTH_TOKEN)
+    if not validator.validate(
+        str(request.url),
+        dict(form),
+        request.headers.get("X-Twilio-Signature", ""),
+    ):
+        raise HTTPException(status_code=403, detail="Invalid signature")
+
     if not From:
         return Response(content="<Response></Response>", media_type="application/xml")
 
     if NumMedia > 0 and not Body:
+        media_patient = await _lookup_patient_by_phone(_normalize_twilio_phone(From))
         await _send_twilio_message(
             From,
-            "I can only read text messages for now. "
-            "Please type your question and I'll be happy to help!",
+            await _localize_for_patient(
+                str(media_patient.patient_id) if media_patient else None,
+                "I can only read text messages for now. "
+                "Please type your question and I'll be happy to help!",
+            ),
         )
         return Response(content="<Response></Response>", media_type="application/xml")
 
@@ -292,7 +348,7 @@ async def twilio_receive_message(
         return Response(content="<Response></Response>", media_type="application/xml")
 
     phone = _normalize_twilio_phone(From)
-    logger.info("Twilio WhatsApp message from %s: %s", phone, Body[:100])
+    logger.info("Twilio WhatsApp message from %s… (%d chars)", phone[:6], len(Body))
 
     patient = await _lookup_patient_by_phone(phone)
 
@@ -328,16 +384,22 @@ async def twilio_receive_message(
         stream=False,
     )
 
+    output = None
     try:
         agent = _get_agent()
         output = await agent.run(agent_input)
         response_text = output.message
     except Exception:
         logger.exception("Health agent error for WhatsApp patient %s", patient_id)
-        response_text = (
+        response_text = await _localize_for_patient(
+            patient_id,
             "I'm having trouble processing your request right now. "
-            "Please try again in a moment."
+            "Please try again in a moment.",
         )
 
-    await _send_twilio_message(From, response_text)
+    # Companion bubbles: send each part as its own message (length-split per part).
+    bubbles = ((output.data or {}).get("messages") if output else None) or [response_text]
+    for bubble in bubbles:
+        for chunk in _split_message(bubble):
+            await _send_twilio_message(From, chunk)
     return Response(content="<Response></Response>", media_type="application/xml")

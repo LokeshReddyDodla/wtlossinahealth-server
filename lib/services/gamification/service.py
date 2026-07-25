@@ -664,6 +664,27 @@ class GamificationService:
     # ── AI Context ───────────────────────────────────────────────────────
 
     @with_postgres_session
+    @with_postgres_session
+    async def get_active_nudges(
+        self,
+        patient_id: str,
+        *,
+        postgres_session: AsyncSession,
+    ) -> list[str]:
+        """Today's still-pending task titles — the gamification nudges the
+        patient will already receive today. The proactive brain reads these
+        so its coaching complements them instead of becoming a third voice
+        about the same thing. Duck-typed reader for ai_foundation."""
+        today = await self._patient_today(UUID(patient_id), postgres_session)
+        result = await postgres_session.execute(
+            select(DailyTask.title).where(
+                DailyTask.patient_id == UUID(patient_id),
+                DailyTask.task_date == today,
+                DailyTask.status == TaskStatus.PENDING.value,
+            )
+        )
+        return [t for (t,) in result.all()]
+
     async def get_gamification_context(
         self,
         patient_id: UUID,
@@ -707,6 +728,7 @@ class GamificationService:
         )
         tasks = task_result.scalars().all()
         completed = sum(1 for t in tasks if t.status == TaskStatus.COMPLETED.value)
+        pending_task_titles = [t.title for t in tasks if t.status == TaskStatus.PENDING.value]
 
         # Weekly quest
         week_start = today - timedelta(days=today.weekday())
@@ -795,6 +817,7 @@ class GamificationService:
             streak_freezes=profile.streak_freezes,
             recent_achievements=recent,
             tasks_today={"completed": completed, "total": len(tasks)},
+            pending_task_titles=pending_task_titles,
             weekly_quest=quest_data,
             active_challenges=active_challenges,
             buddy_streak=buddy_streak,

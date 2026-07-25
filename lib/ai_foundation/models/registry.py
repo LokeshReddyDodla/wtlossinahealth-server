@@ -44,12 +44,14 @@ class ModelTask(str, Enum):
     INTENT_EXTRACTION = "intent_extraction"
     RESPONSE_GENERATION = "response_generation"
     STRUCTURED_ANALYSIS = "structured_analysis"
-    MEAL_ANALYSIS = "meal_analysis"
+    MEAL_ANALYSIS = "meal_analysis"  # vision: photo → items (extractor only)
+    MEAL_REASONING = "meal_reasoning"  # text-only: scoring, alternatives, glucose fallback
     CLASSIFICATION = "classification"
     SUMMARIZATION = "summarization"
     EMBEDDING = "embedding"
     QUALITY_JUDGE = "quality_judge"
     PRODUCT_BOT = "product_bot"
+    TRANSLATION = "translation"
 
 
 class ModelProvider(str, Enum):
@@ -311,9 +313,10 @@ def build_default_registry(
     from lib.ai_foundation.config import settings as _default_settings
 
     s = settings or _default_settings
-    thinker = s.REASONING_THINKER_MODEL          # default: gpt-4.1-mini
-    responder = s.REASONING_RESPONDER_MODEL       # default: gpt-5.1
-    adv_thinker = s.REASONING_ADVANCED_THINKER_MODEL  # default: gpt-4.1
+    # Defaults live in config.py — do not restate them here, they drift.
+    thinker = s.REASONING_THINKER_MODEL
+    responder = s.REASONING_RESPONDER_MODEL
+    adv_thinker = s.REASONING_ADVANCED_THINKER_MODEL
 
     registry = ModelRegistry()
 
@@ -329,17 +332,6 @@ def build_default_registry(
             supports_structured=True,
             supports_streaming=True,
             tags=["fast", "structured", "anthropic"],
-        ),
-        ModelSpec(
-            model_id="claude-opus-4-6",
-            provider=ModelProvider.ANTHROPIC,
-            temperature=0.0,
-            timeout_seconds=60.0,
-            cost_per_1k_input=0.015,
-            cost_per_1k_output=0.075,
-            supports_structured=True,
-            supports_streaming=True,
-            tags=["powerful", "reasoning", "anthropic"],
         ),
         ModelSpec(
             model_id="claude-haiku-4-5-20251001",
@@ -365,17 +357,6 @@ def build_default_registry(
             tags=["fast", "cheap", "structured"],
         ),
         ModelSpec(
-            model_id="gpt-4.1",
-            provider=ModelProvider.OPENAI,
-            temperature=0.0,
-            timeout_seconds=15.0,
-            cost_per_1k_input=0.002,
-            cost_per_1k_output=0.008,
-            supports_structured=True,
-            supports_streaming=True,
-            tags=["balanced", "structured"],
-        ),
-        ModelSpec(
             model_id="gpt-5.1",
             provider=ModelProvider.OPENAI,
             temperature=0.0,
@@ -396,6 +377,28 @@ def build_default_registry(
             supports_structured=True,
             supports_streaming=True,
             tags=["vision", "multimodal"],
+        ),
+        ModelSpec(
+            model_id="gpt-5.2",
+            provider=ModelProvider.OPENAI,
+            temperature=0.0,
+            timeout_seconds=30.0,
+            cost_per_1k_input=0.00175,
+            cost_per_1k_output=0.007,
+            supports_structured=True,
+            supports_streaming=True,
+            tags=["vision", "multimodal"],
+        ),
+        ModelSpec(
+            model_id="gpt-5.4-nano",
+            provider=ModelProvider.OPENAI,
+            temperature=0.0,
+            timeout_seconds=30.0,
+            cost_per_1k_input=0.0002,
+            cost_per_1k_output=0.00125,
+            supports_structured=True,
+            supports_streaming=True,
+            tags=["fast", "cheap", "reasoning"],
         ),
         ModelSpec(
             model_id="text-embedding-3-large",
@@ -432,36 +435,43 @@ def build_default_registry(
         ),
     ])
 
-    # Task routes: Claude primary, OpenAI/Google as fallbacks
+    # Fallbacks are cross-provider so one provider outage never takes down a task.
     registry.set_task_route(
         ModelTask.INTENT_EXTRACTION,
         primary=thinker,
-        fallbacks=["gpt-4.1-mini", "gemini-2.5-flash"],
+        fallbacks=["claude-haiku-4-5-20251001", "gemini-2.5-flash"],
     )
     registry.set_task_route(
         ModelTask.RESPONSE_GENERATION,
         primary=responder,
-        fallbacks=["gpt-5.1", "gemini-2.5-pro"],
+        fallbacks=["claude-sonnet-4-6", "gemini-2.5-pro"],
     )
     registry.set_task_route(
         ModelTask.STRUCTURED_ANALYSIS,
         primary=thinker,
-        fallbacks=["gpt-4.1-mini", "gemini-2.5-flash"],
+        fallbacks=["claude-sonnet-4-6", "gemini-2.5-flash"],
     )
+    # Meal photo → items: the whole chain must be vision-capable (sends the image).
     registry.set_task_route(
         ModelTask.MEAL_ANALYSIS,
-        primary="gpt-4o",
-        fallbacks=["gpt-4.1-mini", "gemini-2.5-flash", thinker],
+        primary="gpt-5.2",
+        fallbacks=["claude-sonnet-4-6", "gemini-2.5-pro"],
+    )
+    # Text-only meal engines (scorer/alternatives/glucose) send JSON, not the photo.
+    registry.set_task_route(
+        ModelTask.MEAL_REASONING,
+        primary="gpt-4.1-mini",
+        fallbacks=["claude-haiku-4-5-20251001", "gemini-2.5-flash"],
     )
     registry.set_task_route(
         ModelTask.CLASSIFICATION,
         primary=thinker,
-        fallbacks=["gpt-4.1-mini", "gemini-2.5-flash"],
+        fallbacks=["claude-sonnet-4-6", "gemini-2.5-flash"],
     )
     registry.set_task_route(
         ModelTask.SUMMARIZATION,
         primary=thinker,
-        fallbacks=["gpt-4.1-mini", "gemini-2.5-flash"],
+        fallbacks=["claude-haiku-4-5-20251001", "gemini-2.5-flash"],
     )
     registry.set_task_route(
         ModelTask.EMBEDDING,
@@ -470,12 +480,19 @@ def build_default_registry(
     registry.set_task_route(
         ModelTask.QUALITY_JUDGE,
         primary=adv_thinker,
-        fallbacks=[thinker],
+        fallbacks=["claude-sonnet-4-6", "gemini-2.5-pro"],
     )
     registry.set_task_route(
         ModelTask.PRODUCT_BOT,
         primary="gpt-4.1-mini",
-        fallbacks=["gemini-2.5-flash", "claude-haiku-4-5-20251001"],
+        fallbacks=["claude-haiku-4-5-20251001", "gemini-2.5-flash"],
+    )
+    # Patient-facing translation (preferred AI language). Cheap tier — the
+    # deterministic post-checks in TranslationService guard fidelity.
+    registry.set_task_route(
+        ModelTask.TRANSLATION,
+        primary="gpt-4.1-mini",
+        fallbacks=["claude-haiku-4-5-20251001", "gemini-2.5-flash"],
     )
 
     return registry

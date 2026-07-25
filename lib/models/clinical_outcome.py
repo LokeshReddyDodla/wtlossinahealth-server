@@ -44,7 +44,10 @@ class AdviceFollowup(Base):
     __tablename__ = "advice_followups"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    event_id = Column(UUID(as_uuid=True), ForeignKey("advice_events.id"), nullable=False, index=True)
+    # unique=True enforces the 1:1 at the DB — without it, two concurrent
+    # follow-up workers both reading the event as pending would insert
+    # duplicate rows and double-count efficacy in rollup().
+    event_id = Column(UUID(as_uuid=True), ForeignKey("advice_events.id"), nullable=False, unique=True, index=True)
     complied = Column(Boolean, nullable=True)           # None = unknown
     compliance_evidence = Column(Text, nullable=True)   # what we observed
     observed_delta = Column(Float, nullable=True)       # actual spike change (mg/dL or %)

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import List, Optional, cast
 from uuid import UUID
@@ -40,11 +41,34 @@ class FCMService:
         )
         return credentials
 
+    _HTTP_POOL_SIZE = 32  # ≥ max concurrent sends in a cron fan-out
+
     def _initialize_firebase(self):
         """Initialize the Firebase app using the service account JSON key."""
         if not firebase_admin._apps:
             cred = credentials.Certificate(self.json_key_path)
             firebase_admin.initialize_app(cred)
+            self._widen_transport_pool()
+
+    def _widen_transport_pool(self):
+        """urllib3 pools default to 10 connections per host; concurrent FCM
+        fan-outs exceed that, so excess connections get opened, used once,
+        and discarded (TLS churn + 'Connection pool is full' warning spam).
+        firebase-admin exposes no pool config, so mount wider adapters on
+        the messaging transport session directly. Best-effort: sends work
+        either way, just without connection reuse."""
+        try:
+            from requests.adapters import HTTPAdapter
+
+            service = messaging._get_messaging_service(firebase_admin.get_app())
+            session = service._client.session
+            adapter = HTTPAdapter(
+                pool_connections=self._HTTP_POOL_SIZE,
+                pool_maxsize=self._HTTP_POOL_SIZE,
+            )
+            session.mount("https://", adapter)
+        except Exception as exc:
+            logger.warning(f"Could not widen FCM transport pool: {exc}")
 
     async def send_fcm_notification(
         self,
@@ -60,7 +84,8 @@ class FCMService:
             fcm_token, title, body, channel_key, group_key, data=data
         )
         try:
-            response = messaging.send(message)
+            # firebase-admin is blocking network I/O — keep it off the loop.
+            response = await asyncio.to_thread(messaging.send, message)
             logger.info(f"Notification sent to device. Response: {response}")
         except Exception as e:
             logger.error(f"Failed to send notification to device {fcm_token[:20]}...: {e}")
@@ -181,7 +206,7 @@ class FCMService:
                     logger.info(
                         f"User {user_id} has notification permissions disabled. Skipping notification."
                     )
-                    return
+                    return "no_permission"
 
             postgres_store = cast(PostgresStore, container.resolve(PostgresStore))
             user_device_service = UserDeviceService(postgres_store=postgres_store)
@@ -197,7 +222,7 @@ class FCMService:
             
             if not tokens:
                 logger.warning(f"No valid FCM tokens found for user {user_id}")
-                return
+                return "no_devices"
 
             logger.info(
                 f"Sending notification to user {user_id} on {len(tokens)} device(s)"
@@ -212,20 +237,85 @@ class FCMService:
                 data=data,
             )
 
-            response = messaging.send_each_for_multicast(multicast_message)
+            # firebase-admin is blocking network I/O — keep it off the loop.
+            response = await asyncio.to_thread(
+                messaging.send_each_for_multicast, multicast_message
+            )
 
-            if response.failure_count > 0:
-                for idx, resp in enumerate(response.responses):
-                    if not resp.success:
-                        logger.warning(
-                            f"Failed to send notification to device {tokens[idx][:20]}...: {resp.exception}"
-                        )
+            invalid_tokens: list[str] = []
+            for idx, resp in enumerate(response.responses):
+                if not resp.success:
+                    if isinstance(resp.exception, messaging.UnregisteredError):
+                        invalid_tokens.append(tokens[idx])
+                    logger.warning(
+                        f"Failed to send notification to device {tokens[idx][:20]}...: {resp.exception}"
+                    )
+
+            # Prune dead registrations: a patient whose tokens all rotated
+            # must start receiving again on their next valid registration.
+            if invalid_tokens:
+                token_to_device = {d.fcm_token: d.device_id for d in devices if d.fcm_token}
+                for token in invalid_tokens:
+                    device_id = token_to_device.get(token)
+                    if device_id:
+                        try:
+                            await user_device_service.delete_user_device(device_id)
+                        except Exception as prune_exc:
+                            logger.warning(f"Failed to prune dead FCM token: {prune_exc}")
 
             logger.info(
                 f"Notification batch completed for user {user_id}: "
                 f"{response.success_count} success, {response.failure_count} failure(s)"
             )
+            if response.success_count == 0:
+                # Every device failed — surface it instead of reporting a
+                # delivered notification that nobody received.
+                raise RuntimeError(
+                    f"All {len(tokens)} FCM sends failed for user {user_id}"
+                )
+            return "sent"
 
         except Exception as e:
             logger.error(f"Failed to send batch notifications to user {user_id}: {e}")
             raise
+
+    async def send_fcm_data_to_user_devices(
+        self,
+        user_id: str,
+        data: dict,
+    ) -> None:
+        """Send a SILENT data-only message to all of a user's devices.
+
+        No notification payload — nothing appears in the tray. Used to tell
+        a foregrounded app that server-side state changed (e.g. a chat thread
+        gained a turn or a translation) so open screens refresh live.
+        """
+        try:
+            postgres_store = cast(PostgresStore, container.resolve(PostgresStore))
+            user_device_service = UserDeviceService(postgres_store=postgres_store)
+            devices = await user_device_service.get_user_devices(user_id=UUID(user_id))
+            tokens = [d.fcm_token for d in devices if d.fcm_token]
+            if not tokens:
+                logger.info("Silent data message to %s: no FCM tokens registered", user_id)
+                return
+
+            message = messaging.MulticastMessage(
+                tokens=tokens,
+                data={k: str(v) for k, v in data.items()},
+                android=messaging.AndroidConfig(priority="high"),
+                apns=messaging.APNSConfig(
+                    payload=messaging.APNSPayload(
+                        aps=messaging.Aps(content_available=True),
+                    ),
+                ),
+            )
+            response = await asyncio.to_thread(
+                messaging.send_each_for_multicast, message
+            )
+            logger.info(
+                "Silent data message to %s: %d ok, %d failed",
+                user_id, response.success_count, response.failure_count,
+            )
+        except Exception as e:
+            # Best-effort: a missed refresh signal degrades to refresh-on-reopen.
+            logger.warning(f"Failed to send data message to user {user_id}: {e}")

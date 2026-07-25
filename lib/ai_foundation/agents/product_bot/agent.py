@@ -24,6 +24,7 @@ from uuid import uuid4
 
 from lib.ai_foundation.agents.base import BaseAgent
 from lib.ai_foundation.agents.state import AgentInput, AgentOutput
+from lib.ai_foundation.config import settings
 from lib.ai_foundation.models.registry import ModelTask
 from lib.ai_foundation.streaming.sse import (
     SSEDonePayload,
@@ -81,6 +82,10 @@ class ProductBotAgent(BaseAgent):
         )
         self._cache = cache_store
         self._analytics = analytics_collection
+        self._indexes_ensured = False
+        # Strong refs: the loop only weak-refs tasks — GC could kill an
+        # in-flight analytics save.
+        self._bg_tasks: set[asyncio.Task] = set()
 
     # -- Tracing + history (single Redis read) --------------------------------
 
@@ -90,7 +95,7 @@ class ProductBotAgent(BaseAgent):
         """Set up Langfuse tracing and load history in one pass."""
         session_id = input.context.thread_id or str(uuid4())
         trace_id = f"trc_{uuid4().hex[:16]}"
-        history = self._load_history(session_id)
+        history = await self._load_history(session_id)
 
         await _maybe_await(self.gateway.set_langfuse_context(
             session_id=session_id,
@@ -129,7 +134,7 @@ class ProductBotAgent(BaseAgent):
             trace_id=trace_id,
         )
 
-        self._append_history(session_id, input.message, response.content)
+        await self._append_history(session_id, input.message, response.content)
 
         latency_ms = int((time.perf_counter() - start) * 1000)
         cost_usd = response.cost.total_cost if response.cost else None
@@ -140,7 +145,7 @@ class ProductBotAgent(BaseAgent):
             metadata={"model_id": response.model_id, "latency_ms": latency_ms, "cost_usd": cost_usd},
         ))
 
-        asyncio.ensure_future(self._save_exchange(
+        self._spawn(self._save_exchange(
             session_id=session_id,
             user_message=input.message,
             bot_response=response.content,
@@ -205,7 +210,7 @@ class ProductBotAgent(BaseAgent):
                         cost_usd = chunk.usage.cost.total_cost
 
             response_text = "".join(full_response)
-            self._append_history(session_id, input.message, response_text)
+            await self._append_history(session_id, input.message, response_text)
 
             latency_ms = int((time.perf_counter() - start) * 1000)
             primary_model = self.gateway.registry.route(ModelTask.PRODUCT_BOT).model_id
@@ -216,7 +221,7 @@ class ProductBotAgent(BaseAgent):
                 metadata={"model_id": primary_model, "latency_ms": latency_ms, "cost_usd": cost_usd},
             ))
 
-            asyncio.ensure_future(self._save_exchange(
+            self._spawn(self._save_exchange(
                 session_id=session_id,
                 user_message=input.message,
                 bot_response=response_text,
@@ -270,15 +275,20 @@ class ProductBotAgent(BaseAgent):
             {"role": "user", "content": user_message},
         ]
 
-    def _load_history(self, session_id: str) -> list[dict[str, str]]:
+    async def _load_history(self, session_id: str) -> list[dict[str, str]]:
         key = f"{_HISTORY_KEY_PREFIX}:{session_id}"
         try:
-            raw = self._cache.get_key(key)
+            raw = await self._cache.aget_key(key)
             if raw:
                 return json.loads(raw)
         except Exception:
             logger.debug("Failed to load history for session %s", session_id)
         return []
+
+    def _spawn(self, coro) -> None:
+        task = asyncio.create_task(coro)
+        self._bg_tasks.add(task)
+        task.add_done_callback(self._bg_tasks.discard)
 
     async def _save_exchange(
         self,
@@ -295,6 +305,7 @@ class ProductBotAgent(BaseAgent):
     ) -> None:
         if self._analytics is None:
             return
+        await self._maybe_ensure_indexes()
         try:
             doc: dict[str, Any] = {
                 "session_id": session_id,
@@ -313,11 +324,34 @@ class ProductBotAgent(BaseAgent):
         except Exception:
             logger.debug("Failed to save product bot exchange for session %s", session_id)
 
-    def _append_history(
+    async def _maybe_ensure_indexes(self) -> None:
+        """Indexes + TTL for the analytics collection (idempotent, lazy).
+
+        This collection takes writes from an UNAUTHENTICATED public endpoint —
+        without a TTL it grows forever; without indexes every analytics query
+        collection-scans.
+        """
+        if self._indexes_ensured or self._analytics is None:
+            return
+        try:
+            await self._analytics.create_index(
+                [("session_id", 1), ("turn", 1)],
+                name="pb_session_turn_idx",
+            )
+            await self._analytics.create_index(
+                "created_at",
+                name="pb_ttl_idx",
+                expireAfterSeconds=settings.PRODUCT_BOT_CONVERSATIONS_TTL_DAYS * 24 * 3600,
+            )
+            self._indexes_ensured = True
+        except Exception:
+            logger.debug("Product bot index creation deferred — may not be connected yet")
+
+    async def _append_history(
         self, session_id: str, user_msg: str, assistant_msg: str
     ) -> None:
         key = f"{_HISTORY_KEY_PREFIX}:{session_id}"
-        history = self._load_history(session_id)
+        history = await self._load_history(session_id)
         history.append({"role": "user", "content": user_msg})
         history.append({"role": "assistant", "content": assistant_msg})
 
@@ -325,7 +359,7 @@ class ProductBotAgent(BaseAgent):
             history = history[-_MAX_TURNS * 2 :]
 
         try:
-            self._cache.set_key(key, json.dumps(history), expire=_SESSION_TTL)
+            await self._cache.aset_key(key, json.dumps(history), expire=_SESSION_TTL)
         except Exception:
             logger.warning("Failed to save history for session %s", session_id)
 

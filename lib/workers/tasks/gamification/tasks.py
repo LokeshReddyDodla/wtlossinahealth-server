@@ -228,7 +228,6 @@ async def send_streak_reminders(ctx: Dict[str, Any]) -> None:
     from lib.services.gamification.notifications import send_gamification_notification
     from lib.services.gamification.streak_service import ACTIVITY_TASK_TYPES, ACTIVITY_THRESHOLD
     from lib.schemas.gamification import TaskStatus
-    from lib.services.notification_budget import can_send, record_sent
 
     store = container.resolve(PostgresStore)
     resolver = container.resolve(PatientNameResolver)
@@ -274,15 +273,12 @@ async def send_streak_reminders(ctx: Dict[str, Any]) -> None:
                 continue
 
             streak = streak_map[pid]
-            if not can_send(str(pid), "streak_reminder"):
-                continue
             await send_gamification_notification(
                 str(pid),
                 title="Don't lose your streak!",
                 body=f"You're on a {streak}-day streak. Complete a task to keep it going!",
                 data={"event_type": "streak_reminder", "current_streak": streak},
             )
-            record_sent(str(pid))
             sent += 1
         except Exception:
             logger.opt(exception=True).warning(f"Streak reminder failed for {pid}")
@@ -324,7 +320,6 @@ async def _send_medication_notification(
     """Persist an inbox row and fire FCM on the 'reminders' channel."""
     try:
         from lib.services.notifications import record_and_send_notification
-        from lib.services.notification_budget import record_sent
 
         await record_and_send_notification(
             patient_id,
@@ -333,7 +328,6 @@ async def _send_medication_notification(
             body=body,
             data=data or {},
         )
-        record_sent(patient_id)
     except Exception as exc:
         logger.warning("Failed medication notification for %s: %s", patient_id, exc)
 

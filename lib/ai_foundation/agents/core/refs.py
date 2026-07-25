@@ -110,12 +110,19 @@ def _format_occurred_at(value: Any, tz: str | None) -> str | None:
         else:
             return str(value)
 
-        if tz and ZoneInfo is not None:
-            try:
-                local = dt.astimezone(ZoneInfo(tz))
-                return local.strftime("%b %d, %Y at %I:%M %p %Z")
-            except ZoneInfoNotFoundError:
-                pass
+        # Never surface raw UTC to a patient-facing string — the default
+        # patient timezone is the fallback when the caller has none.
+        if ZoneInfo is not None:
+            from lib.ai_foundation.config import settings as _ai_settings
+
+            for tz_name in (tz, _ai_settings.DEFAULT_PATIENT_TIMEZONE):
+                if not tz_name:
+                    continue
+                try:
+                    local = dt.astimezone(ZoneInfo(tz_name))
+                    return local.strftime("%b %d, %Y at %I:%M %p %Z")
+                except ZoneInfoNotFoundError:
+                    continue
         return dt.strftime("%b %d, %Y at %I:%M %p UTC")
     except Exception as exc:
         logger.debug("Failed to format occurred_at %r: %s", value, exc)
@@ -141,7 +148,7 @@ async def _retrieve_simple(
                 with_payload=True,
             )
     except Exception as exc:
-        logger.debug("Qdrant retrieve failed for ref %s: %s", ref_id, exc)
+        logger.warning("Qdrant retrieve failed for ref %s: %s", ref_id, exc)
         return None
 
     if not points:
@@ -235,7 +242,7 @@ async def _resolve_cgm_report(
                 with_vectors=False,
             )
     except Exception as exc:
-        logger.debug("Qdrant scroll failed for cgm_report %s: %s", ref_id, exc)
+        logger.warning("Qdrant scroll failed for cgm_report %s: %s", ref_id, exc)
         return None
 
     if not points:
@@ -298,7 +305,7 @@ async def _resolve_insight(
     try:
         doc = await insight_tracker.get_by_insight_id(ref_id)
     except Exception as exc:
-        logger.debug("Insight lookup failed for %s: %s", ref_id, exc)
+        logger.warning("Insight lookup failed for %s: %s", ref_id, exc)
         return None
     if not doc:
         return None

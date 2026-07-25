@@ -96,7 +96,7 @@ from lib.services.vector import PatientProfileVectorService
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.postgres_session_decorator import with_postgres_session
 from lib.workers.tasks.profile.enqueue import (
-    enqueue_generate_profile_vector_sync,
+    enqueue_generate_profile_vector_async,
 )
 
 
@@ -177,7 +177,6 @@ class PatientProfileService:
                     joinedload(PatientModel.connected_apps).joinedload(
                         PatientConnectedApp.other_app
                     ),
-                    selectinload(PatientModel.weight_loss_enrollment),
                 )
 
             patient = await postgres_session.scalar(stmt)
@@ -440,7 +439,7 @@ class PatientProfileService:
             profile_data = CorePatientProfile.from_orm(updated_patient).model_dump(
                 mode="json"
             )
-            enqueue_generate_profile_vector_sync(patient_id, profile_data)
+            await enqueue_generate_profile_vector_async(patient_id, profile_data)
             return updated_patient
 
         except IntegrityError as e:
@@ -575,7 +574,7 @@ class PatientProfileService:
             profile_data = CorePatientProfile.from_orm(updated_patient).model_dump(
                 mode="json"
             )
-            enqueue_generate_profile_vector_sync(patient_id, profile_data)
+            await enqueue_generate_profile_vector_async(patient_id, profile_data)
             return updated_patient
 
         except IntegrityError as e:
@@ -666,7 +665,7 @@ class PatientProfileService:
             profile_data = CorePatientProfile.from_orm(updated_patient).model_dump(
                 mode="json"
             )
-            enqueue_generate_profile_vector_sync(patient_id, profile_data)
+            await enqueue_generate_profile_vector_async(patient_id, profile_data)
             return updated_patient
 
         except IntegrityError as e:
@@ -711,7 +710,7 @@ class PatientProfileService:
             # ── Identity & body scalars ─────────────────────────────────
             for field in (
                 "first_name", "last_name", "email", "gender", "dob",
-                "profile_picture", "occupation",
+                "profile_picture", "occupation", "preferred_ai_language",
                 "height_cm", "weight_kg", "waist_cm", "hip_cm",
             ):
                 if field in sent:
@@ -859,7 +858,7 @@ class PatientProfileService:
             profile_data = CorePatientProfile.from_orm(patient).model_dump(
                 mode="json"
             )
-            enqueue_generate_profile_vector_sync(patient_id, profile_data)
+            await enqueue_generate_profile_vector_async(patient_id, profile_data)
 
             # Chat-list notification stays gated to milestone events —
             # we don't want to spam the chat tray on every keystroke.

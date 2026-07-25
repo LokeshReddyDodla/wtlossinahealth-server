@@ -86,7 +86,7 @@ async def preview_prescription(
             )
 
         # Extract via LLM
-        extracted = await extraction_service.extract(image_urls=file_urls)
+        extracted = await extraction_service.extract(image_urls=file_urls, patient_id=patient_id)
 
         # Validate — must look like an actual prescription
         if not extracted.medicines:

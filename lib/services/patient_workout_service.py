@@ -249,8 +249,8 @@ class PatientWorkoutService:
             )
 
         response = self._to_response(workout)
-        self._fire_vector(patient_id, response)
-        self._fire_report_regeneration(patient_id, workout.date)
+        await self._fire_vector(patient_id, response)
+        await self._fire_report_regeneration(patient_id, workout.date)
         await self._fire_gamification(patient_id)
         return response
 
@@ -394,8 +394,8 @@ class PatientWorkoutService:
         ).scalar_one()
 
         response = self._to_response(row)
-        self._fire_vector(patient_id, response)
-        self._fire_report_regeneration(patient_id, row.date)
+        await self._fire_vector(patient_id, response)
+        await self._fire_report_regeneration(patient_id, row.date)
         return response
 
     @with_postgres_session
@@ -428,19 +428,19 @@ class PatientWorkoutService:
         except Exception as e:
             logger.warning(f"Failed to delete workout vector {workout_id}: {e}")
 
-        self._fire_report_regeneration(patient_id, workout_date)
+        await self._fire_report_regeneration(patient_id, workout_date)
         return True
 
     # ── Side effects (fire-and-forget) ───────────────────────────────────
 
     @staticmethod
-    def _fire_vector(patient_id: str, workout: PatientWorkoutResponse) -> None:
+    async def _fire_vector(patient_id: str, workout: PatientWorkoutResponse) -> None:
         try:
             from lib.workers.tasks.workout.enqueue import (
-                enqueue_generate_workout_vector_sync,
+                enqueue_generate_workout_vector_async,
             )
             payload = workout.model_dump(mode="json")
-            enqueue_generate_workout_vector_sync(
+            await enqueue_generate_workout_vector_async(
                 patient_id=str(patient_id),
                 workout_id=str(workout.id),
                 workout_data=payload,
@@ -449,16 +449,16 @@ class PatientWorkoutService:
             logger.warning(f"Failed to enqueue workout vector: {e}")
 
     @staticmethod
-    def _fire_report_regeneration(patient_id: str, workout_date) -> None:
+    async def _fire_report_regeneration(patient_id: str, workout_date) -> None:
         """Enqueue fitness report regeneration so MongoDB reports include this workout."""
         try:
             from datetime import datetime, time
             from lib.workers.tasks.fitness.enqueue import (
-                enqueue_process_fitness_upload_sync,
+                enqueue_process_fitness_upload_async,
             )
             start_dt = datetime.combine(workout_date, time.min)
             end_dt = datetime.combine(workout_date, time.max)
-            enqueue_process_fitness_upload_sync(
+            await enqueue_process_fitness_upload_async(
                 patient_id=str(patient_id),
                 start_date=start_dt,
                 end_date=end_dt,

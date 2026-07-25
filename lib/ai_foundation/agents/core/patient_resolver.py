@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel
 
 from lib.ai_foundation.config import settings
+from lib.core.types import DEFAULT_AI_LANGUAGE
 
 if TYPE_CHECKING:
     from lib.core.postgres_store import PostgresStore
@@ -33,6 +34,7 @@ class PatientProfile(BaseModel):
     name: str
     profile_picture: str | None = None
     timezone: str | None = None
+    preferred_ai_language: str | None = None
 
 
 class PatientNameResolver:
@@ -96,6 +98,23 @@ class PatientNameResolver:
             if pid in self._profile_cache
         }
 
+    # -- AI response language ----------------------------------------------
+
+    async def resolve_languages(self, patient_ids: list[str]) -> dict[str, str]:
+        """Resolve patient UUIDs to preferred AI language codes ("en" default)."""
+        stale = self._collect_stale(patient_ids)
+        if stale:
+            await self._fetch(stale)
+        return {
+            pid: self._profile_cache[pid].preferred_ai_language or DEFAULT_AI_LANGUAGE
+            for pid in patient_ids
+            if pid in self._profile_cache
+        }
+
+    async def resolve_language(self, patient_id: str) -> str:
+        langs = await self.resolve_languages([patient_id])
+        return langs.get(patient_id, DEFAULT_AI_LANGUAGE)
+
     # -- Profiles (for thread list UI) -------------------------------------
 
     async def resolve_profiles(self, patient_ids: list[str]) -> list[PatientProfile]:
@@ -149,6 +168,7 @@ class PatientNameResolver:
                         Patient.last_name,
                         Patient.profile_picture,
                         Patient.timezone,
+                        Patient.preferred_ai_language,
                     )
                     .where(Patient.patient_id.in_(patient_ids))
                 )
@@ -167,6 +187,7 @@ class PatientNameResolver:
                         name=name,
                         profile_picture=row.profile_picture,
                         timezone=row.timezone,
+                        preferred_ai_language=row.preferred_ai_language,
                     )
                     self._timestamps[pid] = fetched_at
 
