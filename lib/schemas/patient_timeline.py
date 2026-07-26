@@ -28,8 +28,26 @@ class TimelineEvent(BaseModel):
     entity_id: str | None = None
 
 
+class DaySummary(BaseModel):
+    """Ambient metrics for the day. A metric is None (never 0) when the day has
+    no reading for it — 0 would read as a real value and imply a gap that isn't
+    there."""
+
+    steps: int | None = None
+    active_energy_kcal: float | None = None
+    distance_km: float | None = None
+    resting_hr: int | None = None
+    avg_hr: int | None = None
+    min_hr: int | None = None
+    max_hr: int | None = None
+    avg_spo2: float | None = None
+    sleep_hours: float | None = None
+    sleep_quality: str | None = None
+
+
 class TimelineResponse(BaseModel):
     date: date
     patient_id: str
     event_count: int
     events: list[TimelineEvent]
+    summary: DaySummary | None = None
