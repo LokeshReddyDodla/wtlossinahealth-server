@@ -18,6 +18,7 @@ from lib.models.patient_workout import PatientWorkout
 from lib.models.sleep_checkin import SleepCheckin
 from lib.models.symptom_entry import SymptomEntry
 from lib.schemas.patient_timeline import (
+    DaySummary,
     TimelineEvent,
     TimelineEventType,
     TimelineResponse,
@@ -64,12 +65,14 @@ class PatientTimelineService:
             insight_events,
             cgm_events,
             report_enrichments,
+            summary,
         ) = await asyncio.gather(
             self._get_postgres_events(patient_id, selected_date, postgres_session),
             self._get_vital_events(patient_id, selected_date),
             self._get_insight_events(patient_id, selected_date),
             self._get_cgm_events(patient_id, selected_date),
             self._get_report_enrichments(patient_id, selected_date),
+            self._get_day_summary(patient_id, selected_date),
         )
 
         data_events = pg_events + vital_events + cgm_events
@@ -79,6 +82,13 @@ class PatientTimelineService:
         self._enrich_sleep(data_events, sleep_quality)
         data_events.extend(inactive_periods)
 
+        # Sleep isn't in ClickHouse; take it from the report the feed already used.
+        if sleep_quality:
+            mins = sleep_quality.get("total_duration_minutes")
+            if isinstance(mins, (int, float)) and mins > 0:
+                summary.sleep_hours = round(mins / 60, 1)
+            summary.sleep_quality = sleep_quality.get("classification")
+
         self._anchor_insights(insight_events, data_events)
         events = data_events + insight_events
         events.sort(key=lambda e: e.timestamp)
@@ -87,6 +97,7 @@ class PatientTimelineService:
             patient_id=patient_id,
             event_count=len(events),
             events=events,
+            summary=summary,
         )
 
     # ── Report enrichments (MongoDB) ─────────────────────────────────────
@@ -647,13 +658,14 @@ class PatientTimelineService:
         except Exception:
             return []
 
+        # Keys are the `type` strings fitness_upload_service writes
+        # (blood_oxygen / body_temperature, not spo2 / temperature) — mismatch
+        # here silently drops the unit.
         VITAL_LABELS = {
-            "heart_rate": ("Heart Rate", "bpm"),
-            "resting_heart_rate": ("Resting Heart Rate", "bpm"),
             "systolic_bp": ("Systolic BP", "mmHg"),
             "diastolic_bp": ("Diastolic BP", "mmHg"),
-            "spo2": ("SpO2", "%"),
-            "temperature": ("Temperature", "°F"),
+            "blood_oxygen": ("SpO2", "%"),
+            "body_temperature": ("Temperature", "°F"),
             "respiratory_rate": ("Respiratory Rate", "breaths/min"),
             "weight": ("Weight", "kg"),
         }
@@ -662,6 +674,11 @@ class PatientTimelineService:
         events: list[TimelineEvent] = []
 
         for vital_type, value, ts in rows:
+            # HR is a continuous stream (~300 samples/day); it belongs in the
+            # summary, not as one feed event per reading. Surfaced by _get_day_summary.
+            if vital_type in ("heart_rate", "resting_heart_rate"):
+                continue
+
             if vital_type in ("systolic_bp", "diastolic_bp"):
                 bp_by_time.setdefault(ts, {})[vital_type] = value
                 continue
@@ -692,6 +709,66 @@ class PatientTimelineService:
             ))
 
         return events
+
+    # ── ClickHouse (ambient day summary — the dashboard strip) ───────────
+
+    async def _get_day_summary(
+        self, patient_id: str, selected_date: date,
+    ) -> DaySummary:
+        """Aggregate the day's continuous streams (fitness_data + vitals_data)
+        into the summary. Sleep is folded in by the caller. Either query failing
+        leaves that half empty rather than failing the whole timeline.
+
+        Day boundary matches _get_vital_events (toDate on the naive stored
+        timestamp); patient-local windowing is the parked timezone item.
+        """
+        summary = DaySummary()
+
+        fitness_q = f"""
+        SELECT type, sum(value) AS total
+        FROM aihealth.fitness_data FINAL
+        WHERE patient_id = '{patient_id}'
+            AND toDate(start_datetime) = '{selected_date}'
+        GROUP BY type
+        """
+        try:
+            for vtype, total in self.clickhouse_store.client.execute(fitness_q):
+                if vtype == "STEPS":
+                    summary.steps = int(total)
+                elif vtype == "ACTIVE_ENERGY_BURNED":
+                    summary.active_energy_kcal = round(total, 1)
+                elif vtype == "DISTANCE_WALKING_RUNNING":
+                    # HealthKit distanceWalkingRunning is metres; surface km.
+                    summary.distance_km = round(total / 1000, 2)
+        except Exception:
+            logger.warning("day summary: fitness query failed for %s", patient_id[:8])
+
+        vitals_q = f"""
+        SELECT type,
+               avg(value)          AS a,
+               min(value)          AS mn,
+               max(value)          AS mx,
+               argMax(value, time) AS latest
+        FROM aihealth.vitals_data FINAL
+        WHERE patient_id = '{patient_id}'
+            AND toDate(time) = '{selected_date}'
+            AND type IN ('heart_rate', 'resting_heart_rate', 'blood_oxygen')
+        GROUP BY type
+        """
+        try:
+            for vtype, a, mn, mx, latest in self.clickhouse_store.client.execute(vitals_q):
+                if vtype == "heart_rate":
+                    summary.avg_hr = round(a)
+                    summary.min_hr = round(mn)
+                    summary.max_hr = round(mx)
+                elif vtype == "resting_heart_rate":
+                    summary.resting_hr = round(latest)
+                elif vtype == "blood_oxygen":
+                    summary.avg_spo2 = round(a, 1)
+        except Exception:
+            logger.warning("day summary: vitals query failed for %s", patient_id[:8])
+
+        return summary
 
     # ── MongoDB (proactive insights) ─────────────────────────────────────
 
