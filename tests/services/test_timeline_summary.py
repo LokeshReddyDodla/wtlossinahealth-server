@@ -7,6 +7,8 @@
       - glucose from the CGM report (shows on a fully in-range day)
 """
 
+from datetime import datetime
+
 from lib.services.patient_timeline_service import PatientTimelineService
 
 
@@ -22,36 +24,37 @@ def test_summary_derived_from_reports_and_rows():
     svc = _svc()
     # (type, value, time) — same shape _fetch_vitals_rows returns.
     vitals_rows = [
-        ("heart_rate", 60.0, "t1"),
-        ("heart_rate", 72.0, "t2"),
-        ("resting_heart_rate", 58.0, "t3"),
-        ("blood_oxygen", 97.0, "t4"),
-        ("blood_oxygen", 99.0, "t5"),
+        ("heart_rate", 60.0, datetime(2026, 7, 25, 8, 5)),
+        ("heart_rate", 72.0, datetime(2026, 7, 25, 8, 40)),  # hour 8 → avg 66
+        ("heart_rate", 90.0, datetime(2026, 7, 25, 9, 10)),  # hour 9 → 90
+        ("resting_heart_rate", 58.0, datetime(2026, 7, 25, 6, 0)),
+        ("blood_oxygen", 97.0, datetime(2026, 7, 25, 7, 0)),
+        ("blood_oxygen", 99.0, datetime(2026, 7, 25, 7, 30)),
     ]
     fitness_report = {"steps": 27696, "active_energy": 430.4}
     cgm_report = {
         "cgm_summary_stats": {"average_glucose_mgdl": 117.2},
         "cgm_range_stats": {"in_target_70_180_percent": 100.0},
     }
-    sleep_quality = {"total_duration_minutes": 432, "classification": "good"}
 
-    s = svc._build_summary(vitals_rows, fitness_report, cgm_report, sleep_quality)
+    s = svc._build_summary(vitals_rows, fitness_report, cgm_report)
 
     # steps/active from the report, NOT a raw ClickHouse sum
     assert s.steps == 27696
     assert s.active_energy_kcal == 430.4
     # HR aggregated from the same rows the feed used
-    assert s.avg_hr == 66 and s.min_hr == 60 and s.max_hr == 72
+    assert s.avg_hr == 74 and s.min_hr == 60 and s.max_hr == 90
     assert s.resting_hr == 58
     assert s.avg_spo2 == 98.0
     # glucose present even though a 100%-in-range day fires no glucose events
     assert s.avg_glucose == 117
     assert s.time_in_range == 100.0
-    assert s.sleep_hours == 7.2 and s.sleep_quality == "good"
+    # sleep is set by the caller from the checkin, not _build_summary
+    assert s.sleep_hours is None
 
 
 def test_summary_empty_when_no_sources():
-    s = _svc()._build_summary([], None, None, {})
+    s = _svc()._build_summary([], None, None)
     assert s.steps is None and s.avg_hr is None and s.avg_glucose is None
 
 
