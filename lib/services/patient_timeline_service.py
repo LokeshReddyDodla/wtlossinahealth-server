@@ -90,9 +90,22 @@ class PatientTimelineService:
         self._enrich_sleep(data_events, sleep_quality)
         data_events.extend(self._extract_inactive_periods(fitness_report, selected_date))
 
-        summary = self._build_summary(
-            vitals_rows, fitness_report, cgm_report, sleep_quality,
+        summary = self._build_summary(vitals_rows, fitness_report, cgm_report)
+
+        # Sleep on the strip uses the checkin's self-rating, matching the feed —
+        # not the device classification, which can disagree with it.
+        sleep_evt = next(
+            (e for e in data_events if e.type == TimelineEventType.SLEEP), None
         )
+        if sleep_evt:
+            hrs = sleep_evt.data.get("hours_slept")
+            rated = sleep_evt.data.get("quality")
+            if isinstance(hrs, (int, float)) and hrs > 0:
+                summary.sleep_hours = round(hrs, 1)
+            if rated:
+                summary.sleep_quality = f"Quality {rated}/5"
+            elif sleep_quality.get("classification"):
+                summary.sleep_quality = sleep_quality["classification"].title()
 
         self._anchor_insights(insight_events, data_events)
         events = data_events + insight_events
@@ -197,21 +210,14 @@ class PatientTimelineService:
 
     @staticmethod
     def _enrich_sleep(events: list[TimelineEvent], sleep_quality: dict) -> None:
+        # Stash the device analysis on the event (for the detail screen) but
+        # DON'T touch the subtitle — the device label and the user's self-rating
+        # can disagree, and showing both reads as a contradiction.
         if not sleep_quality:
             return
         for event in events:
-            if event.type != TimelineEventType.SLEEP:
-                continue
-            event.data.update(sleep_quality)
-            parts = []
-            if event.data.get("hours_slept"):
-                parts.append(f"{event.data['hours_slept']:.1f} hrs")
-            if sleep_quality.get("classification"):
-                parts.append(sleep_quality["classification"].title())
-            if sleep_quality.get("efficiency"):
-                parts.append(f"Efficiency {sleep_quality['efficiency']:.0f}%")
-            if parts:
-                event.subtitle = " · ".join(parts)
+            if event.type == TimelineEventType.SLEEP:
+                event.data.update(sleep_quality)
 
     # ── CGM events from daily report (MongoDB) ───────────────────────────
 
@@ -425,9 +431,8 @@ class PatientTimelineService:
         if row.wake_time:
             data["wake_time"] = row.wake_time
 
-        quality_label = f"Quality {row.quality}/5" if row.quality else ""
-        hours_label = f"{row.hours_slept:.1f} hrs" if row.hours_slept else ""
-        subtitle_parts = [p for p in (hours_label, quality_label) if p]
+        # Hours only; quality renders as its own chip from data["quality"].
+        subtitle_parts = [f"{row.hours_slept:.1f} hrs"] if row.hours_slept else []
 
         ts = datetime.combine(selected_date, time.min)
         if row.wake_time:
@@ -701,12 +706,12 @@ class PatientTimelineService:
         vitals_rows: list[tuple],
         fitness_report: dict | None,
         cgm_report: dict | None,
-        sleep_quality: dict,
     ) -> DaySummary:
         """Derive the strip from sources already fetched — no query of its own.
 
         Steps/active come from the fitness report, NOT a raw fitness_data sum:
         the raw sum double-counts overlapping syncs and disagrees with Home.
+        Sleep is set by the caller from the checkin (self-rating).
         """
         summary = DaySummary()
 
@@ -741,12 +746,6 @@ class PatientTimelineService:
                 summary.avg_glucose = round(avg)
             if isinstance(tir, (int, float)):
                 summary.time_in_range = round(tir, 1)
-
-        if sleep_quality:
-            mins = sleep_quality.get("total_duration_minutes")
-            if isinstance(mins, (int, float)) and mins > 0:
-                summary.sleep_hours = round(mins / 60, 1)
-            summary.sleep_quality = sleep_quality.get("classification")
 
         return summary
 
