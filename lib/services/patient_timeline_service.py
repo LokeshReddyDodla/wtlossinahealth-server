@@ -59,10 +59,8 @@ class PatientTimelineService:
         *,
         postgres_session: AsyncSession,
     ) -> TimelineResponse:
-        # Fetch each raw source exactly once, concurrently; events AND the
-        # ambient summary are then derived from the same fetches. This keeps
-        # the strip consistent with the feed (and with the Home overview, which
-        # reads the same reports) and adds zero queries for the summary.
+        # Fetch each raw source once; events and the summary both derive from
+        # the same fetches, so the strip can't disagree with the feed.
         (
             pg_events,
             vitals_rows,
@@ -660,9 +658,8 @@ class PatientTimelineService:
         events: list[TimelineEvent] = []
 
         for vital_type, value, ts in rows:
-            # HR is a continuous stream (~300 samples/day); it belongs in the
-            # summary, not as one feed event per reading (_build_summary derives
-            # the HR aggregate from these same rows).
+            # HR is a continuous stream (~300 samples/day) — it goes to the
+            # summary, not one feed event per reading.
             if vital_type in ("heart_rate", "resting_heart_rate"):
                 continue
 
@@ -706,15 +703,10 @@ class PatientTimelineService:
         cgm_report: dict | None,
         sleep_quality: dict,
     ) -> DaySummary:
-        """Derive the strip from sources the timeline already fetched — no
-        query of its own.
+        """Derive the strip from sources already fetched — no query of its own.
 
-        Steps / active energy come from the fitness report (NOT a raw
-        fitness_data sum) so they match the Home overview and don't double-count
-        overlapping syncs. HR / SpO2 aggregate the vitals rows already pulled
-        for the feed. Glucose comes from the CGM report already read for events
-        — a fully in-range day fires no glucose events, so the strip is the only
-        place it shows.
+        Steps/active come from the fitness report, NOT a raw fitness_data sum:
+        the raw sum double-counts overlapping syncs and disagrees with Home.
         """
         summary = DaySummary()
 
