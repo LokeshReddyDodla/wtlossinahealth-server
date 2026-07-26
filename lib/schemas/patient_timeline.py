@@ -41,6 +41,8 @@ class DaySummary(BaseModel):
     min_hr: int | None = None
     max_hr: int | None = None
     avg_spo2: float | None = None
+    avg_glucose: int | None = None
+    time_in_range: float | None = None
     sleep_hours: float | None = None
     sleep_quality: str | None = None
 
