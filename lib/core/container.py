@@ -102,9 +102,6 @@ from lib.services.package_query_service import PackageQueryService
 from lib.services.osteoflag_service import OsteoFlagService
 
 # Processors
-from lib.services.qdrant_search_engine.qdrant_search_engine import (
-    QdrantSearchEngine,
-)
 from lib.services.reports import SleepReportService
 from lib.services.vector import SMBGVectorService, WorkoutVectorService
 from lib.services.vector.checkin import CheckinVectorService
@@ -975,14 +972,6 @@ container.register(
     PatientNotificationService,
     lambda: PatientNotificationService(
         postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
-    ),
-)
-
-# 🔹 Qdrant Search Engine
-container.register(
-    QdrantSearchEngine,
-    lambda: QdrantSearchEngine(
-        qdrant_store=cast(QdrantStore, container.resolve(QdrantStore)),
     ),
 )
 
