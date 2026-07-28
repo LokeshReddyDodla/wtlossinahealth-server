@@ -293,11 +293,101 @@ async def meal_logging_regularity(ctx: RunContextWrapper["CohortContext"], start
                      "patients_logging": len(ranked), "tiers": tiers, "top": ranked[:top]}, 9000)
 
 
+# ── in-app engagement ─────────────────────────────────────────────────────────
+# Per-patient log endpoints; all return a `total` so limit=1 gives the count.
+_ENGAGEMENT_ENDPOINTS = {
+    "workouts": "/v1/patients/{pid}/workouts",
+    "sleep": "/v1/patients/{pid}/checkins/sleep",
+    "mood": "/v1/patients/{pid}/checkins/mood",
+    "symptoms": "/v1/patients/{pid}/checkins/symptoms",
+}
+
+
+def _log_total(data: Any) -> int:
+    if isinstance(data, dict):
+        if isinstance(data.get("total"), int):
+            return data["total"]
+        for v in data.values():
+            if isinstance(v, list):
+                return len(v)
+    return len(data) if isinstance(data, list) else 0
+
+
+@function_tool
+async def app_engagement_summary(
+    ctx: RunContextWrapper["CohortContext"], days: int = 30, activities: str = "workouts", top: int = 25
+) -> str:
+    """How many patients are logging in-app activities and how much, over the last
+    `days`. activities is a comma list from: workouts, sleep, mood, symptoms.
+    Returns per-activity: patients_logging, total_logs, and the top loggers.
+    Use for 'how many users log workouts / sleep / mood / symptoms', engagement,
+    app usage, adherence-to-logging questions."""
+    import asyncio
+
+    acts = [a.strip().lower() for a in activities.split(",") if a.strip()]
+    bad = [a for a in acts if a not in _ENGAGEMENT_ENDPOINTS]
+    if bad or not acts:
+        return f"ERROR: unknown activities {bad or acts}; choose from {sorted(_ENGAGEMENT_ENDPOINTS)}"
+    end = _dt.date.today()
+    start = end - _dt.timedelta(days=days)
+    names = await _name_map(ctx)
+    pids = list(names)
+    # Bounded fan-out: these loop back to this server, so keep concurrency low.
+    sem = asyncio.Semaphore(10)
+
+    async def count(pid: str, act: str) -> tuple[str, str, int]:
+        path = _ENGAGEMENT_ENDPOINTS[act].format(pid=pid)
+        params = {"start_date": start.isoformat(), "end_date": end.isoformat(), "limit": 1}
+        async with sem:
+            try:
+                return pid, act, _log_total(await _client(ctx).get(path, params))
+            except Exception:  # noqa: BLE001 - one bad patient must not sink the sweep
+                return pid, act, 0
+
+    rows = await asyncio.gather(*(count(p, a) for p in pids for a in acts))
+    out: dict[str, Any] = {}
+    for act in acts:
+        per = [(pid, n) for pid, a, n in rows if a == act and n > 0]
+        per.sort(key=lambda x: -x[1])
+        out[act] = {
+            "patients_logging": len(per),
+            "total_logs": sum(n for _, n in per),
+            "top": [{"name": names.get(pid) or pid[:8], "logs": n} for pid, n in per[:top]],
+        }
+    return _compact({"window_days": days, "panel_size": len(pids), "activities": out}, 11000)
+
+
 # ── flexible escape hatches ─────────────────────────────────────────────────────
+@function_tool
+async def list_api_endpoints(ctx: RunContextWrapper["CohortContext"], search: str = "") -> str:
+    """Discover REAL backend GET endpoints (path + summary) from the server's
+    OpenAPI spec. Call this BEFORE api_get/run_python whenever you are not sure
+    a path exists — never guess paths, and never conclude data is unavailable
+    from a 404 on a guessed path. `search` filters by substring
+    (e.g. 'workout', 'sleep', 'vitals', 'timeline')."""
+    spec = await _client(ctx).get("/openapi.json")
+    q = search.lower()
+    rows: list[str] = []
+    for path, methods in (spec.get("paths") or {}).items():
+        op = methods.get("get") if isinstance(methods, dict) else None
+        if not isinstance(op, dict):
+            continue
+        summary = op.get("summary") or ""
+        if q and q not in path.lower() and q not in summary.lower():
+            continue
+        rows.append(f"GET {path} — {summary}".rstrip(" —"))
+    rows.sort()
+    if not rows:
+        return f"No GET endpoints matching '{search}'. Try a shorter search term."
+    return _compact({"count": len(rows), "endpoints": rows[:150]})
+
+
 @function_tool
 async def api_get(ctx: RunContextWrapper["CohortContext"], path: str, params_json: str = "{}") -> str:
     """Call ANY backend GET endpoint and return its JSON. path like '/v1/patients'. params_json
-    is a JSON object of query params. Use when no specific tool fits."""
+    is a JSON object of query params. Use when no specific tool fits; find valid
+    paths with list_api_endpoints first (per-patient data usually lives under
+    '/v1/patients/{patient_id}/...')."""
     try:
         params = json.loads(params_json) if params_json else {}
     except json.JSONDecodeError as e:
@@ -360,6 +450,8 @@ ALL_TOOLS = [
     cgm_glycemic_summary,
     cgm_spike_timing,
     meal_logging_regularity,
+    app_engagement_summary,
+    list_api_endpoints,
     api_get,
     run_python,
 ]
