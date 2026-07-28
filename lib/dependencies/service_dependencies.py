@@ -72,9 +72,6 @@ from lib.services.patient_vital_service import PatientVitalService
 from lib.services.patient_summary import PatientSummaryService
 from lib.services.active_patient_service import ActivePatientService
 from lib.services.osteoflag_service import OsteoFlagService
-from lib.services.qdrant_search_engine.qdrant_search_engine import (
-    QdrantSearchEngine,
-)
 from lib.services.reports import SleepReportService
 from lib.services.vector import SMBGVectorService, VitalsVectorService, WorkoutVectorService
 from lib.services.sqs_service import SQSService
@@ -444,10 +441,6 @@ def get_token_usage_service() -> TokenUsageService:
 
 def get_libreview_service() -> LibreViewService:
     return cast(LibreViewService, container.resolve(LibreViewService))
-
-
-def get_qdrant_search_engine() -> QdrantSearchEngine:
-    return cast(QdrantSearchEngine, container.resolve(QdrantSearchEngine))
 
 
 def get_cgm_vector_service() -> CGMVectorService:
