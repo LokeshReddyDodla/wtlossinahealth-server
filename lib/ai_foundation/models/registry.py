@@ -495,4 +495,34 @@ def build_default_registry(
         fallbacks=["claude-haiku-4-5-20251001", "gemini-2.5-flash"],
     )
 
+    validate_registry_pricing(registry)
     return registry
+
+
+def validate_registry_pricing(registry: ModelRegistry) -> None:
+    """Fail fast if any registered model is missing from LiteLLM's price table.
+
+    Cost in Langfuse comes from LiteLLM pricing keyed on the exact model string
+    (google is sent prefixed as ``gemini/<id>``). If a string isn't a key in
+    ``litellm.model_cost``, the call is silently costed at $0 — so we assert at
+    boot instead of discovering a wrong invoice weeks later.
+    """
+    import litellm
+
+    missing = []
+    for spec in registry.list_models():
+        # Mirror gateway._litellm_model_id: google is sent as "gemini/<id>".
+        key = (
+            f"gemini/{spec.model_id}"
+            if spec.provider == ModelProvider.GOOGLE
+            else spec.model_id
+        )
+        if key not in litellm.model_cost:
+            missing.append(key)
+
+    if missing:
+        raise ModelNotFoundError(
+            f"These registry models are not in litellm.model_cost and will be "
+            f"costed at $0 in Langfuse: {missing}. Fix the model_id, or register "
+            f"custom pricing via litellm.register_model()."
+        )
