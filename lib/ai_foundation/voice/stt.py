@@ -32,6 +32,10 @@ logger = logging.getLogger(__name__)
 
 AudioFormat = Literal["pcm", "wav", "mp3", "mp4", "mpeg", "mpga", "m4a", "webm", "ogg", "flac"]
 
+# Labels STT generations in Langfuse by feature (else: anonymous "litellm-completion").
+# ponytail: no user/session id — STT layer has no caller context; thread it if needed.
+_STT_TRACE_META = {"trace_name": "voice-stt", "generation_name": "stt-transcription"}
+
 
 class TranscriptionResult(BaseModel):
     """Result from a speech-to-text transcription."""
@@ -84,6 +88,7 @@ class OpenAISpeechToText(BaseSpeechToText):
             "model": self._settings.STT_MODEL,
             "file": audio_file,
             "response_format": "verbose_json",
+            "metadata": _STT_TRACE_META,
         }
         lang = language or self._settings.STT_LANGUAGE
         if lang:
@@ -143,6 +148,7 @@ class OpenAISpeechToText(BaseSpeechToText):
             "model": self._settings.STT_MODEL,
             "file": audio_file,
             "response_format": "verbose_json",
+            "metadata": _STT_TRACE_META,
         }
         lang = language or self._settings.STT_LANGUAGE
         if lang:
