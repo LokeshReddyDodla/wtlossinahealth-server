@@ -447,6 +447,29 @@ def get_inbody_day_summary_service():
     )
 
 
+def get_inbody_trends_service():
+    from lib.services.inbody.trends_service import InbodyTrendsService
+
+    return cast(InbodyTrendsService, container.resolve(InbodyTrendsService))
+
+
+def get_inbody_attribution_service():
+    from lib.services.inbody.attribution_service import (
+        InbodyAttributionService,
+    )
+
+    return cast(
+        InbodyAttributionService,
+        container.resolve(InbodyAttributionService),
+    )
+
+
+def get_inbody_vector_service():
+    from lib.services.vector.inbody import InbodyVectorService
+
+    return cast(InbodyVectorService, container.resolve(InbodyVectorService))
+
+
 def get_osteoflag_service() -> OsteoFlagService:
     return cast(OsteoFlagService, container.resolve(OsteoFlagService))
 

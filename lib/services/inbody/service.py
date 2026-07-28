@@ -189,6 +189,67 @@ class InbodyReportService:
             extraction.extraction_confidence,
         )
 
+        await self._enqueue_post_extraction_jobs(patient_id, report_id)
+
+    @staticmethod
+    async def _enqueue_post_extraction_jobs(
+        patient_id: UUID, report_id: UUID
+    ) -> None:
+        """Kick off vector indexing and scan attribution for a usable report.
+
+        Best-effort: the upload/re-extract request must never fail because a
+        follow-up job could not be enqueued.
+        """
+        try:
+            from lib.workers.tasks.inbody.vector_generation import (
+                _enqueue_inbody_vector,
+            )
+
+            await _enqueue_inbody_vector(str(patient_id), str(report_id))
+            await InbodyReportService._enqueue_attribution(
+                patient_id, report_id
+            )
+        except Exception as exc:
+            logger.warning(
+                "inbody: failed to enqueue post-extraction jobs report={}: {}",
+                report_id,
+                exc,
+            )
+
+    @staticmethod
+    async def _enqueue_attribution(
+        patient_id: UUID, report_id: UUID
+    ) -> None:
+        from datetime import datetime as _datetime
+
+        from lib.workers.arq.config import Queues
+        from lib.workers.arq.redis import enqueue_job
+
+        # Minute-bucketed job id: dedupes rapid double-triggers while still
+        # allowing a later re-request after re-extraction.
+        bucket = _datetime.now().strftime("%Y%m%d%H%M")
+        await enqueue_job(
+            "generate_inbody_scan_attribution",
+            str(patient_id),
+            str(report_id),
+            _job_id=f"inbody:attribution:{report_id}:{bucket}",
+            _queue_name=Queues.DEFAULT,
+        )
+
+    async def request_attribution(
+        self, patient_id: UUID, report_id: UUID
+    ) -> bool:
+        """Enqueue attribution generation for a usable report.
+
+        Returns False when the report exists but has no usable extraction;
+        raises 404 when the report does not belong to the patient.
+        """
+        row = await self._get_row(patient_id, report_id)
+        if row.status not in ("extracted", "needs_review"):
+            return False
+        await self._enqueue_attribution(patient_id, report_id)
+        return True
+
     async def reextract_report(
         self, patient_id: UUID, report_id: UUID, file_bytes: bytes
     ) -> Dict[str, Any]:

@@ -90,7 +90,7 @@ Your sole task is to map the user's natural language request to the provided Pyd
   - For global queries:
       - **Always include all major domains** in `data_types`:
         ["cgm_range_stats", "cgm_summary_stats", "hyper_stats", "hypo_stats", "rapid_spike_stats", "rapid_drop_stats",
-        "smbg", "meal", "fitness", "sleep", "profile", "patient_document", 
+        "smbg", "meal", "fitness", "sleep", "profile", "patient_document", "inbody",
         "fitness_overview", "fitness_activity_distribution", "fitness_inactive_periods"]
       - **Do not include individual event types** (`hyper_event`, `hypo_event`, `rapid_spike_event`, `rapid_drop_event`) unless explicitly mentioned in the query.
       - **Ignore Rule 7 (Stats + Events)** and any other domain-specific rules for these queries.
@@ -253,7 +253,22 @@ Your sole task is to map the user's natural language request to the provided Pyd
 
 - **patient_document**
   - document_type
-  
+
+- **inbody**
+  - report_id
+  - report_date
+  - inbody_score
+  - weight
+  - skeletal_muscle_mass
+  - body_fat_mass
+  - percent_body_fat
+  - bmi
+  - basal_metabolic_rate
+  - visceral_fat_level
+  - ecw_ratio
+  - phase_angle
+  - smi
+
 ---
 
 **FINAL RULE:**  

@@ -19,6 +19,7 @@ DATA_TYPE_MEAL = "meal"
 DATA_TYPE_SMBG = "smbg"
 DATA_TYPE_PROFILE = "profile"
 DATA_TYPE_VITAL = "vital"
+DATA_TYPE_INBODY = "inbody"
 
 # Common data type prefixes
 DATA_TYPE_PREFIXES = {
@@ -42,4 +43,5 @@ DATA_TYPE_PREFIXES = {
     "smbg",
     "profile",
     "vital",
+    "inbody",
 }

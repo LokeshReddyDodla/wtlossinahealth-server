@@ -10,6 +10,7 @@ from .smbg import SMBGVectorService, SMBGTextReprBuilder
 from .profile import PatientProfileVectorService, PatientProfileTextReprBuilder
 from .vitals import VitalsVectorService, VitalsTextReprBuilder
 from .workout import WorkoutVectorService, WorkoutTextReprBuilder
+from .inbody import InbodyVectorService, InbodyTextReprBuilder
 
 __all__ = [
     "BaseVectorService",
@@ -29,4 +30,6 @@ __all__ = [
     "VitalsTextReprBuilder",
     "WorkoutVectorService",
     "WorkoutTextReprBuilder",
+    "InbodyVectorService",
+    "InbodyTextReprBuilder",
 ]
