@@ -6,4 +6,3 @@ from .devices import *
 from .firebase_login import *
 from .login import *
 from .logout import *
-from .otp import *

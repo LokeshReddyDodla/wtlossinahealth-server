@@ -1,7 +1,6 @@
 from fastapi import FastAPI
 
 
-from rest_server.auth import auth
 from rest_server.care_provider.router import router as care_providers_router
 from rest_server.chats.router import router as chats_router
 from rest_server.dump import dump
@@ -36,11 +35,6 @@ def import_routes(app: FastAPI) -> None:
     # Admin
     ###########################################################################
     app.include_router(admin_router)
-
-    ###########################################################################
-    # Auth
-    ###########################################################################
-    app.include_router(auth.router)
 
     ###########################################################################
     # Health Facility

@@ -34,6 +34,3 @@ router.include_router(patients_cgm_router)
 router.include_router(patients_uploads_router)
 router.include_router(patients_connected_apps_router)
 router.include_router(patients_summaries_router)
-
-
-from .auth import *
