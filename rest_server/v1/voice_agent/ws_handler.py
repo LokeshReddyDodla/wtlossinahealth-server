@@ -14,6 +14,8 @@ from typing import Any
 from fastapi import WebSocket, WebSocketDisconnect, status
 
 from lib.ai_foundation.agents.thread_utils import resolve_thread_id
+from lib.core.constants import AIFeatureEnum
+from lib.services.ai_feature_toggle_service import ai_feature_toggle_service
 from lib.ai_foundation.voice.config import VoiceSettings
 from lib.ai_foundation.voice.orchestrator import VoiceOrchestrator
 from lib.ai_foundation.voice.protocol import (
@@ -76,6 +78,15 @@ class VoiceConnectionHandler:
         # Only patients can use voice for now
         if role != "patient":
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Voice is only available for patients")
+            return
+
+        if not await ai_feature_toggle_service.is_enabled_for_patient(
+            AIFeatureEnum.VOICE, user_id
+        ):
+            await websocket.close(
+                code=status.WS_1008_POLICY_VIOLATION,
+                reason="Voice assistant is temporarily unavailable",
+            )
             return
 
         await websocket.accept()

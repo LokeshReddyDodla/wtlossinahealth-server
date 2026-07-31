@@ -1,6 +1,10 @@
 from fastapi import Depends, Request
 
-from lib.core.constants import ProfileTypeEnum
+from lib.core.constants import AIFeatureEnum, ProfileTypeEnum
+from lib.services.ai_feature_toggle_service import (
+    actor_facility_id,
+    ai_feature_toggle_service,
+)
 from lib.dependencies.actor import Actor, get_current_actor
 from lib.utils.care_provider_permissions import (
     CareProviderFeature,
@@ -30,6 +34,10 @@ async def cohort_query(
         )
     ),
 ):
+    await ai_feature_toggle_service.require_facility(
+        AIFeatureEnum.COHORT_AGENT, actor_facility_id(current_actor)
+    )
+
     # Forward the caller's credentials so the agent's tools hit the backend's own
     # endpoints (over loopback) scoped to this same care provider.
     auth = request.headers.get("authorization", "")

@@ -10,6 +10,26 @@ class ProfileTypeEnum(Enum):
     ADMIN = "admin"
 
 
+class AIToggleScopeEnum(str, Enum):
+    SYSTEM = "system"
+    FACILITY = "facility"
+
+
+class AIFeatureEnum(str, Enum):
+    """Individually pausable AI surfaces. Each maps to one agent entry point;
+    a value pauses nothing until a guard is wired at that entry.
+    """
+
+    HEALTH_CHAT = "health_chat"
+    VOICE = "voice"
+    MEAL_ANALYSIS = "meal_analysis"
+    PROACTIVE = "proactive"
+    DASHBOARD_HELP = "dashboard_help"
+    COHORT_AGENT = "cohort_agent"
+    RESEARCH_AGENT = "research_agent"
+    PRODUCT_BOT = "product_bot"
+
+
 class CareProviderStatus(Enum):
     ACTIVE = "active"
     ON_LEAVE = "on_leave"

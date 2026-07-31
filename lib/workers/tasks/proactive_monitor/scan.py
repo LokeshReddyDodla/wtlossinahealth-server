@@ -21,6 +21,8 @@ from lib.ai_foundation.agents.proactive_monitor.scheduling import (
     is_within_scan_window,
 )
 from lib.workers.tasks.base import TaskResult, task_with_logging
+from lib.core.constants import AIFeatureEnum
+from lib.services.ai_feature_toggle_service import ai_feature_toggle_service
 
 # ---------------------------------------------------------------------------
 # Task entry points
@@ -66,7 +68,19 @@ async def run_proactive_scan(
                 data={"message": "All patients outside scan window", "total": len(patient_ids), "skipped_timezone": skipped},
             )
 
-        # 4. Scan eligible patients
+        # 4. Drop patients whose PROACTIVE feature is paused (system or facility).
+        # Unsolicited pushes: silently skip rather than surface an error.
+        if not await ai_feature_toggle_service.is_enabled(AIFeatureEnum.PROACTIVE):
+            return TaskResult(success=True, data={"message": "Proactive notifications paused system-wide"})
+        eligible_ids = [
+            pid
+            for pid in eligible_ids
+            if await ai_feature_toggle_service.is_enabled_for_patient(AIFeatureEnum.PROACTIVE, pid)
+        ]
+        if not eligible_ids:
+            return TaskResult(success=True, data={"message": "Proactive notifications paused for all eligible facilities"})
+
+        # 5. Scan eligible patients
         patient_names = {pid: all_names[pid] for pid in eligible_ids if pid in all_names}
         patient_timezones = {pid: all_timezones.get(pid, DEFAULT_TIMEZONE) for pid in eligible_ids}
 
@@ -107,6 +121,10 @@ async def run_proactive_scan_single(
         from lib.ai_foundation.agents.proactive_monitor import ProactiveMonitorAgent
 
         monitor = container.resolve(ProactiveMonitorAgent)
+        if not await ai_feature_toggle_service.is_enabled_for_patient(
+            AIFeatureEnum.PROACTIVE, patient_id
+        ):
+            return TaskResult(success=True, data={"patient_id": patient_id, "message": "Proactive notifications paused"})
         result = await monitor.scan_patient(patient_id)
         if result.error:
             return TaskResult(success=False, error=result.error, data={"patient_id": patient_id})

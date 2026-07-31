@@ -8,7 +8,8 @@ from fastapi import Depends, status
 from fastapi.exceptions import HTTPException
 
 from lib.ai_foundation.agents.meal_analysis.agent import MealAnalysisAgent
-from lib.core.constants import ProfileTypeEnum
+from lib.core.constants import AIFeatureEnum, ProfileTypeEnum
+from lib.services.ai_feature_toggle_service import ai_feature_toggle_service
 from lib.dependencies.actor import Actor, get_current_actor
 from lib.dependencies.patient_access import resolve_patient_access
 from lib.dependencies.service_dependencies import (
@@ -65,6 +66,9 @@ async def preview_meal(
         care_provider_access_service=care_provider_access_service,
     )
     pid = str(verified_pid)
+    await ai_feature_toggle_service.require_for_patients(
+        AIFeatureEnum.MEAL_ANALYSIS, [pid]
+    )
     _validate_input(body)
 
     try:
@@ -108,6 +112,9 @@ async def quick_preview_meal(
         care_provider_access_service=care_provider_access_service,
     )
     pid = str(verified_pid)
+    await ai_feature_toggle_service.require_for_patients(
+        AIFeatureEnum.MEAL_ANALYSIS, [pid]
+    )
     _validate_input(body)
 
     try:
@@ -151,6 +158,9 @@ async def meal_insights(
         care_provider_access_service=care_provider_access_service,
     )
     pid = str(verified_pid)
+    await ai_feature_toggle_service.require_for_patients(
+        AIFeatureEnum.MEAL_ANALYSIS, [pid]
+    )
 
     try:
         result = await agent.insights(patient_id=pid, request=body)
