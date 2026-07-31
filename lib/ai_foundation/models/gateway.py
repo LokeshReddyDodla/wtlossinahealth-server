@@ -231,12 +231,17 @@ class ModelGateway:
 
     @staticmethod
     def _setup_litellm() -> None:
-        """Configure LiteLLM callbacks for Langfuse generation-level logging."""
+        """Configure LiteLLM callbacks.
+
+        success_callback is intentionally unset — the gateway emits each
+        generation's cost itself; re-adding it would double-count (and
+        litellm's async callback drops streamed cost anyway). failure_callback
+        stays for error traces (no cost).
+        """
         from lib.ai_foundation.config import settings
         if settings.LANGFUSE_ENABLED:
-            litellm.success_callback = ["langfuse"]
             litellm.failure_callback = ["langfuse"]
-            logger.info("LiteLLM Langfuse callbacks enabled")
+            logger.info("LiteLLM Langfuse failure callback enabled")
         # Drop unsupported params (e.g., gpt-5 doesn't support temperature=0.0)
         litellm.drop_params = True
         # Suppress LiteLLM's noisy logging
@@ -306,6 +311,49 @@ class ModelGateway:
             )
         except Exception as exc:
             logger.debug("Langfuse trace_output failed: %s", exc)
+
+    def _log_generation(
+        self,
+        *,
+        trace_id: str,
+        model: str,
+        input_messages: list[dict] | None,
+        output_text: str,
+        prompt_tokens: int,
+        completion_tokens: int,
+        cost_usd: float,
+    ) -> None:
+        """Emit a Langfuse generation with an explicit USD cost.
+
+        The gateway logs cost itself because litellm's success callback records
+        none for streamed/concurrent async calls. Cost MUST go through
+        ``cost_details={"total"}`` — langfuse 2.60.10 silently drops a ``usage``
+        dict's snake_case ``total_cost``.
+        """
+        if not self._langfuse_client:
+            return
+        try:
+            self._langfuse_client.generation(
+                trace_id=trace_id,
+                name="llm",
+                model=model,
+                input=input_messages,
+                output=output_text,
+                usage_details={"input": prompt_tokens, "output": completion_tokens},
+                cost_details={"total": cost_usd},
+            )
+        except Exception as exc:
+            logger.debug("Langfuse generation log failed: %s", exc)
+
+    def flush(self) -> None:
+        """Ship buffered Langfuse events now. The SDK sends on a background
+        thread, so a process exiting before a flush loses its last batch."""
+        if not self._langfuse_client:
+            return
+        try:
+            self._langfuse_client.flush()
+        except Exception as exc:
+            logger.debug("Langfuse flush failed: %s", exc)
 
     # -- Token counting & context window ------------------------------------
 
@@ -447,14 +495,22 @@ class ModelGateway:
         if spec.max_tokens is not None:
             kwargs["max_tokens"] = spec.max_tokens
 
-        raw = await asyncio.wait_for(
-            litellm.acompletion(**kwargs),
-            timeout=spec.timeout_seconds,
-        )
+        # Native timeout raises litellm.Timeout through litellm's logging path;
+        # asyncio.wait_for would CancelledError-bypass it — yet still be billed.
+        raw = await litellm.acompletion(**kwargs, timeout=spec.timeout_seconds)
 
         elapsed_ms = int((time.perf_counter() - start) * 1000)
         usage = self._extract_usage(raw, spec)
         self._circuit_breaker.record_success(_circuit_key(spec))
+        self._log_generation(
+            trace_id=trace_id,
+            model=spec.model_id,
+            input_messages=kwargs["messages"],
+            output_text=(raw.choices[0].message.content if raw.choices else "") or "[tool_call]",
+            prompt_tokens=usage.input_tokens,
+            completion_tokens=usage.output_tokens,
+            cost_usd=self._resolve_cost(raw, usage, model),
+        )
 
         choice = raw.choices[0] if raw.choices else None
         if not choice:
@@ -677,16 +733,24 @@ class ModelGateway:
         if spec.max_tokens is not None:
             kwargs["max_tokens"] = spec.max_tokens
 
-        raw = await asyncio.wait_for(
-            litellm.acompletion(**kwargs),
-            timeout=spec.timeout_seconds,
-        )
+        # Native timeout raises litellm.Timeout through litellm's logging path;
+        # asyncio.wait_for would CancelledError-bypass it — yet still be billed.
+        raw = await litellm.acompletion(**kwargs, timeout=spec.timeout_seconds)
 
         elapsed_ms = int((time.perf_counter() - start) * 1000)
         content = raw.choices[0].message.content or "" if raw.choices else ""
 
         usage = self._extract_usage(raw, spec)
         self._circuit_breaker.record_success(_circuit_key(spec))
+        self._log_generation(
+            trace_id=trace_id,
+            model=spec.model_id,
+            input_messages=kwargs["messages"],
+            output_text=content,
+            prompt_tokens=usage.input_tokens,
+            completion_tokens=usage.output_tokens,
+            cost_usd=self._resolve_cost(raw, usage, model),
+        )
 
         return LLMResponse(
             content=content,
@@ -709,14 +773,13 @@ class ModelGateway:
         model = _litellm_model_id(spec)
         start = time.perf_counter()
 
-        parsed, raw = await asyncio.wait_for(
-            self._instructor_client.chat.completions.create_with_completion(
-                model=model,
-                response_model=response_model,
-                messages=self._clean_messages(messages),
-                temperature=spec.temperature,
-                metadata=self._trace_metadata(trace_id),
-            ),
+        # Native timeout (see _do_complete); instructor forwards it to litellm.
+        parsed, raw = await self._instructor_client.chat.completions.create_with_completion(
+            model=model,
+            response_model=response_model,
+            messages=self._clean_messages(messages),
+            temperature=spec.temperature,
+            metadata=self._trace_metadata(trace_id),
             timeout=spec.timeout_seconds,
         )
 
@@ -725,6 +788,15 @@ class ModelGateway:
 
         usage = self._extract_usage(raw, spec)
         self._circuit_breaker.record_success(_circuit_key(spec))
+        self._log_generation(
+            trace_id=trace_id,
+            model=spec.model_id,
+            input_messages=messages,
+            output_text=content,
+            prompt_tokens=usage.input_tokens,
+            completion_tokens=usage.output_tokens,
+            cost_usd=self._resolve_cost(raw, usage, model),
+        )
 
         meta = LLMResponse(
             content=content,
@@ -759,12 +831,11 @@ class ModelGateway:
         if spec.max_tokens is not None:
             kwargs["max_tokens"] = spec.max_tokens
 
-        stream = await asyncio.wait_for(
-            litellm.acompletion(**kwargs),
-            timeout=spec.timeout_seconds,
-        )
+        # Native timeout, not wait_for (see _do_complete).
+        stream = await litellm.acompletion(**kwargs, timeout=spec.timeout_seconds)
 
         full_content: list[str] = []
+        raw_chunks: list[Any] = []
         final_usage: TokenUsage | None = None
 
         # Use remaining budget so total wall-clock never exceeds timeout_seconds
@@ -772,6 +843,7 @@ class ModelGateway:
         remaining = max(1.0, spec.timeout_seconds - elapsed)
         async with asyncio.timeout(remaining):
             async for chunk in stream:
+                raw_chunks.append(chunk)
                 # Usage comes in the final chunk (LiteLLM may not have .usage on every chunk)
                 chunk_usage = getattr(chunk, "usage", None)
                 if chunk_usage is not None:
@@ -808,6 +880,30 @@ class ModelGateway:
 
         self._circuit_breaker.record_success(_circuit_key(spec))
 
+        # LiteLLM logs no cost for streams; price the drained chunks ourselves.
+        # completion_cost on the rebuilt usage is cache-read aware; _stream_cost
+        # (per-token) is the fallback.
+        if final_usage:
+            cost_usd = llm_usage.cost.total_cost
+            try:
+                rebuilt = litellm.stream_chunk_builder(
+                    raw_chunks, messages=kwargs["messages"],
+                )
+                cost_usd = float(
+                    litellm.completion_cost(completion_response=rebuilt, model=model)
+                )
+            except Exception:
+                pass
+            self._log_generation(
+                trace_id=trace_id,
+                model=spec.model_id,
+                input_messages=kwargs["messages"],
+                output_text=combined,
+                prompt_tokens=final_usage.input_tokens,
+                completion_tokens=final_usage.output_tokens,
+                cost_usd=cost_usd,
+            )
+
         yield StreamChunk(
             delta="",
             finished=True,
@@ -835,6 +931,20 @@ class ModelGateway:
             )
         except Exception:
             return PricingCalculator.calculate(spec, usage)
+
+    @staticmethod
+    def _resolve_cost(raw: Any, usage: LLMUsage, model: str) -> float:
+        """USD cost for a non-streamed call. LiteLLM's response_cost (already in
+        ``usage.cost``) is authoritative but can be 0/None for unmapped models —
+        fall back to an explicit completion_cost, then 0.0 so logging never crashes.
+        """
+        cost = usage.cost.total_cost
+        if cost:
+            return float(cost)
+        try:
+            return float(litellm.completion_cost(completion_response=raw, model=model))
+        except Exception:
+            return 0.0
 
     # -- Internal: usage extraction -----------------------------------------
 
