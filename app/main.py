@@ -108,6 +108,14 @@ async def on_startup() -> None:
 
 @app.on_event("shutdown")
 async def on_shutdown() -> None:
+    # Flush buffered Langfuse events before exit, or the last batch is lost.
+    try:
+        import logging
+        from lib.ai_foundation.models.gateway import ModelGateway
+        from lib.core.container import container
+        container.resolve(ModelGateway).flush()
+    except Exception:
+        logging.getLogger(__name__).warning("Langfuse flush on shutdown failed", exc_info=True)
     await app.state.postgres_store.close()
     app.state.mongo_store.client.close()
     await app.state.qdrant_store.close()
