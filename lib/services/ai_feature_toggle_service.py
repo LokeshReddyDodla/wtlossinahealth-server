@@ -38,8 +38,8 @@ _UNAVAILABLE_MESSAGE = (
 
 @dataclass
 class _Snapshot:
-    system_disabled: set[str]  # features off globally
-    facility_disabled: dict[str, set[str]]  # feature -> facility_ids off
+    system_disabled: set[str]
+    facility_disabled: dict[str, set[str]]  # feature -> facility_ids disabled
     loaded_at: float
 
 
