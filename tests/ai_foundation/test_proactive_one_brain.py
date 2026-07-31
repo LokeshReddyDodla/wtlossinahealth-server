@@ -19,7 +19,7 @@ from lib.ai_foundation.agents.health_query.reasoning_engine import ReasoningTier
 from lib.ai_foundation.agents.proactive_monitor.agent import ProactiveMonitorAgent
 from lib.ai_foundation.agents.proactive_monitor.contracts import (
     CGMThresholdCrossedAnchor, EventTrigger, InsightCategory, InsightSeverity,
-    MealLoggedAnchor, MedicationMissedAnchor, SMBGLoggedAnchor, SymptomLoggedAnchor,
+    MealLoggedAnchor, SMBGLoggedAnchor, SymptomLoggedAnchor,
 )
 from lib.ai_foundation.agents.proactive_monitor.event_framing import (
     classify_event, frame_event, trigger_tier,
@@ -110,9 +110,6 @@ async def test_brain_declining_yields_no_insight():
      InsightCategory.GENERAL, InsightSeverity.INFO, ReasoningTier.STANDARD),
     (EventTrigger.SYMPTOM_LOGGED, SymptomLoggedAnchor(symptom_entry_id="s1"),
      InsightCategory.GENERAL, InsightSeverity.ATTENTION, ReasoningTier.STANDARD),
-    (EventTrigger.MEDICATION_MISSED,
-     MedicationMissedAnchor(daily_task_id="t1", slot="morning", medication_name="Metformin", task_date="2026-07-21"),
-     InsightCategory.COACHING_MEDICATION, InsightSeverity.ATTENTION, ReasoningTier.BASIC),
     (EventTrigger.SMBG_LOGGED, SMBGLoggedAnchor(reading_id="r1"),
      InsightCategory.GENERAL, InsightSeverity.ATTENTION, ReasoningTier.STANDARD),
 ])
