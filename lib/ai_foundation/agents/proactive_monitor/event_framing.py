@@ -61,21 +61,19 @@ _CGM_READABLE: dict[CGMCrossingKind, str] = {
 }
 
 # Manual/log events: conservative fixed category, severity, and tier. Symptoms
-# are capped at ATTENTION (no triage rules exist); a missed dose is coaching,
-# never dosing advice; a meal is wellness. SMBG takes ATTENTION because a
-# finger-stick can be out of range — the brain fetches the value and says so.
+# are capped at ATTENTION (no triage rules exist); a meal is wellness. SMBG
+# takes ATTENTION because a finger-stick can be out of range — the brain
+# fetches the value and says so.
 _EVENT_CLASS: dict[EventTrigger, tuple[InsightCategory, InsightSeverity]] = {
     EventTrigger.MEAL_LOGGED: (InsightCategory.GENERAL, InsightSeverity.INFO),
     EventTrigger.SMBG_LOGGED: (InsightCategory.GENERAL, InsightSeverity.ATTENTION),
     EventTrigger.SYMPTOM_LOGGED: (InsightCategory.GENERAL, InsightSeverity.ATTENTION),
-    EventTrigger.MEDICATION_MISSED: (InsightCategory.COACHING_MEDICATION, InsightSeverity.ATTENTION),
 }
 
 _EVENT_TIER: dict[EventTrigger, ReasoningTier] = {
     EventTrigger.MEAL_LOGGED: ReasoningTier.STANDARD,
     EventTrigger.SMBG_LOGGED: ReasoningTier.STANDARD,
     EventTrigger.SYMPTOM_LOGGED: ReasoningTier.STANDARD,
-    EventTrigger.MEDICATION_MISSED: ReasoningTier.BASIC,
 }
 
 # Neutral, interpretation-free descriptions — the brain forms its own view.
@@ -89,9 +87,6 @@ _EVENT_FRAME: dict[EventTrigger, str] = {
     EventTrigger.SYMPTOM_LOGGED:
         "just logged a symptom. Connect it to their recent data (e.g. a glucose "
         "dip) and respond with a brief, supportive note — do not attempt triage.",
-    EventTrigger.MEDICATION_MISSED:
-        "appears to have missed a scheduled medication dose. Send a gentle "
-        "reminder that names the medication — never suggest a dose or a change.",
 }
 
 

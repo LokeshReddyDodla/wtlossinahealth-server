@@ -23,10 +23,3 @@ GLUCOSE_RAPID_CHANGE_WINDOW: timedelta = timedelta(minutes=20)
 
 # Don't alert on backfilled / CSV-imported data older than this.
 CGM_LIVE_STREAM_FRESHNESS: timedelta = timedelta(minutes=30)
-
-
-# ── Medication ──────────────────────────────────────────────────────────
-
-# Hours of grace after a scheduled medication slot before treating it as
-# "missed" for proactive-monitor purposes.
-MEDICATION_MISSED_GRACE_HOURS: int = 2

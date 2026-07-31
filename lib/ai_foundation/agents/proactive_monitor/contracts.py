@@ -149,7 +149,6 @@ class EventTrigger(str, Enum):
     SMBG_LOGGED = "smbg_logged"
     CGM_THRESHOLD_CROSSED = "cgm_threshold_crossed"
     SYMPTOM_LOGGED = "symptom_logged"
-    MEDICATION_MISSED = "medication_missed"
 
 
 # Trigger → data_types fetched for the LLM context. Every trigger fetches
@@ -196,14 +195,6 @@ TRIGGER_DATA_TYPES: dict[EventTrigger, list[HealthDataType]] = {
         HealthDataType.PATIENT_WORKOUT,
         HealthDataType.MOOD_ENTRY,
     ],
-    EventTrigger.MEDICATION_MISSED: [
-        HealthDataType.CGM_SUMMARY,
-        HealthDataType.SMBG,
-        HealthDataType.MEAL,
-        HealthDataType.SYMPTOM_ENTRY,
-        HealthDataType.SLEEP,
-        HealthDataType.MOOD_ENTRY,
-    ],
 }
 
 
@@ -213,7 +204,6 @@ TRIGGER_LABELS: dict[EventTrigger, str] = {
     EventTrigger.SMBG_LOGGED: "The patient just logged a finger-prick blood glucose reading.",
     EventTrigger.CGM_THRESHOLD_CROSSED: "A clinically significant glucose threshold was crossed — this is safety-relevant.",
     EventTrigger.SYMPTOM_LOGGED: "The patient just logged a symptom.",
-    EventTrigger.MEDICATION_MISSED: "A scheduled medication dose appears to have been missed.",
 }
 
 
@@ -259,19 +249,11 @@ class SymptomLoggedAnchor(_AnchorBase):
     symptom_entry_id: str
 
 
-class MedicationMissedAnchor(_AnchorBase):
-    daily_task_id: str
-    slot: str
-    medication_name: str
-    task_date: str
-
-
 TriggerAnchor = (
     MealLoggedAnchor
     | SMBGLoggedAnchor
     | CGMThresholdCrossedAnchor
     | SymptomLoggedAnchor
-    | MedicationMissedAnchor
 )
 
 
@@ -280,7 +262,6 @@ _ANCHOR_MODELS: dict[EventTrigger, type[BaseModel]] = {
     EventTrigger.SMBG_LOGGED: SMBGLoggedAnchor,
     EventTrigger.CGM_THRESHOLD_CROSSED: CGMThresholdCrossedAnchor,
     EventTrigger.SYMPTOM_LOGGED: SymptomLoggedAnchor,
-    EventTrigger.MEDICATION_MISSED: MedicationMissedAnchor,
 }
 
 
