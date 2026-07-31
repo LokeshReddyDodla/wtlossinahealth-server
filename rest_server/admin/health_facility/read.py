@@ -12,6 +12,35 @@ from rest_server.response_models import ErrorResponse, SuccessResponse
 from .router import router
 
 
+@router.get("/all", response_model=SuccessResponse)
+async def list_health_facilities(
+    request: Request,
+    health_facility_service: HealthFacilityService = Depends(
+        get_health_facility_service
+    ),
+    current_admin: Admin = Depends(get_current_admin),
+):
+    """Flat id+name list for admin pickers (e.g. per-facility AI toggles)."""
+    try:
+        facilities = await health_facility_service.fetch_health_facilities()
+        return SuccessResponse(
+            message="Health facilities fetched successfully",
+            data=[
+                {
+                    "health_facility_id": str(f.health_facility_id),
+                    "name": f.name,
+                }
+                for f in facilities
+            ],
+        )
+    except SQLAlchemyError as e:
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
+        )
+
+
 @router.get("", response_model=SuccessResponse)
 async def get_health_facility(
     request: Request,

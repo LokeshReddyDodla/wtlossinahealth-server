@@ -4,6 +4,7 @@ Base = declarative_base()
 
 # Import all models to ensure they are registered with the base
 from .admin import Admin
+from .ai_feature_toggle import AIFeatureToggle
 from .care_intent import CareIntent
 from .care_intent_event import CareIntentEvent
 from .patient_notification_preference import PatientNotificationPreference

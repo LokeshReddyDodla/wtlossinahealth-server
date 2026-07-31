@@ -23,6 +23,8 @@ from twilio.rest import Client as TwilioClient
 
 from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
 from lib.ai_foundation.agents.health_query import HealthQueryAgent
+from lib.core.constants import AIFeatureEnum
+from lib.services.ai_feature_toggle_service import ai_feature_toggle_service
 from lib.ai_foundation.agents.state import AgentContext, AgentInput, RequestPriority
 from lib.ai_foundation.translation import TranslationService
 from lib.core.container import container
@@ -362,6 +364,19 @@ async def twilio_receive_message(
 
     patient_id = str(patient.patient_id)
     thread_id = f"bot:patient:{patient_id}"
+
+    if not await ai_feature_toggle_service.is_enabled_for_patient(
+        AIFeatureEnum.HEALTH_CHAT, patient_id
+    ):
+        await _send_twilio_message(
+            From,
+            await _localize_for_patient(
+                patient_id,
+                "The assistant is temporarily unavailable. "
+                "Please try again later.",
+            ),
+        )
+        return Response(content="<Response></Response>", media_type="application/xml")
 
     await _send_twilio_message(From, "⏳")
 

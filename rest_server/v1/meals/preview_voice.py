@@ -15,7 +15,8 @@ from fastapi.exceptions import HTTPException
 
 from lib.ai_foundation.agents.meal_analysis.agent import MealAnalysisAgent
 from lib.ai_foundation.voice.stt import BaseSpeechToText
-from lib.core.constants import ProfileTypeEnum
+from lib.core.constants import AIFeatureEnum, ProfileTypeEnum
+from lib.services.ai_feature_toggle_service import ai_feature_toggle_service
 from lib.dependencies.actor import Actor, get_current_actor
 from lib.dependencies.patient_access import resolve_patient_access
 from lib.dependencies.service_dependencies import (
@@ -73,6 +74,9 @@ async def preview_meal_voice(
         care_provider_access_service=care_provider_access_service,
     )
     pid = str(verified_pid)
+    await ai_feature_toggle_service.require_for_patients(
+        AIFeatureEnum.MEAL_ANALYSIS, [pid]
+    )
 
     audio_url, combined_text = await process_audio(
         audio=audio, stt=stt, patient_id=pid, text=text,
@@ -139,6 +143,9 @@ async def quick_preview_meal_voice(
         care_provider_access_service=care_provider_access_service,
     )
     pid = str(verified_pid)
+    await ai_feature_toggle_service.require_for_patients(
+        AIFeatureEnum.MEAL_ANALYSIS, [pid]
+    )
 
     audio_url, combined_text = await process_audio(
         audio=audio, stt=stt, patient_id=pid, text=text,

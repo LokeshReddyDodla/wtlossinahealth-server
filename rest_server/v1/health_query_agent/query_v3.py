@@ -15,7 +15,8 @@ Endpoints:
 from fastapi import Depends
 from starlette.responses import StreamingResponse
 
-from lib.core.constants import ProfileTypeEnum
+from lib.core.constants import AIFeatureEnum, ProfileTypeEnum
+from lib.services.ai_feature_toggle_service import ai_feature_toggle_service
 from lib.dependencies.actor import Actor, get_current_actor
 from lib.dependencies.service_dependencies import (
     get_health_query_agent,
@@ -133,6 +134,9 @@ async def process_query_v3(
         provided_patient_ids=payload.patient_ids,
         care_provider_access_service=care_provider_access_service,
     )
+    await ai_feature_toggle_service.require_for_patients(
+        AIFeatureEnum.HEALTH_CHAT, resolved_patient_ids
+    )
 
     thread_id = _resolve_thread_id(current_actor, resolved_patient_ids)
     agent_input = _build_agent_input(payload, current_actor, resolved_patient_ids, thread_id)
@@ -178,6 +182,9 @@ async def process_query_v3_stream(
         current_actor=current_actor,
         provided_patient_ids=payload.patient_ids,
         care_provider_access_service=care_provider_access_service,
+    )
+    await ai_feature_toggle_service.require_for_patients(
+        AIFeatureEnum.HEALTH_CHAT, resolved_patient_ids
     )
 
     thread_id = _resolve_thread_id(current_actor, resolved_patient_ids)

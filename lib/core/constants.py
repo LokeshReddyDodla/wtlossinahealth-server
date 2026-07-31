@@ -10,6 +10,27 @@ class ProfileTypeEnum(Enum):
     ADMIN = "admin"
 
 
+class AIToggleScopeEnum(str, Enum):
+    SYSTEM = "system"  # global; one row per feature, scope_id is NULL
+    FACILITY = "facility"  # per health facility; scope_id = health_facility_id
+
+
+class AIFeatureEnum(str, Enum):
+    """Individually pausable AI surfaces. Each maps to one agent entry point.
+    Adding a value requires a guard at that surface's entry — the enum alone
+    pauses nothing.
+    """
+
+    HEALTH_CHAT = "health_chat"  # health_query reactive text chat
+    VOICE = "voice"  # voice assistant
+    MEAL_ANALYSIS = "meal_analysis"  # meal-photo / voice meal analysis
+    PROACTIVE = "proactive"  # proactive monitor push notifications
+    DASHBOARD_HELP = "dashboard_help"  # provider dashboard help bot
+    COHORT_AGENT = "cohort_agent"  # provider cohort Q&A
+    RESEARCH_AGENT = "research_agent"  # provider research analytics
+    PRODUCT_BOT = "product_bot"  # public marketing bot (system scope only)
+
+
 class CareProviderStatus(Enum):
     ACTIVE = "active"
     ON_LEAVE = "on_leave"

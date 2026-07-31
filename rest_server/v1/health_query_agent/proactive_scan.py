@@ -17,7 +17,8 @@ from typing import Optional
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from lib.core.constants import ProfileTypeEnum
+from lib.core.constants import AIFeatureEnum, ProfileTypeEnum
+from lib.services.ai_feature_toggle_service import ai_feature_toggle_service
 from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
 from lib.ai_foundation.agents.proactive_monitor import ProactiveMonitorAgent
 from lib.ai_foundation.agents.proactive_monitor.notify import send_top_insight_notification
@@ -66,6 +67,10 @@ async def trigger_proactive_scan(
     Scans the patient's recent data and returns structured health insights.
     Optionally sends FCM notification to a different user (for testing).
     """
+    await ai_feature_toggle_service.require_for_patients(
+        AIFeatureEnum.PROACTIVE, [payload.patient_id]
+    )
+
     # Resolve patient name + timezone
     patient_name = None
     tz_name = None

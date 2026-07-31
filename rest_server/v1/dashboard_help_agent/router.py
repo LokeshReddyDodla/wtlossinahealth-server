@@ -13,6 +13,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, status
 
 from lib.ai_foundation.agents.dashboard_help import DashboardHelpAgent
+from lib.core.constants import AIFeatureEnum
+from lib.services.ai_feature_toggle_service import ai_feature_toggle_service
 from lib.ai_foundation.agents.state import AgentContext, AgentInput
 from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.auth.base import get_current_user
@@ -54,6 +56,7 @@ async def dashboard_help_chat(
 ) -> DashboardHelpResponse:
     """Answer a dashboard how-to question, with a matching video when one fits."""
     user_id, role = user
+    await ai_feature_toggle_service.require_system(AIFeatureEnum.DASHBOARD_HELP)
     agent_input = AgentInput(
         message=payload.message,
         context=AgentContext(user_id=user_id, user_role=role),
