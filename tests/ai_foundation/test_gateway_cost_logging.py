@@ -1,7 +1,8 @@
-"""Gateway emits USD cost to Langfuse via cost_details (not usage.total_cost).
+"""Gateway emits USD cost via the OpenAI-style usage dict.
 
-langfuse SDK 2.60.10 silently drops a `usage` dict's snake_case `total_cost`;
-only `cost_details={"total": ...}` is ingested. This locks the shape.
+The self-hosted Langfuse 2.95 server ingests cost only from a `usage` dict
+with prompt_tokens/completion_tokens/total_cost (converted to totalCost by
+_convert_usage_input); usage_details/cost_details log 0. This locks the shape.
 """
 
 import types
@@ -18,7 +19,7 @@ class _StubLangfuse:
         self.calls.append(kwargs)
 
 
-def test_log_generation_uses_cost_details() -> None:
+def test_log_generation_uses_openai_usage_dict() -> None:
     stub = _StubLangfuse()
     fake = types.SimpleNamespace(_langfuse_client=stub)
 
@@ -35,11 +36,14 @@ def test_log_generation_uses_cost_details() -> None:
 
     assert len(stub.calls) == 1
     kw = stub.calls[0]
-    assert kw["cost_details"] == {"total": 0.0123}, "USD must go through cost_details"
-    assert kw["usage_details"] == {"input": 100, "output": 20}
+    assert kw["usage"] == {
+        "prompt_tokens": 100,
+        "completion_tokens": 20,
+        "total_cost": 0.0123,
+    }, "cost/tokens must go through the OpenAI-style usage dict"
     assert kw["trace_id"] == "t1"
     assert kw["model"] == "gpt-5.1"
-    assert "usage" not in kw, "the deprecated usage dict silently drops snake_case cost"
+    assert "cost_details" not in kw, "cost_details is not ingested by the 2.95 server"
 
 
 def test_log_generation_no_client_is_noop() -> None:
@@ -63,7 +67,7 @@ def test_resolve_cost_falls_back_to_zero_when_unpriced() -> None:
 
 
 if __name__ == "__main__":
-    test_log_generation_uses_cost_details()
+    test_log_generation_uses_openai_usage_dict()
     test_log_generation_no_client_is_noop()
     test_resolve_cost_prefers_litellm_response_cost()
     test_resolve_cost_falls_back_to_zero_when_unpriced()

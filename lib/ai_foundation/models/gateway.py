@@ -202,10 +202,7 @@ class ModelGateway:
 
     @staticmethod
     def _init_langfuse_client() -> Any | None:
-        """Initialize Langfuse client for trace-level operations only.
-
-        Generation-level logging is handled by LiteLLM callbacks.
-        """
+        """Initialize the Langfuse client used for trace- and generation-level logging."""
         from lib.ai_foundation.config import settings
         if not settings.LANGFUSE_ENABLED:
             logger.info("Langfuse disabled (LANGFUSE_ENABLED=false)")
@@ -233,10 +230,8 @@ class ModelGateway:
     def _setup_litellm() -> None:
         """Configure LiteLLM callbacks.
 
-        success_callback is intentionally unset — the gateway emits each
-        generation's cost itself; re-adding it would double-count (and
-        litellm's async callback drops streamed cost anyway). failure_callback
-        stays for error traces (no cost).
+        success_callback stays unset: the gateway emits cost itself, so
+        re-adding it would double-count. failure_callback stays for error traces.
         """
         from lib.ai_foundation.config import settings
         if settings.LANGFUSE_ENABLED:
@@ -325,10 +320,9 @@ class ModelGateway:
     ) -> None:
         """Emit a Langfuse generation with an explicit USD cost.
 
-        The gateway logs cost itself because litellm's success callback records
-        none for streamed/concurrent async calls. Cost MUST go through
-        ``cost_details={"total"}`` — langfuse 2.60.10 silently drops a ``usage``
-        dict's snake_case ``total_cost``.
+        Cost/tokens MUST go through the ``usage`` dict (prompt_tokens,
+        completion_tokens, total_cost): the self-hosted Langfuse 2.95 server
+        does not ingest ``usage_details``/``cost_details`` (they log 0).
         """
         if not self._langfuse_client:
             return
@@ -339,15 +333,17 @@ class ModelGateway:
                 model=model,
                 input=input_messages,
                 output=output_text,
-                usage_details={"input": prompt_tokens, "output": completion_tokens},
-                cost_details={"total": cost_usd},
+                usage={
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    "total_cost": cost_usd,
+                },
             )
         except Exception as exc:
             logger.debug("Langfuse generation log failed: %s", exc)
 
     def flush(self) -> None:
-        """Ship buffered Langfuse events now. The SDK sends on a background
-        thread, so a process exiting before a flush loses its last batch."""
+        """Ship buffered Langfuse events; a process exiting first loses its last batch."""
         if not self._langfuse_client:
             return
         try:
@@ -495,8 +491,7 @@ class ModelGateway:
         if spec.max_tokens is not None:
             kwargs["max_tokens"] = spec.max_tokens
 
-        # Native timeout raises litellm.Timeout through litellm's logging path;
-        # asyncio.wait_for would CancelledError-bypass it — yet still be billed.
+        # Native timeout, not wait_for: wait_for's cancel skips litellm logging.
         raw = await litellm.acompletion(**kwargs, timeout=spec.timeout_seconds)
 
         elapsed_ms = int((time.perf_counter() - start) * 1000)
@@ -733,8 +728,7 @@ class ModelGateway:
         if spec.max_tokens is not None:
             kwargs["max_tokens"] = spec.max_tokens
 
-        # Native timeout raises litellm.Timeout through litellm's logging path;
-        # asyncio.wait_for would CancelledError-bypass it — yet still be billed.
+        # Native timeout, not wait_for: wait_for's cancel skips litellm logging.
         raw = await litellm.acompletion(**kwargs, timeout=spec.timeout_seconds)
 
         elapsed_ms = int((time.perf_counter() - start) * 1000)
@@ -773,7 +767,7 @@ class ModelGateway:
         model = _litellm_model_id(spec)
         start = time.perf_counter()
 
-        # Native timeout (see _do_complete); instructor forwards it to litellm.
+        # instructor forwards timeout to litellm.acompletion.
         parsed, raw = await self._instructor_client.chat.completions.create_with_completion(
             model=model,
             response_model=response_model,
@@ -831,7 +825,6 @@ class ModelGateway:
         if spec.max_tokens is not None:
             kwargs["max_tokens"] = spec.max_tokens
 
-        # Native timeout, not wait_for (see _do_complete).
         stream = await litellm.acompletion(**kwargs, timeout=spec.timeout_seconds)
 
         full_content: list[str] = []
@@ -880,9 +873,7 @@ class ModelGateway:
 
         self._circuit_breaker.record_success(_circuit_key(spec))
 
-        # LiteLLM logs no cost for streams; price the drained chunks ourselves.
-        # completion_cost on the rebuilt usage is cache-read aware; _stream_cost
-        # (per-token) is the fallback.
+        # LiteLLM logs no cost for streams — price the drained chunks ourselves.
         if final_usage:
             cost_usd = llm_usage.cost.total_cost
             try:
@@ -934,10 +925,7 @@ class ModelGateway:
 
     @staticmethod
     def _resolve_cost(raw: Any, usage: LLMUsage, model: str) -> float:
-        """USD cost for a non-streamed call. LiteLLM's response_cost (already in
-        ``usage.cost``) is authoritative but can be 0/None for unmapped models —
-        fall back to an explicit completion_cost, then 0.0 so logging never crashes.
-        """
+        """USD cost from litellm's response_cost; falls back to completion_cost, then 0.0."""
         cost = usage.cost.total_cost
         if cost:
             return float(cost)
