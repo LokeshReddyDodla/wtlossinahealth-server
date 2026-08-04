@@ -7,6 +7,34 @@ from dateutil.parser import parse as parse_date
 from lib.schemas.meal_stats import DailyMealStats
 
 
+def compute_glucose_response(meal_time, glucose_before, glucose_after):
+    """Summarize the post-meal glucose excursion from the raw CGM readings
+    around a meal. `glucose_before`/`glucose_after` are lists of (time, glucose)
+    rows. Returns None when there is no post-meal reading to measure against.
+
+    Baseline is the reading just before the meal (falls back to the first
+    post-meal reading); the excursion is peak-minus-baseline.
+    """
+    if not glucose_after:
+        return None
+    baseline = round(
+        (glucose_before[-1][1] if glucose_before else glucose_after[0][1]), 1
+    )
+    peak_time, peak = max(glucose_after, key=lambda r: r[1])
+    peak = round(peak, 1)
+    # Returned to within 15 mg/dL of baseline at any point after the peak.
+    returned = any(g <= baseline + 15 for t, g in glucose_after if t > peak_time)
+    return {
+        "baseline_mgdl": baseline,
+        "peak_mgdl": peak,
+        "delta_mgdl": round(peak - baseline, 1),
+        "time_to_peak_minutes": round(
+            (peak_time - meal_time).total_seconds() / 60, 1
+        ),
+        "returned_to_baseline": returned,
+    }
+
+
 def empty_daily_stats(date, avg_glucose_by_date, diet_recommendations):
     """Create empty daily stats when no meal data is available."""
     return DailyMealStats(
@@ -45,6 +73,9 @@ def build_daily_stats(
 
         meal["glucose_before_meal"] = glucose_before_meal
         meal["glucose_after_meal"] = glucose_after_meal
+        meal["glucose_response"] = compute_glucose_response(
+            meal_time, glucose_before_meal, glucose_after_meal
+        )
 
     return DailyMealStats(
         date=row.date,

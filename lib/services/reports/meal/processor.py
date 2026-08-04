@@ -4,7 +4,10 @@ from functools import partial
 from lib.schemas.meal_statistics import (
     DateRange,
     DailyMeals,
+    GlucoseImpactMeal,
+    MealComparisonDeltas,
     MealCounts,
+    MealStatisticsComparison,
     MealStatisticsReport,
     MealStatisticsSummary,
     MealTypeBreakdown,
@@ -182,6 +185,63 @@ class MealStatsProcessor:
                 meals=None,
             )
 
+        def _pct(n: int) -> float:
+            return round(n * 100 / total_meals, 1) if total_meals else 0.0
+
+        current_pcts = WithinBudgetPercentages(
+            carbs=_pct(within_carb_range),
+            protein=_pct(within_protein_range),
+            fat=_pct(within_fat_budget),
+            fiber=_pct(within_fiber_budget),
+        )
+
+        # Compare against the immediately-preceding equal-length range.
+        prev_end = start_date - timedelta(days=1)
+        prev_start = prev_end - timedelta(days=days_covered - 1)
+        prev_reports = await self.meal_report_service.fetch_daily_reports_in_range(
+            patient_id, prev_start, prev_end
+        )
+        comparison = None
+        if prev_reports:
+            (
+                prev_total, _hc, _lp, _lf,
+                prev_carb, prev_prot, prev_fat, prev_fiber,
+            ) = MealStatistics.calculate_meal_counts_and_budget_compliance(prev_reports)
+
+            def _prev_pct(n: int) -> float:
+                return round(n * 100 / prev_total, 1) if prev_total else 0.0
+
+            comparison = MealStatisticsComparison(
+                previous_range=DateRange(
+                    start=datetime.combine(prev_start, datetime.min.time()).isoformat(),
+                    end=datetime.combine(prev_end, datetime.max.time()).isoformat(),
+                ),
+                previous_total_meals=prev_total,
+                deltas=MealComparisonDeltas(
+                    total_meals=total_meals - prev_total,
+                    within_budget_carbs=round(current_pcts.carbs - _prev_pct(prev_carb), 1),
+                    within_budget_protein=round(current_pcts.protein - _prev_pct(prev_prot), 1),
+                    within_budget_fat=round(current_pcts.fat - _prev_pct(prev_fat), 1),
+                    within_budget_fiber=round(current_pcts.fiber - _prev_pct(prev_fiber), 1),
+                ),
+            )
+
+        # Rank meals by measured glucose impact (only meals whose report was
+        # generated after glucose_response shipped carry the field).
+        impact = [
+            GlucoseImpactMeal(
+                date=report["date"],
+                name=meal.get("name"),
+                type=meal.get("type"),
+                delta_mgdl=resp["delta_mgdl"],
+                peak_mgdl=resp.get("peak_mgdl", 0.0),
+            )
+            for report in reports
+            for meal in report.get("meals", [])
+            if (resp := meal.get("glucose_response") or {}).get("delta_mgdl") is not None
+        ]
+        impact.sort(key=lambda m: m.delta_mgdl, reverse=True)
+
         return MealStatisticsReport(
             metadata=ReportMetadata(
                 date_range=DateRange(
@@ -198,23 +258,12 @@ class MealStatsProcessor:
                     low_protein_meals=low_protein_meals,
                     low_fiber_meals=low_fiber_meals,
                 ),
-                within_budget_percentages=WithinBudgetPercentages(
-                    carbs=round(within_carb_range * 100 / total_meals, 1)
-                    if total_meals
-                    else 0.0,
-                    protein=round(within_protein_range * 100 / total_meals, 1)
-                    if total_meals
-                    else 0.0,
-                    fat=round(within_fat_budget * 100 / total_meals, 1)
-                    if total_meals
-                    else 0.0,
-                    fiber=round(within_fiber_budget * 100 / total_meals, 1)
-                    if total_meals
-                    else 0.0,
-                ),
+                within_budget_percentages=current_pcts,
             ),
             breakdowns=MealTypeBreakdown(by_meal_type=detailed_stats),
             meals=MealsData(by_date=meals_by_date) if meals_by_date else None,
+            comparison=comparison,
+            top_glucose_impact_meals=impact[:5] or None,
         )
 
     async def get_meal_month_summary(
