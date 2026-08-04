@@ -186,6 +186,61 @@ def generate_readings_around_meal_query(
     return query, {"patient_id": patient_id, "meal_time": meal_time}
 
 
+def generate_trend_prev_window_query(patient_id: str, prev_start: str, prev_end: str) -> str:
+    """Avg glucose + in-range count for the previous window. `prev_end` is
+    exclusive (equals the current window's start) so the windows never overlap."""
+    return f"""
+    SELECT
+        avg(glucose_level) AS avg_glucose,
+        countIf(glucose_level >= 70 AND glucose_level <= 180) AS in_range,
+        count() AS total
+    FROM aihealth.cgm_data FINAL
+    WHERE patient_id = '{patient_id}'
+        AND record_type = 'historic'
+        AND time >= '{prev_start}'
+        AND time < '{prev_end}'
+    """
+
+
+def generate_nocturnal_dawn_query(patient_id: str, start_date: str, end_date: str) -> str:
+    """Nocturnal (00:00-05:59) hypo coverage + dawn rise in one pass."""
+    return f"""
+    SELECT
+        countIf(glucose_level < 70 AND toHour(time) < 6) AS nocturnal_below,
+        countIf(toHour(time) < 6) AS nocturnal_total,
+        avgIf(glucose_level, toHour(time) >= 3 AND toHour(time) < 6) AS dawn_avg,
+        avgIf(glucose_level, toHour(time) < 3) AS predawn_avg
+    FROM aihealth.cgm_data FINAL
+    WHERE patient_id = '{patient_id}'
+        AND record_type = 'historic'
+        AND time >= '{start_date}'
+        AND time <= '{end_date}'
+    """
+
+
+def generate_sensor_active_query(patient_id: str, start_date: str, end_date: str) -> str:
+    """Median seconds between consecutive readings = the sensor's actual cadence,
+    derived from data so any device (5-min, 15-min, ...) is scored on its own
+    rate. Gaps over 1h are sensor-off dropouts, not cadence, so they're excluded.
+    """
+    return f"""
+    SELECT median(gap_s)
+    FROM (
+        SELECT dateDiff('second',
+                        lagInFrame(time, 1) OVER (
+                            ORDER BY time ROWS BETWEEN 1 PRECEDING AND CURRENT ROW
+                        ),
+                        time) AS gap_s
+        FROM aihealth.cgm_data FINAL
+        WHERE patient_id = '{patient_id}'
+            AND record_type = 'historic'
+            AND time >= '{start_date}'
+            AND time <= '{end_date}'
+    )
+    WHERE gap_s > 0 AND gap_s <= 3600
+    """
+
+
 def generate_total_readings_count_query(patient_id: str, start_date: str, end_date: str) -> str:
     """Generate query to count total CGM readings in a date range."""
     return f"""
