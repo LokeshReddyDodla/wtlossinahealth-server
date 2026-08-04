@@ -4,18 +4,14 @@ from datetime import datetime
 from typing import Dict, List, Optional
 
 from lib.schemas.fitness_stats import (
-    ActivityBreakdown,
     ActivityDistribution,
-    ActivityDistributionBreakdown,
     DateRange,
-    FitnessReport,
     FitnessStats,
-    FitnessSummary,
+    FitnessTrend,
     HourlyStats,
     InactivePeriod,
     PeakActivityTime,
     ReportMetadata,
-    SummaryMetrics,
     WorkoutSummary,
 )
 from lib.utils.date.periods import DayWisePeriod, WeekWisePeriod
@@ -23,10 +19,12 @@ from lib.utils.date.periods import DayWisePeriod, WeekWisePeriod
 from .queries import (
     generate_activity_distribution_query,
     generate_average_active_session_duration_query,
+    generate_days_with_data_query,
     generate_hourly_stats_query,
     generate_inactive_periods_query,
     generate_peak_activity_time_query,
     generate_summary_stats_query,
+    generate_trend_prev_window_query,
     generate_workouts_query,
 )
 
@@ -156,7 +154,34 @@ class FitnessStatsProcessor:
 
         days_covered = (end_date.date() - start_date.date()).days + 1
 
+        days_with_data_result = self.clickhouse_store.client.execute(
+            generate_days_with_data_query(patient_id, start_date_str, end_date_str)
+        )
+        days_with_data = days_with_data_result[0][0] if days_with_data_result else 0
+
         row = summary_stats[0] if summary_stats else (0, 0.0, 0.0, 0.0, 0, 0.0)
+
+        prev_start = start_date - (end_date - start_date)
+        trend_result = self.clickhouse_store.client.execute(
+            generate_trend_prev_window_query(
+                patient_id,
+                prev_start.strftime("%Y-%m-%dT%H:%M:%S"),
+                start_date_str,
+            )
+        )
+        trend: Optional[FitnessTrend] = None
+        if trend_result and trend_result[0] and (trend_result[0][0] or trend_result[0][1]):
+            prev_steps = int(trend_result[0][0] or 0)
+            prev_energy = float(trend_result[0][1] or 0.0)
+            prev_duration = float(trend_result[0][2] or 0.0)
+            trend = FitnessTrend(
+                previous_steps=prev_steps,
+                previous_active_energy=prev_energy,
+                previous_active_duration=prev_duration,
+                delta_steps=int(row[0]) - prev_steps,
+                delta_active_energy=row[1] - prev_energy,
+                delta_active_duration=row[2] - prev_duration,
+            )
 
         return FitnessStats(
             metadata=ReportMetadata(
@@ -166,6 +191,7 @@ class FitnessStatsProcessor:
                 ),
                 days_covered=days_covered,
                 report_type=report_type,
+                days_with_data=days_with_data,
             ),
             steps=row[0],
             active_energy=row[1],
@@ -179,6 +205,7 @@ class FitnessStatsProcessor:
             inactive_periods=inactive_periods,
             hourly_stats=hourly_stats,
             workouts=workouts,
+            trend=trend,
         )
 
     def _process_multiple_periods(
@@ -277,87 +304,3 @@ class FitnessStatsProcessor:
             )
             for row in data
         ]
-
-    def get_fitness_report(
-        self,
-        patient_id: str,
-        start_date: datetime,
-        end_date: datetime,
-    ) -> FitnessReport:
-        """Get restructured fitness report with metadata, summary, and breakdowns."""
-        days_covered = (end_date.date() - start_date.date()).days + 1
-        start_date_str = start_date.strftime("%Y-%m-%dT%H:%M:%S")
-        end_date_str = end_date.strftime("%Y-%m-%dT%H:%M:%S")
-
-        summary_query = generate_summary_stats_query(
-            patient_id, start_date_str, end_date_str
-        )
-        summary_stats = self.clickhouse_store.client.execute(summary_query)
-
-        avg_active_session_query = (
-            generate_average_active_session_duration_query(
-                patient_id, start_date_str, end_date_str
-            )
-        )
-        avg_active_session_result = self.clickhouse_store.client.execute(
-            avg_active_session_query
-        )
-        average_active_session_duration = (
-            avg_active_session_result[0][0]
-            if avg_active_session_result
-            and not math.isnan(avg_active_session_result[0][0])
-            else 0
-        )
-
-        activity_distribution_query = generate_activity_distribution_query(
-            patient_id, start_date_str, end_date_str
-        )
-        activity_distribution = self._fetch_activity_distribution(
-            activity_distribution_query
-        )
-
-        peak_activity_time_query = generate_peak_activity_time_query(
-            patient_id, start_date_str, end_date_str
-        )
-        peak_activity_time = self._fetch_peak_activity_time(
-            peak_activity_time_query
-        )
-
-        inactive_periods_query = generate_inactive_periods_query(
-            patient_id, start_date_str, end_date_str
-        )
-        inactive_periods = self._fetch_inactive_periods(inactive_periods_query)
-
-        hourly_stats = self._fetch_hourly_stats(
-            patient_id, start_date_str, end_date_str
-        )
-
-        return FitnessReport(
-            metadata=ReportMetadata(
-                date_range=DateRange(
-                    start=start_date.isoformat(),
-                    end=end_date.isoformat(),
-                ),
-                days_covered=days_covered,
-                report_type="custom",
-            ),
-            summary=FitnessSummary(
-                metrics=SummaryMetrics(
-                    steps=summary_stats[0][0] if summary_stats else 0,
-                    active_energy=summary_stats[0][1] if summary_stats else 0.0,
-                    active_duration=summary_stats[0][2] if summary_stats else 0.0,
-                    average_active_session_duration=average_active_session_duration,
-                    distance=summary_stats[0][3] if summary_stats else 0.0,
-                    flights_climbed=int(summary_stats[0][4]) if summary_stats else 0,
-                    exercise_time=summary_stats[0][5] if summary_stats else 0.0,
-                )
-            ),
-            breakdowns=ActivityDistributionBreakdown(
-                by_time_of_day=activity_distribution or {}
-            ),
-            activity=ActivityBreakdown(
-                peak_activity_time=peak_activity_time,
-                inactive_periods=inactive_periods,
-                hourly_stats=hourly_stats,
-            ),
-        )
