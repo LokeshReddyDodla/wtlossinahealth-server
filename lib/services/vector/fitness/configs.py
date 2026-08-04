@@ -25,6 +25,10 @@ FITNESS_OVERVIEW_CONFIG = FitnessSectionConfig(
         "peak_hour",
         "peak_steps",
         "peak_active_energy",
+        "days_with_data",
+        "delta_steps",
+        "delta_active_energy",
+        "delta_active_duration",
     ],
     template_method="fitness_overview",
 )
