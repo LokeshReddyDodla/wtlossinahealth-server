@@ -55,6 +55,7 @@ class CGMUploadService:
 
             self.clickhouse_store.write_data("aihealth.cgm_data", data_points)
 
+            await self._enqueue_meal_report_refresh(patient_id, data_points)
             await self._update_last_sync(postgres_session, patient_id, "libreview", end_time)
 
             await enqueue_cgm_report_generation_async(patient_id, report_periods)
@@ -103,6 +104,8 @@ class CGMUploadService:
             return 0
 
         self.clickhouse_store.write_data("aihealth.cgm_data", rows)
+
+        await self._enqueue_meal_report_refresh(patient_id, rows)
 
         latest_reading_time = max(r["time"] for r in rows)
         await self._update_last_sync(
@@ -167,6 +170,8 @@ class CGMUploadService:
 
             self.clickhouse_store.write_data("aihealth.cgm_data", data_points)
 
+            await self._enqueue_meal_report_refresh(patient_id, data_points)
+
             lifecycle_df = pd.DataFrame(
                 {
                     "Device Timestamp": df["timestamp"],
@@ -217,6 +222,8 @@ class CGMUploadService:
 
             data_points = self._extract_linx_data_points(df, patient_id)
             self.clickhouse_store.write_data("aihealth.cgm_data", data_points)
+
+            await self._enqueue_meal_report_refresh(patient_id, data_points)
 
             lifecycle_df = pd.DataFrame(
                 {
@@ -394,6 +401,35 @@ class CGMUploadService:
         generator = SensorLifecycleReportGenerator(df)
         reports = generator.generate_reports()
         return reports
+
+    async def _enqueue_meal_report_refresh(
+        self, patient_id: str, rows: List[dict]
+    ) -> None:
+        """Regenerate meal reports for days that just received CGM data, so each
+        meal's post-meal excursion reflects late-arriving glucose (live-sync lag,
+        later CSV). Deduped per (patient, date, 30-min bucket) since live sources
+        sync every 5 min and an excursion settles ~2h after the meal.
+        """
+        dates = {
+            r["time"].date() for r in rows if isinstance(r.get("time"), datetime)
+        }
+        if not dates:
+            return
+        now = datetime.now()
+        bucket = f"{now:%Y%m%d%H}{now.minute // 30}"
+        for d in dates:
+            try:
+                await enqueue_job(
+                    "generate_daily_meal_report",
+                    patient_id,
+                    d,
+                    _job_id=f"meal:report:cgmsync:{patient_id}:{d.isoformat()}:{bucket}",
+                    _queue_name=Queues.REPORTS,
+                )
+            except Exception as exc:
+                logger.warning(
+                    f"Failed to enqueue meal refresh for {patient_id} on {d}: {exc}"
+                )
 
     async def _update_last_sync(
         self,
