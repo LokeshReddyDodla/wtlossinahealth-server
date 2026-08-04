@@ -219,15 +219,25 @@ def generate_nocturnal_dawn_query(patient_id: str, start_date: str, end_date: st
 
 
 def generate_sensor_active_query(patient_id: str, start_date: str, end_date: str) -> str:
-    """Count distinct 15-min intervals with data (intervals not raw rows:
-    cadence- and dedup-robust)."""
+    """Median seconds between consecutive readings = the sensor's actual cadence,
+    derived from data so any device (5-min, 15-min, ...) is scored on its own
+    rate. Gaps over 1h are sensor-off dropouts, not cadence, so they're excluded.
+    """
     return f"""
-    SELECT count(DISTINCT toStartOfInterval(time, INTERVAL 15 MINUTE))
-    FROM aihealth.cgm_data FINAL
-    WHERE patient_id = '{patient_id}'
-        AND record_type = 'historic'
-        AND time >= '{start_date}'
-        AND time <= '{end_date}'
+    SELECT median(gap_s)
+    FROM (
+        SELECT dateDiff('second',
+                        lagInFrame(time, 1) OVER (
+                            ORDER BY time ROWS BETWEEN 1 PRECEDING AND CURRENT ROW
+                        ),
+                        time) AS gap_s
+        FROM aihealth.cgm_data FINAL
+        WHERE patient_id = '{patient_id}'
+            AND record_type = 'historic'
+            AND time >= '{start_date}'
+            AND time <= '{end_date}'
+    )
+    WHERE gap_s > 0 AND gap_s <= 3600
     """
 
 

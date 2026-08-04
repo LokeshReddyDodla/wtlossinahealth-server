@@ -216,15 +216,20 @@ class CGMStatsProcessor:
         total_readings_result = self.clickhouse_store.client.execute(total_readings_query)
         total_readings = total_readings_result[0][0] if total_readings_result else 0
 
-        # Expected intervals at 15-min cadence (AGP standard); faster devices clamp to 100%.
-        active_result = self.clickhouse_store.client.execute(
+        # Sensor-active %: scored against the sensor's own cadence (median gap
+        # between readings), so 5-min and 15-min devices are both correct.
+        median_gap_result = self.clickhouse_store.client.execute(
             generate_sensor_active_query(patient_id, start_date_str, end_date_str)
         )
-        active_intervals = active_result[0][0] if active_result else 0
-        expected_intervals = round((end_date - start_date).total_seconds() / 900)
+        median_gap_s = (
+            median_gap_result[0][0]
+            if median_gap_result and median_gap_result[0][0]
+            else 0
+        )
+        window_seconds = (end_date - start_date).total_seconds()
         sensor_active_percent = (
-            round(min(100.0, active_intervals / expected_intervals * 100), 1)
-            if expected_intervals
+            round(min(100.0, total_readings * median_gap_s / window_seconds * 100), 1)
+            if median_gap_s and window_seconds
             else 0.0
         )
 

@@ -47,13 +47,22 @@ def test_gri_capped_at_100():
     assert CGMRangeStatistics.compute_gri(stats) == 100.0
 
 
-def test_sensor_active_percent_full_day():
-    # A full day at 15-min cadence = 96 expected intervals.
-    expected_intervals = round(86399.999999 / 900)
-    assert expected_intervals == 96
-    active_intervals = 48  # half the day covered
-    pct = round(min(100.0, active_intervals / expected_intervals * 100), 1)
-    assert pct == 50.0
+def _sensor_active_pct(total_readings, median_gap_s, window_seconds):
+    if not (median_gap_s and window_seconds):
+        return 0.0
+    return round(min(100.0, total_readings * median_gap_s / window_seconds * 100), 1)
+
+
+def test_sensor_active_scored_on_own_cadence():
+    day = 86400
+    # 15-min sensor, half the day covered → 48 readings, gap 900s → 50%.
+    assert _sensor_active_pct(48, 900, day) == 50.0
+    # 5-min sensor, half covered → 144 readings, gap 300s → 50% (same coverage).
+    assert _sensor_active_pct(144, 300, day) == 50.0
+    # Fully covered 5-min sensor → 288 readings → clamps to 100%.
+    assert _sensor_active_pct(288, 300, day) == 100.0
+    # No cadence (single reading) → 0, no divide-by-zero.
+    assert _sensor_active_pct(1, 0, day) == 0.0
 
 
 def test_nocturnal_and_dawn_math():
@@ -77,7 +86,7 @@ if __name__ == "__main__":
     test_gri_zero_when_all_in_range()
     test_gri_weights_hypo_over_hyper()
     test_gri_capped_at_100()
-    test_sensor_active_percent_full_day()
+    test_sensor_active_scored_on_own_cadence()
     test_nocturnal_and_dawn_math()
     test_trend_delta_gmi_tracks_delta_avg()
     print("ok")
