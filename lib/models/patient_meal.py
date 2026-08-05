@@ -3,7 +3,7 @@ from datetime import datetime
 
 from sqlalchemy import (ARRAY, Boolean, Column, Date, DateTime, Float,
                         ForeignKey, String, Text, Time)
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 
 from lib.models import Base
@@ -150,6 +150,8 @@ class PatientMeal(Base):
     preview_trace_id = Column(String, nullable=True)
     note = Column(Text, nullable=True)
     ai_insight = Column(Text, nullable=True)
+    # Full meal-analysis snapshot; overwritten on edit.
+    meal_analysis = Column(JSONB, nullable=True)
     uploaded_at = Column(
         DateTime, default=lambda: datetime.now().replace(tzinfo=None)
     )

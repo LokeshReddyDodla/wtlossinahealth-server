@@ -1,5 +1,6 @@
 """Meal processing tasks."""
 
+from lib.workers.tasks.meal.analysis_generation import generate_meal_analysis
 from lib.workers.tasks.meal.report_generation import generate_daily_meal_report
 from lib.workers.tasks.meal.vector_generation import delete_meal_vector_task, generate_meal_vector
 
@@ -7,6 +8,7 @@ __all__ = [
     "generate_daily_meal_report",
     "delete_meal_vector_task",
     "generate_meal_vector",
+    "generate_meal_analysis",
     "get_tasks",
     "get_cron_jobs",
 ]
@@ -18,6 +20,7 @@ def get_tasks():
         generate_daily_meal_report,
         delete_meal_vector_task,
         generate_meal_vector,
+        generate_meal_analysis,
     ]
 
 

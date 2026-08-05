@@ -6,7 +6,7 @@ from uuid import UUID
 
 from fastapi import status
 from fastapi.exceptions import HTTPException
-from sqlalchemy import asc, delete, desc, func
+from sqlalchemy import asc, delete, desc, func, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -186,6 +186,20 @@ class MealService:
         return meal
 
     @with_postgres_session
+    async def store_meal_analysis(
+        self, meal_id: str, analysis: dict, *, postgres_session: AsyncSession
+    ) -> int:
+        """Persist the server-computed meal-analysis snapshot. Returns rows hit
+        (0 if the meal was deleted before the analysis job ran)."""
+        result = await postgres_session.execute(
+            update(PatientMealModel)
+            .where(PatientMealModel.id == meal_id)
+            .values(meal_analysis=analysis)
+        )
+        await postgres_session.commit()
+        return result.rowcount
+
+    @with_postgres_session
     async def get_meal_vector_data(
         self, meal_id: str, *, postgres_session: AsyncSession
     ) -> dict | None:
@@ -268,6 +282,7 @@ class MealService:
             _img_urls = _normalize_to_image_urls(meal_data.image_url, meal_data.image_urls)
             meal = PatientMealModel(
                 type=meal_data.type,
+                slot=meal_data.type,
                 time=meal_data.datetime.time(),
                 date=meal_data.datetime.date(),
                 source=meal_data.source,
@@ -329,6 +344,7 @@ class MealService:
             meal = await self.fetch_meal(meal_id, postgres_session=postgres_session)
 
             meal.type = update_data.type
+            meal.slot = update_data.type
             meal.time = update_data.datetime.time()
             meal.date = update_data.datetime.date()
             meal.source = update_data.source
@@ -400,6 +416,9 @@ class MealService:
         the intelligence already ran in the preview agent.
         """
         ext = request.extraction
+        # Client-supplied analysis (from insights) is stored as-is and skips the
+        # background job — no re-run, no drift from what the user saw.
+        client_analysis = request.analysis or None
         try:
             meal = PatientMealModel(
                 name=ext.name,
@@ -416,6 +435,7 @@ class MealService:
                 analyzed_at=datetime.now(),
                 extraction_confidence=ext.overall_confidence.value,
                 preview_trace_id=request.preview_trace_id,
+                meal_analysis=client_analysis,
                 note=request.note,
                 patient_id=patient_id,
             )
@@ -429,6 +449,7 @@ class MealService:
                 patient_id=str(patient_id),
                 meal_id=str(meal.id),
                 meal_date=meal.date,
+                run_analysis=client_analysis is None,
             )
 
             # EventBus publish — gamification and any future subscribers
@@ -518,6 +539,11 @@ class MealService:
             meal.extraction_confidence = ext.overall_confidence.value
             if request.preview_trace_id is not None:
                 meal.preview_trace_id = request.preview_trace_id
+            # Left untouched when the client sends none, so the report keeps the
+            # prior snapshot until the background job recomputes it.
+            client_analysis = request.analysis or None
+            if client_analysis is not None:
+                meal.meal_analysis = client_analysis
             if request.note is not None:
                 meal.note = request.note
 
@@ -538,6 +564,7 @@ class MealService:
                 patient_id=str(patient_id),
                 meal_id=str(meal.id),
                 meal_date=meal.date,
+                run_analysis=client_analysis is None,
             )
             if old_date != meal.date:
                 try:

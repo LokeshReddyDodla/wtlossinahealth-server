@@ -65,11 +65,37 @@ class MealsData(BaseModel):
     by_date: List[DailyMeals] = Field(..., description="Meals grouped by date")
 
 
+class MealComparisonDeltas(BaseModel):
+    total_meals: int
+    within_budget_carbs: float
+    within_budget_protein: float
+    within_budget_fat: float
+    within_budget_fiber: float
+
+
+class MealStatisticsComparison(BaseModel):
+    """This range vs the immediately-preceding equal-length range."""
+
+    previous_range: DateRange
+    previous_total_meals: int
+    deltas: MealComparisonDeltas
+
+
+class GlucoseImpactMeal(BaseModel):
+    date: str
+    name: Optional[str] = None
+    type: Optional[str] = None
+    delta_mgdl: float
+    peak_mgdl: float
+
+
 class MealStatisticsReport(BaseModel):
     metadata: ReportMetadata
     summary: MealStatisticsSummary
     breakdowns: MealTypeBreakdown
     meals: Optional[MealsData] = Field(None, description="Meal data organized by date")
+    comparison: Optional[MealStatisticsComparison] = None
+    top_glucose_impact_meals: Optional[List[GlucoseImpactMeal]] = None
 
 
 class WeeklyPeriod(BaseModel):
