@@ -84,16 +84,6 @@ class MealTextReprBuilder:
 
             text_parts.append(" ".join(segments))
 
-        # 3️⃣.5 — Measured glucose response (from CGM readings around the meal)
-        response = meal.get("glucose_response") or {}
-        if response.get("delta_mgdl") is not None:
-            text_parts.append(
-                f"Glucose response: rose {response['delta_mgdl']} mg/dL "
-                f"(baseline {response.get('baseline_mgdl')} to peak "
-                f"{response.get('peak_mgdl')}) in "
-                f"{response.get('time_to_peak_minutes')} min."
-            )
-
         # 4️⃣ — Compute derived nutritional profile
         derived_tags = MealTextReprBuilder._generate_health_profile(macros)
         if derived_tags:
