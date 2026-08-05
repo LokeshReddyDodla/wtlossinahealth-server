@@ -282,7 +282,7 @@ class MealService:
             _img_urls = _normalize_to_image_urls(meal_data.image_url, meal_data.image_urls)
             meal = PatientMealModel(
                 type=meal_data.type,
-                slot=meal_data.type,  # keep slot populated so it's never null
+                slot=meal_data.type,
                 time=meal_data.datetime.time(),
                 date=meal_data.datetime.date(),
                 source=meal_data.source,
@@ -344,7 +344,7 @@ class MealService:
             meal = await self.fetch_meal(meal_id, postgres_session=postgres_session)
 
             meal.type = update_data.type
-            meal.slot = update_data.type  # keep slot populated so it's never null
+            meal.slot = update_data.type
             meal.time = update_data.datetime.time()
             meal.date = update_data.datetime.date()
             meal.source = update_data.source
