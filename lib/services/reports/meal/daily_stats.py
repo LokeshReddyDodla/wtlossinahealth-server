@@ -35,6 +35,37 @@ def compute_glucose_response(meal_time, glucose_before, glucose_after):
     }
 
 
+def compute_glucose_comparison(prediction, response):
+    """Predicted vs actual glucose, aligned by the prediction's ``basis`` so a
+    rise is never compared to an absolute peak. Returns None unless both a
+    prediction and a measured response exist.
+
+    - basis="rise": predicted rise band vs actual delta.
+    - basis="absolute": predicted peak band vs actual peak.
+    """
+    if not prediction or not response:
+        return None
+    basis = prediction.get("basis", "absolute")
+    if basis == "rise":
+        low = prediction.get("rise_mg_dl_low", prediction.get("range_mg_dl_low"))
+        high = prediction.get("rise_mg_dl_high", prediction.get("range_mg_dl_high"))
+        actual = response.get("delta_mgdl")
+    else:
+        low = prediction.get("range_mg_dl_low")
+        high = prediction.get("range_mg_dl_high")
+        actual = response.get("peak_mgdl")
+    if low is None or high is None or actual is None:
+        return None
+    outcome = "within" if low <= actual <= high else ("above" if actual > high else "below")
+    return {
+        "basis": basis,
+        "predicted_low": low,
+        "predicted_high": high,
+        "actual_mgdl": actual,
+        "outcome": outcome,
+    }
+
+
 def empty_daily_stats(date, avg_glucose_by_date, diet_recommendations):
     """Create empty daily stats when no meal data is available."""
     return DailyMealStats(
@@ -75,6 +106,10 @@ def build_daily_stats(
         meal["glucose_after_meal"] = glucose_after_meal
         meal["glucose_response"] = compute_glucose_response(
             meal_time, glucose_before_meal, glucose_after_meal
+        )
+        prediction = (meal.get("meal_analysis") or {}).get("predicted_glucose")
+        meal["glucose_comparison"] = compute_glucose_comparison(
+            prediction, meal["glucose_response"]
         )
 
     return DailyMealStats(

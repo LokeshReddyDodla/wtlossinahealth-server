@@ -109,6 +109,7 @@ async def trigger_meal_tasks(
     patient_id: str,
     meal_id: str,
     meal_date: date,
+    run_analysis: bool = True,
 ):
     """Trigger background tasks for meal processing.
 
@@ -118,6 +119,10 @@ async def trigger_meal_tasks(
     loudly — the vector task also drives the proactive-insight event, so a
     swallowed failure here means the meal silently never reaches Qdrant or
     the monitor.
+
+    ``run_analysis=False`` when the client already sent its analysis (it was
+    stored at save) — re-running would be a wasted LLM call and could drift
+    from what the user saw.
     """
     try:
         await enqueue_daily_meal_report_async(str(patient_id), meal_date)
@@ -127,3 +132,10 @@ async def trigger_meal_tasks(
         await enqueue_meal_vector_async(str(patient_id), str(meal_id))
     except Exception:
         logger.exception("Failed to enqueue meal vector for meal %s (%s)", meal_id, patient_id)
+    if run_analysis:
+        try:
+            from lib.workers.tasks.meal.analysis_generation import _enqueue_meal_analysis
+
+            await _enqueue_meal_analysis(str(patient_id), str(meal_id))
+        except Exception:
+            logger.exception("Failed to enqueue meal analysis for meal %s (%s)", meal_id, patient_id)

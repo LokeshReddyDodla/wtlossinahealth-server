@@ -178,6 +178,8 @@ def build_meal_json(meal, food_item_alias, macro_alias, micro_alias):
             meal.note,
             "ai_insight",
             meal.ai_insight,
+            "meal_analysis",
+            meal.meal_analysis,
             "analyzed",
             meal.analyzed,
             "analyzed_at",

@@ -451,6 +451,14 @@ class MealCreateRequest(BaseModel):
     preview_trace_id: str | None = Field(
         None, description="Links saved meal back to its preview for Langfuse quality tracking"
     )
+    analysis: dict | None = Field(
+        None,
+        description="The detailed analysis the client already showed (if the user "
+        "tapped insights), as a raw MealAnalysisResult JSON. Stored as-is so the "
+        "server skips re-running it — no double LLM call, no drift from what the "
+        "user saw. Untyped dict to avoid a cross-language shape mismatch 422ing "
+        "the save; the report reads it defensively.",
+    )
 
 
 class MealResponse(BaseModel):

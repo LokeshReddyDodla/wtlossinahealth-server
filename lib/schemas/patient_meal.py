@@ -81,6 +81,7 @@ class PatientMeal(BaseModel):
     id: UUID
     name: Optional[str]
     type: str
+    slot: Optional[str] = None
     date: datetime_date
     time: datetime_time
     items: Optional[List[PatientFoodItem]] = []
