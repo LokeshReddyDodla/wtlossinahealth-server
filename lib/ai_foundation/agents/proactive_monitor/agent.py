@@ -23,6 +23,9 @@ from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from lib.core.constants import AIFeatureEnum
+from lib.services.ai_feature_toggle_service import ai_feature_toggle_service
+
 from lib.ai_foundation.agents.base import BaseAgent
 from lib.ai_foundation.agents.health_query.contracts import HealthDataType
 from lib.ai_foundation.agents.state import AgentInput, AgentOutput
@@ -261,6 +264,15 @@ class ProactiveMonitorAgent(BaseAgent):
 
         Empty ``insights`` means nothing was worth sending.
         """
+        # Single kill switch: every proactive path (cron sweep, single scan,
+        # and all event triggers) funnels through here, so gating the toggle
+        # once stops generation AND notification everywhere — including the
+        # event side, which has no upstream guard.
+        if not await ai_feature_toggle_service.is_enabled_for_patient(
+            AIFeatureEnum.PROACTIVE, patient_id
+        ):
+            return ScanResult(patient_id=patient_id)
+
         if trigger is not None:
             if anchor is None or not is_wired(trigger):
                 return ScanResult(patient_id=patient_id, error=f"unwired trigger {trigger}")
