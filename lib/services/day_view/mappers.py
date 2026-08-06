@@ -1,0 +1,198 @@
+"""Pure report-dict → typed-payload mappers for the day view.
+
+No I/O — every function takes an already-fetched report dict (or `None`) and
+returns typed pieces of the `DayView` payload. This is where the exact report
+key paths live, so the extraction is testable without a database.
+
+All report dicts are `model_dump(exclude_none=True)`, so absent keys are the
+norm — read with `.get()`, never index blindly.
+"""
+
+from datetime import datetime, time
+
+from lib.schemas.day_view import (
+    ActivityRollup,
+    GlucoseRollup,
+    MealMarker,
+    NutritionRollup,
+    Point,
+    SleepRollup,
+    Spine,
+    SpineEvent,
+    SpineSource,
+    StepsLane,
+)
+
+_STAGE_MINUTES = 60.0  # inactive_duration / durations are in minutes
+
+
+def hour_of(value) -> float | None:
+    """Decimal hour-of-day (0..24) from a datetime, time, or ISO/`HH:MM:SS` string.
+
+    Times in this system are patient-local naive wall-clock, so the hour is read
+    directly with no tz conversion.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value)
+        except ValueError:
+            try:
+                value = time.fromisoformat(value)
+            except ValueError:
+                return None
+    if isinstance(value, datetime):
+        value = value.time()
+    if isinstance(value, time):
+        return value.hour + value.minute / 60 + value.second / 3600
+    return None
+
+
+# ── Spine (CGM) ──────────────────────────────────────────────────────────────
+
+def cgm_spine(report: dict | None) -> Spine | None:
+    """The continuous glucose spine + excursion event spans, or None if no curve."""
+    if not report:
+        return None
+    readings = report.get("cgm_readings") or []
+    points: list[Point] = []
+    for r in readings:
+        h = hour_of(r.get("device_timestamp"))
+        g = r.get("glucose_mgdl")
+        if h is not None and g is not None:
+            points.append((round(h, 4), float(g)))
+    if not points:
+        return None
+
+    events: list[SpineEvent] = []
+    for e in (report.get("hyper_stats") or {}).get("hyper_events") or []:
+        start, end = hour_of(e.get("start_time")), hour_of(e.get("end_time"))
+        if start is not None and end is not None:
+            events.append(SpineEvent(type="hyper", start=round(start, 3),
+                                     end=round(end, 3), peak=float(e.get("peak_glucose_mgdl") or 0)))
+    for e in (report.get("hypo_stats") or {}).get("hypo_events") or []:
+        start, end = hour_of(e.get("start_time")), hour_of(e.get("end_time"))
+        if start is not None and end is not None:
+            events.append(SpineEvent(type="hypo", start=round(start, 3),
+                                     end=round(end, 3), peak=float(e.get("lowest_glucose_mgdl") or 0)))
+
+    return Spine(source=SpineSource.cgm, unit="mg/dL", points=points, band=(70.0, 180.0), events=events)
+
+
+def smbg_spine(points: list[Point]) -> Spine:
+    """Finger-stick dots — never joined into a line."""
+    return Spine(source=SpineSource.smbg, unit="mg/dL", points=points, band=(70.0, 180.0))
+
+
+def hr_spine(points: list[Point]) -> Spine:
+    """Continuous heart rate — its own axis, not a glucose surrogate."""
+    return Spine(source=SpineSource.hr, unit="bpm", points=points, band=(60.0, 100.0))
+
+
+def empty_spine() -> Spine:
+    """No glucose device and no watch — behavioral day, no plot."""
+    return Spine(source=SpineSource.none)
+
+
+def select_spine(cgm_report: dict | None, smbg: list[Point], hr: list[Point]) -> Spine:
+    """Highest-fidelity spine available: CGM → SMBG dots → HR → behavioral."""
+    return (
+        cgm_spine(cgm_report)
+        or (smbg_spine(smbg) if smbg else None)
+        or (hr_spine(hr) if hr else None)
+        or empty_spine()
+    )
+
+
+# ── Meals (on-curve) ─────────────────────────────────────────────────────────
+
+def meal_markers(report: dict | None) -> list[MealMarker]:
+    if not report:
+        return []
+    out: list[MealMarker] = []
+    for m in report.get("meals") or []:
+        h = hour_of(m.get("time"))
+        if h is None:
+            continue
+        gr = m.get("glucose_response") or {}
+        gc = m.get("glucose_comparison") or {}
+        macros = m.get("total_macro_nutritional_value") or {}
+        predicted = None
+        lo, hi = gc.get("predicted_low"), gc.get("predicted_high")
+        if lo is not None and hi is not None:
+            predicted = (float(lo), float(hi))
+        out.append(MealMarker(
+            t=round(h, 3),
+            name=(m.get("name") or (m.get("type") or "meal").replace("_", " ").title()),
+            type=m.get("type"),
+            delta_mgdl=gr.get("delta_mgdl"),
+            score=m.get("score"),
+            comparison=gc.get("outcome"),
+            predicted=predicted,
+            carbs_g=macros.get("carbohydrates"),
+        ))
+    return out
+
+
+# ── Steps lane ───────────────────────────────────────────────────────────────
+
+def steps_lane(report: dict | None) -> StepsLane:
+    if not report:
+        return StepsLane()
+    hourly: list[Point] = []
+    for h in report.get("hourly_stats") or []:
+        hour, steps = h.get("hour"), h.get("steps")
+        if hour is not None and steps is not None:
+            hourly.append((float(hour), float(steps)))
+    inactive = []
+    for p in report.get("inactive_periods") or []:
+        start, end = hour_of(p.get("start_time")), hour_of(p.get("end_time"))
+        if start is not None and end is not None:
+            inactive.append((round(start, 3), round(end, 3)))
+    return StepsLane(hourly=hourly, inactive=inactive)
+
+
+# ── Header rollups ───────────────────────────────────────────────────────────
+
+def glucose_rollup(report: dict | None) -> GlucoseRollup:
+    if not report:
+        return GlucoseRollup()
+    rng = report.get("cgm_range_stats") or {}
+    summ = report.get("cgm_summary_stats") or {}
+    return GlucoseRollup(
+        tir_pct=rng.get("in_target_70_180_percent"),
+        avg=summ.get("average_glucose_mgdl"),
+        gri=summ.get("gri"),
+    )
+
+
+def nutrition_rollup(report: dict | None) -> NutritionRollup:
+    if not report:
+        return NutritionRollup()
+    target = (report.get("diet_recommendations") or {}).get("calories")
+    return NutritionRollup(
+        kcal=report.get("calories"),
+        kcal_target=target or None,
+        meals=report.get("meal_count"),
+    )
+
+
+def sleep_rollup(report: dict | None) -> tuple[SleepRollup, float | None, float | None]:
+    """Returns (header rollup, asleep_h, efficiency) — the lane reuses the latter two."""
+    if not report:
+        return SleepRollup(), None, None
+    total_min = (report.get("duration") or {}).get("total_duration")
+    eff = (report.get("quality") or {}).get("sleep_efficiency")
+    asleep_h = round(total_min / _STAGE_MINUTES, 2) if total_min else None
+    return SleepRollup(asleep_h=asleep_h, efficiency=eff), asleep_h, eff
+
+
+def activity_rollup(report: dict | None, steps_goal: int | None = None) -> ActivityRollup:
+    if not report:
+        return ActivityRollup()
+    steps = report.get("steps")
+    return ActivityRollup(
+        steps=int(steps) if isinstance(steps, (int, float)) else None,
+        steps_goal=steps_goal,
+    )

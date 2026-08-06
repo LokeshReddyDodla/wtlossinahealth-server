@@ -17,6 +17,7 @@ from .vitals import *
 from .checkins import *
 from .checkin_history import *
 from .timeline import *
+from .day import *
 from .notifications import *
 from .notification_preferences import *
 from .smbg import *
