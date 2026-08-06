@@ -1,4 +1,6 @@
-from typing import Optional
+from datetime import timedelta
+from statistics import mean, pstdev
+from typing import List, Optional
 
 from .queries import generate_fragmentation_query, generate_night_stats_query
 
@@ -7,73 +9,110 @@ MIN_NIGHTS_FOR_VARIABILITY = 3  # variability is meaningless from one or two nig
 _SCORE_ZERO_SD = 120.0  # timing SD (min) at which the consistency score hits 0
 
 
-def _round(value: Optional[float], ndigits: int = 1) -> Optional[float]:
-    return None if value is None else round(value, ndigits)
+def _clock_to_min_since_noon(hhmm: Optional[str]) -> Optional[float]:
+    """"HH:MM" -> minutes from that night's noon anchor, matching the wearable
+    frame (evening = small positive, after-midnight = larger). So bedtimes on
+    either side of midnight sit on one monotonic axis."""
+    if not hhmm or ":" not in hhmm:
+        return None
+    try:
+        h, m = hhmm.split(":")[:2]
+        return ((int(h) - 12) % 24) * 60 + int(m)
+    except (ValueError, TypeError):
+        return None
 
 
-def derive(
-    nights: int,
-    total_asleep: Optional[float],
-    avg_asleep: Optional[float],
-    longest: Optional[float],
-    shortest: Optional[float],
-    bedtime_sd: Optional[float],
-    wake_sd: Optional[float],
+def _empty() -> dict:
+    return {
+        "duration": {
+            "total_duration": 0,
+            "average_duration": None,
+            "per_day_average_duration": 0,
+            "longest_sleep": None,
+            "shortest_sleep": None,
+        },
+        "consistency": {
+            "nights_tracked": 0,
+            "bedtime_variability_minutes": None,
+            "wake_variability_minutes": None,
+            "consistency_score": None,
+            "average_nightly_sleep_minutes": None,
+            "recommended_min_minutes": RECOMMENDED_MIN_MINUTES,
+            "sleep_debt_minutes": None,
+            "wearable_nights": 0,
+            "manual_nights": 0,
+            "subjective_quality": None,
+        },
+        "fragmentation": {"average_awakenings": None, "average_waso_minutes": None},
+    }
+
+
+def derive_nights(
+    nights: List[dict],
+    total_awakenings: Optional[float],
+    total_waso: Optional[float],
     days_covered: int,
-    total_awakenings: Optional[float] = 0,
-    total_waso: Optional[float] = 0,
 ) -> dict:
-    """Turn the raw per-night aggregates into duration + consistency dicts.
-
-    Kept pure (no ClickHouse) so the math is unit-testable. Duration is built
-    from asleep time only, so it never carries the double-counted in-bed
-    envelope the old segment-sum query did.
+    """Aggregate reconciled per-night rows into the report blocks. Each night is
+    {asleep, bed_min, wake_min, source, quality?}. Duration/consistency/debt span
+    every night; fragmentation is wearable-only (a person can't report awakenings).
     """
-    nights = int(nights or 0)
-    total_asleep = total_asleep or 0
+    nights = [x for x in nights if (x.get("asleep") or 0) > 0]
+    n = len(nights)
+    if n == 0:
+        return _empty()
 
-    if nights >= MIN_NIGHTS_FOR_VARIABILITY and bedtime_sd is not None and wake_sd is not None:
-        avg_sd = (bedtime_sd + wake_sd) / 2
-        # 0 min SD -> 100; _SCORE_ZERO_SD -> 0. A product score, not a validated
-        # instrument — the raw SD minutes are the clinical figure.
+    wearable_nights = sum(1 for x in nights if x["source"] == "wearable")
+    manual_nights = n - wearable_nights
+
+    asleeps = [x["asleep"] for x in nights]
+    total_asleep = sum(asleeps)
+    avg_asleep = mean(asleeps)
+
+    beds = [x["bed_min"] for x in nights if x.get("bed_min") is not None]
+    wakes = [x["wake_min"] for x in nights if x.get("wake_min") is not None]
+    if (
+        len(beds) >= MIN_NIGHTS_FOR_VARIABILITY
+        and len(wakes) >= MIN_NIGHTS_FOR_VARIABILITY
+    ):
+        bed_sd, wake_sd = pstdev(beds), pstdev(wakes)
+        avg_sd = (bed_sd + wake_sd) / 2
+        # A product score, not a validated instrument — the raw SD is the figure.
         consistency_score = round(max(0.0, 100.0 - avg_sd * (100.0 / _SCORE_ZERO_SD)), 1)
-        bedtime_var = round(bedtime_sd, 1)
-        wake_var = round(wake_sd, 1)
+        bed_var, wake_var = round(bed_sd, 1), round(wake_sd, 1)
     else:
-        consistency_score = bedtime_var = wake_var = None
+        consistency_score = bed_var = wake_var = None
 
-    if avg_asleep and avg_asleep > 0:
-        avg_sleep = round(avg_asleep, 1)
-        debt = round(max(0.0, RECOMMENDED_MIN_MINUTES - avg_asleep), 1)
-    else:
-        avg_sleep = debt = None
+    qualities = [x["quality"] for x in nights if x.get("quality") is not None]
+    subjective_quality = round(mean(qualities), 1) if qualities else None
 
-    per_day_avg = (total_asleep / days_covered) if days_covered > 0 else 0
-
-    # Fragmentation is averaged over tracked nights, so a flawless night
-    # contributes a 0 rather than being dropped.
-    if nights > 0:
-        avg_awakenings = round((total_awakenings or 0) / nights, 1)
-        avg_waso = round((total_waso or 0) / nights, 1)
+    if wearable_nights > 0:
+        avg_awakenings = round((total_awakenings or 0) / wearable_nights, 1)
+        avg_waso = round((total_waso or 0) / wearable_nights, 1)
     else:
         avg_awakenings = avg_waso = None
 
+    per_day_avg = (total_asleep / days_covered) if days_covered > 0 else 0
+
     return {
         "duration": {
-            "total_duration": round(total_asleep, 1) if total_asleep else 0,
-            "average_duration": avg_sleep,
+            "total_duration": round(total_asleep, 1),
+            "average_duration": round(avg_asleep, 1),
             "per_day_average_duration": round(per_day_avg, 1),
-            "longest_sleep": _round(longest),
-            "shortest_sleep": _round(shortest),
+            "longest_sleep": round(max(asleeps), 1),
+            "shortest_sleep": round(min(asleeps), 1),
         },
         "consistency": {
-            "nights_tracked": nights,
-            "bedtime_variability_minutes": bedtime_var,
+            "nights_tracked": n,
+            "bedtime_variability_minutes": bed_var,
             "wake_variability_minutes": wake_var,
             "consistency_score": consistency_score,
-            "average_nightly_sleep_minutes": avg_sleep,
+            "average_nightly_sleep_minutes": round(avg_asleep, 1),
             "recommended_min_minutes": RECOMMENDED_MIN_MINUTES,
-            "sleep_debt_minutes": debt,
+            "sleep_debt_minutes": round(max(0.0, RECOMMENDED_MIN_MINUTES - avg_asleep), 1),
+            "wearable_nights": wearable_nights,
+            "manual_nights": manual_nights,
+            "subjective_quality": subjective_quality,
         },
         "fragmentation": {
             "average_awakenings": avg_awakenings,
@@ -90,25 +129,49 @@ class SleepNightStatistics:
         start_datetime: str,
         end_datetime: str,
         days_covered: int,
+        sleep_checkins: Optional[List[dict]] = None,
     ) -> dict:
-        query = generate_night_stats_query(patient_id, start_datetime, end_datetime)
-        result = clickhouse_store.client.execute(query)
-        row = result[0] if result else (0, 0, None, None, None, None, None)
+        rows = clickhouse_store.client.execute(
+            generate_night_stats_query(patient_id, start_datetime, end_datetime)
+        )
+        nights: List[dict] = []
+        wearable_dates = set()
+        for r in rows:
+            wearable_dates.add(r[0])
+            nights.append(
+                {
+                    "date": r[0],
+                    "bed_min": r[1],
+                    "wake_min": r[2],
+                    "asleep": r[3],
+                    "source": "wearable",
+                }
+            )
 
         frag = clickhouse_store.client.execute(
             generate_fragmentation_query(patient_id, start_datetime, end_datetime)
         )
         frag_row = frag[0] if frag else (0, 0)
 
-        return derive(
-            nights=row[0],
-            total_asleep=row[1],
-            avg_asleep=row[2],
-            longest=row[3],
-            shortest=row[4],
-            bedtime_sd=row[5],
-            wake_sd=row[6],
-            days_covered=days_covered,
-            total_awakenings=frag_row[0],
-            total_waso=frag_row[1],
-        )
+        # Fold in manual check-ins only for nights the device didn't cover. The
+        # ±1-day window absorbs the evening-vs-wake-date convention gap, so one
+        # night is never counted from both sources (wearable always wins).
+        for c in sleep_checkins or []:
+            cd = c.get("checkin_date")
+            if cd is None:
+                continue
+            if cd in wearable_dates or (cd - timedelta(days=1)) in wearable_dates:
+                continue
+            hours = c.get("hours_slept") or 0
+            nights.append(
+                {
+                    "date": cd,
+                    "bed_min": _clock_to_min_since_noon(c.get("bed_time")),
+                    "wake_min": _clock_to_min_since_noon(c.get("wake_time")),
+                    "asleep": hours * 60.0,
+                    "quality": c.get("quality"),
+                    "source": "manual",
+                }
+            )
+
+        return derive_nights(nights, frag_row[0], frag_row[1], days_covered)

@@ -73,6 +73,11 @@ class SleepConsistency(BaseModel):
     sleep_debt_minutes: Optional[float] = Field(
         None, description="Average nightly shortfall below the recommended minimum"
     )
+    wearable_nights: int = Field(0, description="Nights sourced from device data")
+    manual_nights: int = Field(0, description="Nights sourced from manual check-ins")
+    subjective_quality: Optional[float] = Field(
+        None, description="Average self-rated quality (1-5) from manual check-ins"
+    )
 
 
 class SleepTrend(BaseModel):
@@ -80,6 +85,12 @@ class SleepTrend(BaseModel):
     delta_average_sleep_minutes: Optional[float] = None
     previous_consistency_score: Optional[float] = None
     delta_consistency_score: Optional[float] = None
+    # Per-night stage + efficiency change vs the previous window.
+    delta_deep_minutes: Optional[float] = None
+    delta_rem_minutes: Optional[float] = None
+    delta_light_minutes: Optional[float] = None
+    delta_awake_minutes: Optional[float] = None
+    delta_efficiency: Optional[float] = None
 
 
 class SleepStats(BaseModel):

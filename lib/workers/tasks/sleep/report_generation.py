@@ -152,6 +152,39 @@ async def process_sleep_upload(
         )
 
 
+async def _fetch_sleep_checkins(
+    patient_id: str, start_date: datetime, end_date: datetime
+) -> List[dict]:
+    """Manual sleep check-ins for the range, so no-wearable nights still count."""
+    from sqlalchemy import select
+
+    from lib.dependencies.database import get_async_postgres_session
+    from lib.models.sleep_checkin import SleepCheckin
+
+    try:
+        async with get_async_postgres_session() as session:
+            result = await session.execute(
+                select(SleepCheckin).where(
+                    SleepCheckin.patient_id == patient_id,
+                    SleepCheckin.checkin_date >= start_date.date(),
+                    SleepCheckin.checkin_date <= end_date.date(),
+                )
+            )
+            return [
+                {
+                    "checkin_date": r.checkin_date,
+                    "hours_slept": r.hours_slept,
+                    "quality": r.quality,
+                    "bed_time": r.bed_time,
+                    "wake_time": r.wake_time,
+                }
+                for r in result.scalars().all()
+            ]
+    except Exception as e:
+        logger.error(f"Failed to fetch sleep check-ins for {patient_id}: {e}")
+        return []
+
+
 async def _generate_monthly_reports(
     patient_id: str,
     start_date: datetime,
@@ -167,6 +200,8 @@ async def _generate_monthly_reports(
         processor = get_sleep_stats_processor()
         service = get_sleep_report_service()
 
+        checkins = await _fetch_sleep_checkins(patient_id, start_date, end_date)
+
         reports = processor.generate_report(
             patient_id,
             start_date,
@@ -176,6 +211,7 @@ async def _generate_monthly_reports(
                 SleepReportType.WEEKLY,
                 SleepReportType.DAILY,
             ],
+            sleep_checkins=checkins,
         )
 
         if not reports:
