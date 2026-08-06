@@ -51,6 +51,24 @@ def generate_night_stats_query(
     """
 
 
+def generate_fragmentation_query(
+    patient_id: str, start_datetime: str, end_datetime: str
+) -> str:
+    """Total awake episodes and awake minutes within the nighttime sleep window.
+    Averaged over tracked nights downstream to give awakenings/night and WASO."""
+    return f"""
+    SELECT
+        count() AS total_awakenings,
+        sum(sleep_duration) AS total_waso
+    FROM aihealth.sleep_data FINAL
+    WHERE patient_id = '{patient_id}'
+        AND sleep_start_time >= '{start_datetime}'
+        AND sleep_end_time <= '{end_datetime}'
+        AND type = 'sleep_awake'
+        AND (toHour(sleep_start_time) >= 18 OR toHour(sleep_end_time) < 12)
+    """
+
+
 def generate_type_distribution_query(
     patient_id: str, start_datetime: str, end_datetime: str
 ) -> str:

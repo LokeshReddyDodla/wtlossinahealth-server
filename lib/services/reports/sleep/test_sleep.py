@@ -49,10 +49,25 @@ def test_no_asleep_data_is_null_not_zero():
     assert c["sleep_debt_minutes"] is None  # never claim full debt on missing data
 
 
+def test_fragmentation_averages_over_all_nights():
+    # 8 awake episodes / 4 nights = 2 per night; 120 WASO min / 4 = 30.
+    f = derive(4, 1600, 400, 460, 360, 20, 30, 7,
+               total_awakenings=8, total_waso=120)["fragmentation"]
+    assert f["average_awakenings"] == 2.0
+    assert f["average_waso_minutes"] == 30.0
+    # A flawless period is 0, not null (nights were tracked).
+    f0 = derive(4, 1600, 400, 460, 360, 20, 30, 7,
+                total_awakenings=0, total_waso=0)["fragmentation"]
+    assert f0["average_awakenings"] == 0
+    # No tracked nights -> null, not a divide-by-zero.
+    assert derive(0, 0, None, None, None, None, None, 7)["fragmentation"]["average_awakenings"] is None
+
+
 if __name__ == "__main__":
     test_duration_uses_asleep_only()
     test_debt_vs_recommended_minimum()
     test_consistency_score_scales_with_variability()
     test_variability_needs_enough_nights()
     test_no_asleep_data_is_null_not_zero()
+    test_fragmentation_averages_over_all_nights()
     print("all sleep night-stats checks passed")

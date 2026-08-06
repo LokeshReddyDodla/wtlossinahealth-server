@@ -45,6 +45,12 @@ class SleepQuality(BaseModel):
     restorative_sleep: float = Field(..., description="Restorative sleep percentage")
     sleep_efficiency: float = Field(..., description="Sleep efficiency percentage")
     sleep_quality: str = Field(..., description="Sleep quality classification")
+    average_awakenings: Optional[float] = Field(
+        None, description="Average awake episodes per night (fragmentation)"
+    )
+    average_waso_minutes: Optional[float] = Field(
+        None, description="Average wake time within the sleep window per night (WASO)"
+    )
 
 
 class SleepConsistency(BaseModel):

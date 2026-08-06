@@ -1,6 +1,6 @@
 from typing import Optional
 
-from .queries import generate_night_stats_query
+from .queries import generate_fragmentation_query, generate_night_stats_query
 
 RECOMMENDED_MIN_MINUTES = 420.0  # AASM: adults need >= 7h
 MIN_NIGHTS_FOR_VARIABILITY = 3  # variability is meaningless from one or two nights
@@ -20,6 +20,8 @@ def derive(
     bedtime_sd: Optional[float],
     wake_sd: Optional[float],
     days_covered: int,
+    total_awakenings: Optional[float] = 0,
+    total_waso: Optional[float] = 0,
 ) -> dict:
     """Turn the raw per-night aggregates into duration + consistency dicts.
 
@@ -48,6 +50,14 @@ def derive(
 
     per_day_avg = (total_asleep / days_covered) if days_covered > 0 else 0
 
+    # Fragmentation is averaged over tracked nights, so a flawless night
+    # contributes a 0 rather than being dropped.
+    if nights > 0:
+        avg_awakenings = round((total_awakenings or 0) / nights, 1)
+        avg_waso = round((total_waso or 0) / nights, 1)
+    else:
+        avg_awakenings = avg_waso = None
+
     return {
         "duration": {
             "total_duration": round(total_asleep, 1) if total_asleep else 0,
@@ -65,6 +75,10 @@ def derive(
             "recommended_min_minutes": RECOMMENDED_MIN_MINUTES,
             "sleep_debt_minutes": debt,
         },
+        "fragmentation": {
+            "average_awakenings": avg_awakenings,
+            "average_waso_minutes": avg_waso,
+        },
     }
 
 
@@ -80,6 +94,12 @@ class SleepNightStatistics:
         query = generate_night_stats_query(patient_id, start_datetime, end_datetime)
         result = clickhouse_store.client.execute(query)
         row = result[0] if result else (0, 0, None, None, None, None, None)
+
+        frag = clickhouse_store.client.execute(
+            generate_fragmentation_query(patient_id, start_datetime, end_datetime)
+        )
+        frag_row = frag[0] if frag else (0, 0)
+
         return derive(
             nights=row[0],
             total_asleep=row[1],
@@ -89,4 +109,6 @@ class SleepNightStatistics:
             bedtime_sd=row[5],
             wake_sd=row[6],
             days_covered=days_covered,
+            total_awakenings=frag_row[0],
+            total_waso=frag_row[1],
         )

@@ -117,7 +117,7 @@ class SleepStatsProcessor:
             duration=SleepDuration(**night_data["duration"]),
             type_distribution=SleepTypeDistribution(**type_distribution_data),
             timing=SleepTiming(**timing_data),
-            quality=SleepQuality(**quality_data),
+            quality=SleepQuality(**quality_data, **night_data["fragmentation"]),
             consistency=SleepConsistency(**consistency_data),
             trend=trend,
         )
