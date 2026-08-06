@@ -1,7 +1,13 @@
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
+
+
+class SleepStageSpan(BaseModel):
+    start: str = Field(..., description="Segment start (naive ISO datetime)")
+    end: str = Field(..., description="Segment end (naive ISO datetime)")
+    stage: str = Field(..., description="deep | light | rem | awake")
 
 
 class DateRange(BaseModel):
@@ -101,6 +107,11 @@ class SleepStats(BaseModel):
     quality: SleepQuality
     consistency: Optional[SleepConsistency] = None
     trend: Optional[SleepTrend] = None
+    hypnogram: Optional[List[SleepStageSpan]] = Field(
+        None,
+        description="Timed stage segments for a single night (daily reports only) "
+        "— the depth-over-night shape the aggregate stats can't express",
+    )
     feedback: Optional[str] = Field(None, description="AI-generated feedback")
 
     @property

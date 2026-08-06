@@ -75,7 +75,7 @@ class DayViewService:
 
         (
             cgm_rep, meal_rep, sleep_rep, fit_rep,
-            hr, bp, sleep_spans, pg,
+            hr, bp, pg,
         ) = await asyncio.gather(
             self._safe(self.cgm_report_service.fetch_daily_report, patient_id, day),
             self._safe(self.meal_report_service.fetch_daily_report, patient_id, day),
@@ -83,7 +83,6 @@ class DayViewService:
             self._safe(self.fitness_report_service.fetch_daily_report, patient_id, day),
             self.repo.hr_series(patient_id, day),
             self.repo.bp_readings(patient_id, day),
-            self.repo.sleep_stage_spans(patient_id, day_start, day_end),
             self._postgres_bundle(pid, day, day_start, day_end, postgres_session),
         )
         moods, symptoms, smbg, workouts, care = pg
@@ -93,6 +92,14 @@ class DayViewService:
         spine = mappers.select_spine(cgm_rep, smbg, hr)
 
         sleep_roll, asleep_h, efficiency = mappers.sleep_rollup(sleep_rep)
+        # Prefer the report's timed hypnogram; fall back to a raw sleep_data query
+        # only for reports that predate the hypnogram field (transitional — heals
+        # on the next sleep-report regeneration).
+        sleep_stages = mappers.sleep_stages_from_report(sleep_rep, day_start)
+        if not sleep_stages:
+            sleep_stages = await self.repo.sleep_stage_spans(
+                patient_id, day_start, day_end
+            )
         hr_avg = round(sum(v for _, v in hr) / len(hr)) if hr else None
         bp_latest = None
         if bp and bp[-1].systolic is not None and bp[-1].diastolic is not None:
@@ -114,7 +121,7 @@ class DayViewService:
         )
         lanes = Lanes(
             steps=mappers.steps_lane(fit_rep),
-            sleep=SleepLane(stages=sleep_spans, asleep_h=asleep_h, efficiency=efficiency),
+            sleep=SleepLane(stages=sleep_stages, asleep_h=asleep_h, efficiency=efficiency),
             doses=dose_markers,
             mood=moods,
             vitals=bp,
