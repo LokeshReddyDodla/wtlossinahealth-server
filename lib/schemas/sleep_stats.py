@@ -13,6 +13,7 @@ class ReportMetadata(BaseModel):
     date_range: DateRange = Field(..., description="Date range for the report")
     total_sessions: int = Field(..., description="Total number of sleep sessions")
     days_covered: int = Field(..., description="Number of days covered in the report")
+    days_with_data: int = Field(0, description="Number of nights with sleep data")
     report_type: str = Field(..., description="Type of report (daily, weekly, monthly, custom)")
 
 
@@ -46,12 +47,43 @@ class SleepQuality(BaseModel):
     sleep_quality: str = Field(..., description="Sleep quality classification")
 
 
+class SleepConsistency(BaseModel):
+    nights_tracked: int = Field(0, description="Nights with staged sleep data")
+    bedtime_variability_minutes: Optional[float] = Field(
+        None, description="Std deviation of bedtime across nights (lower = more regular)"
+    )
+    wake_variability_minutes: Optional[float] = Field(
+        None, description="Std deviation of wake time across nights"
+    )
+    consistency_score: Optional[float] = Field(
+        None, description="0-100 regularity score derived from timing variability (product score, not a validated instrument)"
+    )
+    average_nightly_sleep_minutes: Optional[float] = Field(
+        None, description="Average asleep time per night (deep+light+rem)"
+    )
+    recommended_min_minutes: float = Field(
+        420.0, description="Recommended minimum nightly sleep (AASM: >= 7h)"
+    )
+    sleep_debt_minutes: Optional[float] = Field(
+        None, description="Average nightly shortfall below the recommended minimum"
+    )
+
+
+class SleepTrend(BaseModel):
+    previous_average_sleep_minutes: Optional[float] = None
+    delta_average_sleep_minutes: Optional[float] = None
+    previous_consistency_score: Optional[float] = None
+    delta_consistency_score: Optional[float] = None
+
+
 class SleepStats(BaseModel):
     metadata: ReportMetadata
     duration: SleepDuration
     type_distribution: SleepTypeDistribution
     timing: SleepTiming
     quality: SleepQuality
+    consistency: Optional[SleepConsistency] = None
+    trend: Optional[SleepTrend] = None
     feedback: Optional[str] = Field(None, description="AI-generated feedback")
 
     @property

@@ -13,19 +13,41 @@ def generate_total_sessions_query(
     """
 
 
-def generate_duration_stats_query(
+def generate_night_stats_query(
     patient_id: str, start_datetime: str, end_datetime: str
 ) -> str:
+    """Per-night sleep stats. Segments are grouped into nights on a noon-anchored
+    day (a night spanning midnight stays one group), then aggregated. Asleep time
+    is deep+light+rem only — never the overlapping sleep_in_bed envelope, which
+    would double-count. Bedtime/wake are measured in minutes from that night's
+    noon anchor, so times after midnight don't wrap. Nights with no staged sleep
+    are dropped."""
     return f"""
     SELECT
-        sum(sleep_duration) AS total_duration,
-        avg(sleep_duration) AS avg_duration,
-        max(sleep_duration) AS max_duration,
-        min(sleep_duration) AS min_duration
-    FROM aihealth.sleep_data FINAL
-    WHERE patient_id = '{patient_id}'
-        AND sleep_start_time >= '{start_datetime}'
-        AND sleep_end_time <= '{end_datetime}'
+        count() AS nights,
+        sum(asleep_min) AS total_asleep,
+        avg(asleep_min) AS avg_asleep,
+        max(asleep_min) AS longest_night,
+        min(asleep_min) AS shortest_night,
+        stddevPop(bed_min) AS bedtime_sd,
+        stddevPop(wake_min) AS wake_sd
+    FROM (
+        SELECT
+            toDate(sleep_start_time - INTERVAL 12 HOUR) AS sleep_date,
+            (toUnixTimestamp(toDateTime(min(sleep_start_time)))
+                - toUnixTimestamp(toDateTime(sleep_date) + INTERVAL 12 HOUR)) / 60.0 AS bed_min,
+            (toUnixTimestamp(toDateTime(max(sleep_end_time)))
+                - toUnixTimestamp(toDateTime(sleep_date) + INTERVAL 12 HOUR)) / 60.0 AS wake_min,
+            sumIf(sleep_duration, type IN ('sleep_deep', 'sleep_light', 'sleep_rem')) AS asleep_min
+        FROM aihealth.sleep_data FINAL
+        WHERE patient_id = '{patient_id}'
+            AND sleep_start_time >= '{start_datetime}'
+            AND sleep_end_time <= '{end_datetime}'
+            AND type != 'sleep_awake'
+            AND (toHour(sleep_start_time) >= 18 OR toHour(sleep_end_time) < 12)
+        GROUP BY sleep_date
+        HAVING asleep_min > 0
+    )
     """
 
 

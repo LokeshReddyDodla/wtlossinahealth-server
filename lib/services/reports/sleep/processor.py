@@ -4,15 +4,17 @@ from typing import List
 from lib.schemas.sleep_stats import (
     DateRange,
     ReportMetadata,
+    SleepConsistency,
     SleepDuration,
     SleepQuality,
     SleepStats,
     SleepTiming,
+    SleepTrend,
     SleepTypeDistribution,
 )
 from lib.utils.date.periods import DayWisePeriod, WeekWisePeriod
 
-from .duration import SleepDurationStatistics
+from .night_stats import SleepNightStatistics
 from .quality import SleepQualityStatistics
 from .timing import SleepTimingStatistics
 from .type_distribution import SleepTypeDistributionStatistics
@@ -83,9 +85,10 @@ class SleepStatsProcessor:
         result = self.clickhouse_store.client.execute(query)
         total_sessions = result[0][0] if result else 0
 
-        duration_data = SleepDurationStatistics.fetch(
+        night_data = SleepNightStatistics.fetch(
             self.clickhouse_store, patient_id, start_str, end_str, days_covered,
         )
+        consistency_data = night_data["consistency"]
         type_distribution_data = SleepTypeDistributionStatistics.fetch(
             self.clickhouse_store, patient_id, start_str, end_str, days_covered,
         )
@@ -96,6 +99,10 @@ class SleepStatsProcessor:
             self.clickhouse_store, patient_id, start_str, end_str,
         )
 
+        trend = self._compute_trend(
+            patient_id, start_datetime, end_datetime, consistency_data,
+        )
+
         return SleepStats(
             metadata=ReportMetadata(
                 date_range=DateRange(
@@ -104,12 +111,51 @@ class SleepStatsProcessor:
                 ),
                 total_sessions=total_sessions,
                 days_covered=days_covered,
+                days_with_data=consistency_data["nights_tracked"],
                 report_type=report_type,
             ),
-            duration=SleepDuration(**duration_data),
+            duration=SleepDuration(**night_data["duration"]),
             type_distribution=SleepTypeDistribution(**type_distribution_data),
             timing=SleepTiming(**timing_data),
             quality=SleepQuality(**quality_data),
+            consistency=SleepConsistency(**consistency_data),
+            trend=trend,
+        )
+
+    def _compute_trend(
+        self,
+        patient_id: str,
+        start_datetime: datetime,
+        end_datetime: datetime,
+        current: dict,
+    ) -> "SleepTrend | None":
+        """Delta vs the immediately preceding window of equal length. Null unless
+        the previous window actually had nights to compare against."""
+        prev_start = start_datetime - (end_datetime - start_datetime)
+        prev = SleepNightStatistics.fetch(
+            self.clickhouse_store,
+            patient_id,
+            prev_start.strftime("%Y-%m-%dT%H:%M:%S"),
+            start_datetime.strftime("%Y-%m-%dT%H:%M:%S"),
+            days_covered=(start_datetime - prev_start).days or 1,
+        )["consistency"]
+
+        if prev["nights_tracked"] <= 0:
+            return None
+
+        def delta(cur, old):
+            return None if cur is None or old is None else round(cur - old, 1)
+
+        return SleepTrend(
+            previous_average_sleep_minutes=prev["average_nightly_sleep_minutes"],
+            delta_average_sleep_minutes=delta(
+                current["average_nightly_sleep_minutes"],
+                prev["average_nightly_sleep_minutes"],
+            ),
+            previous_consistency_score=prev["consistency_score"],
+            delta_consistency_score=delta(
+                current["consistency_score"], prev["consistency_score"],
+            ),
         )
 
     def _process_multiple_periods(
