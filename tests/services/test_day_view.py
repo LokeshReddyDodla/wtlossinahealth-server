@@ -4,6 +4,8 @@ No database — every function under test takes plain dicts/lists. The DB paths
 (repository) and the gather orchestration (resolver) are exercised separately.
 """
 
+from datetime import datetime
+
 from lib.schemas.day_view import SpineSource
 from lib.services.day_view import mappers as M
 
@@ -73,6 +75,28 @@ def test_meal_markers_carry_real_fields():
     assert (m.delta_mgdl, m.score, m.comparison, m.predicted, m.carbs_g) == (54, 0.45, "above", (30.0, 48.0), 68)
     n = M.nutrition_rollup(rep)
     assert (n.kcal, n.kcal_target, n.meals) == (1840, 2000, 4)
+
+
+def test_sleep_hypnogram_from_report_maps_and_clips():
+    day_start = datetime(2026, 8, 6, 0, 0)
+    rep = {
+        "hypnogram": [
+            # night crosses midnight → the pre-midnight tail clips to hour 0
+            {"start": "2026-08-05T23:48:00", "end": "2026-08-06T00:20:00", "stage": "light"},
+            {"start": "2026-08-06T00:20:00", "end": "2026-08-06T01:05:00", "stage": "deep"},
+            {"start": "2026-08-06T05:50:00", "end": "2026-08-06T06:12:00", "stage": "rem"},
+        ]
+    }
+    spans = M.sleep_stages_from_report(rep, day_start)
+    assert spans[0] == (0.0, round(20 / 60, 3), "light")
+    assert spans[1] == (round(20 / 60, 3), round(65 / 60, 3), "deep")
+    assert spans[2] == (round(350 / 60, 3), round(372 / 60, 3), "rem")
+
+
+def test_sleep_hypnogram_absent_is_empty():
+    day_start = datetime(2026, 8, 6, 0, 0)
+    assert M.sleep_stages_from_report(None, day_start) == []
+    assert M.sleep_stages_from_report({}, day_start) == []  # report without the field
 
 
 def test_hour_of_parses_forms():

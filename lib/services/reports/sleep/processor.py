@@ -7,6 +7,7 @@ from lib.schemas.sleep_stats import (
     SleepConsistency,
     SleepDuration,
     SleepQuality,
+    SleepStageSpan,
     SleepStats,
     SleepTiming,
     SleepTrend,
@@ -18,7 +19,7 @@ from .night_stats import SleepNightStatistics
 from .quality import SleepQualityStatistics
 from .timing import SleepTimingStatistics
 from .type_distribution import SleepTypeDistributionStatistics
-from .queries import generate_total_sessions_query
+from .queries import generate_hypnogram_query, generate_total_sessions_query
 
 
 def _stage_per_day(type_dist: dict, stage: str):
@@ -127,6 +128,22 @@ class SleepStatsProcessor:
             consistency_data, type_distribution_data, quality_data, checkins,
         )
 
+        # A timed hypnogram only makes sense for a single night — you can't
+        # overlay a week of nights on one 0-24 clock.
+        hypnogram = None
+        if report_type == SleepReportType.DAILY:
+            hyp_rows = self.clickhouse_store.client.execute(
+                generate_hypnogram_query(patient_id, start_str, end_str)
+            )
+            hypnogram = [
+                SleepStageSpan(
+                    start=str(row[1]),
+                    end=str(row[2]),
+                    stage=row[0].replace("sleep_", ""),
+                )
+                for row in hyp_rows
+            ] or None
+
         return SleepStats(
             metadata=ReportMetadata(
                 date_range=DateRange(
@@ -144,6 +161,7 @@ class SleepStatsProcessor:
             quality=SleepQuality(**quality_data, **night_data["fragmentation"]),
             consistency=SleepConsistency(**consistency_data),
             trend=trend,
+            hypnogram=hypnogram,
         )
 
     def _compute_trend(

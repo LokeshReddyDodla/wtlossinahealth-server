@@ -20,6 +20,7 @@ from lib.schemas.day_view import (
     Spine,
     SpineEvent,
     SpineSource,
+    StageSpan,
     StepsLane,
 )
 
@@ -186,6 +187,40 @@ def sleep_rollup(report: dict | None) -> tuple[SleepRollup, float | None, float 
     eff = (report.get("quality") or {}).get("sleep_efficiency")
     asleep_h = round(total_min / _STAGE_MINUTES, 2) if total_min else None
     return SleepRollup(asleep_h=asleep_h, efficiency=eff), asleep_h, eff
+
+
+def _to_dt(value):
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            return None
+    return None
+
+
+def sleep_stages_from_report(
+    report: dict | None, day_start: datetime
+) -> list[StageSpan]:
+    """The sleep report's hypnogram → hour-of-day spans relative to day_start,
+    clipped to [0, 24]. Empty when the report predates the hypnogram field — the
+    resolver then falls back to the raw sleep_data query."""
+    if not report:
+        return []
+    spans: list[StageSpan] = []
+    for seg in report.get("hypnogram") or []:
+        start = _to_dt(seg.get("start"))
+        end = _to_dt(seg.get("end"))
+        stage = seg.get("stage")
+        if start is None or end is None or not stage:
+            continue
+        start_h = max(0.0, (start - day_start).total_seconds() / 3600)
+        end_h = min(24.0, (end - day_start).total_seconds() / 3600)
+        if end_h <= start_h:
+            continue
+        spans.append((round(start_h, 3), round(end_h, 3), stage))
+    return spans
 
 
 def activity_rollup(report: dict | None, steps_goal: int | None = None) -> ActivityRollup:

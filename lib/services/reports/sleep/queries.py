@@ -61,6 +61,28 @@ def generate_fragmentation_query(
     """
 
 
+def generate_hypnogram_query(
+    patient_id: str, start_datetime: str, end_datetime: str
+) -> str:
+    """Raw timed stage segments (deep/light/rem/awake) within the nighttime sleep
+    window, ordered by time — the hypnogram the aggregate stats can't express.
+    Excludes the overlapping sleep_in_bed envelope. Times are the naive
+    patient-local wall-clock strings the consumer maps onto a 0-24 clock."""
+    return f"""
+    SELECT
+        type,
+        formatDateTime(sleep_start_time, '%Y-%m-%dT%H:%M:%S') AS start_time,
+        formatDateTime(sleep_end_time, '%Y-%m-%dT%H:%M:%S') AS end_time
+    FROM aihealth.sleep_data FINAL
+    WHERE patient_id = '{patient_id}'
+        AND sleep_start_time >= '{start_datetime}'
+        AND sleep_end_time <= '{end_datetime}'
+        AND type IN ('sleep_deep', 'sleep_light', 'sleep_rem', 'sleep_awake')
+        AND (toHour(sleep_start_time) >= 18 OR toHour(sleep_end_time) < 12)
+    ORDER BY sleep_start_time
+    """
+
+
 def generate_type_distribution_query(
     patient_id: str, start_datetime: str, end_datetime: str
 ) -> str:
