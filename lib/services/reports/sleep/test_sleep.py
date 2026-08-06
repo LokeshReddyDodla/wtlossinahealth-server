@@ -4,6 +4,7 @@ python -m lib.services.reports.sleep.test_sleep"""
 from lib.services.reports.sleep.night_stats import (
     _clock_to_min_since_noon,
     derive_nights,
+    recommended_minimum_for_age,
 )
 
 
@@ -88,6 +89,22 @@ def test_manual_only_report():
     assert r["duration"]["average_duration"] == 420
 
 
+def test_recommended_minimum_by_age():
+    assert recommended_minimum_for_age(15) == 480  # teen: 8h floor
+    assert recommended_minimum_for_age(30) == 420  # adult: 7h
+    assert recommended_minimum_for_age(70) == 420  # older adult: 7h
+    assert recommended_minimum_for_age(None) == 420  # unknown -> adult default
+
+
+def test_debt_uses_age_based_minimum():
+    # A teen sleeping 7h is in debt against the 8h floor.
+    c = derive_nights([_w(420), _w(420), _w(420)], 0, 0, 7, recommended_min=480)[
+        "consistency"
+    ]
+    assert c["recommended_min_minutes"] == 480
+    assert c["sleep_debt_minutes"] == 60  # 480 - 420
+
+
 def test_clock_parsing_wraps_around_midnight():
     assert _clock_to_min_since_noon("23:00") == 660
     assert _clock_to_min_since_noon("01:00") == 780  # after midnight, still one night
@@ -104,5 +121,7 @@ if __name__ == "__main__":
     test_no_data_is_null_not_zero()
     test_fragmentation_over_wearable_nights_only()
     test_manual_only_report()
+    test_recommended_minimum_by_age()
+    test_debt_uses_age_based_minimum()
     test_clock_parsing_wraps_around_midnight()
     print("all sleep reconciliation checks passed")

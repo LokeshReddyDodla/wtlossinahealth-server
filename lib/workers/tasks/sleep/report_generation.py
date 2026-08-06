@@ -185,6 +185,26 @@ async def _fetch_sleep_checkins(
         return []
 
 
+async def _recommended_sleep_minimum(patient_id: str) -> float:
+    """Age-banded nightly sleep target from the patient's DOB; adult 7h default."""
+    from sqlalchemy import select
+
+    from lib.dependencies.database import get_async_postgres_session
+    from lib.models.patient import Patient
+    from lib.services.reports.sleep.night_stats import recommended_minimum_for_age
+
+    try:
+        async with get_async_postgres_session() as session:
+            result = await session.execute(
+                select(Patient).where(Patient.patient_id == patient_id)
+            )
+            patient = result.scalar_one_or_none()
+            return recommended_minimum_for_age(patient.age if patient else None)
+    except Exception as e:
+        logger.error(f"Failed to derive sleep minimum for {patient_id}: {e}")
+        return 420.0
+
+
 async def _generate_monthly_reports(
     patient_id: str,
     start_date: datetime,
@@ -201,6 +221,7 @@ async def _generate_monthly_reports(
         service = get_sleep_report_service()
 
         checkins = await _fetch_sleep_checkins(patient_id, start_date, end_date)
+        recommended_min = await _recommended_sleep_minimum(patient_id)
 
         reports = processor.generate_report(
             patient_id,
@@ -212,6 +233,7 @@ async def _generate_monthly_reports(
                 SleepReportType.DAILY,
             ],
             sleep_checkins=checkins,
+            recommended_min_minutes=recommended_min,
         )
 
         if not reports:

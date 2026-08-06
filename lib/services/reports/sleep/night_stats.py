@@ -4,9 +4,17 @@ from typing import List, Optional
 
 from .queries import generate_fragmentation_query, generate_night_stats_query
 
-RECOMMENDED_MIN_MINUTES = 420.0  # AASM: adults need >= 7h
+RECOMMENDED_MIN_MINUTES = 420.0  # AASM adult floor (>= 7h); overridden by age
 MIN_NIGHTS_FOR_VARIABILITY = 3  # variability is meaningless from one or two nights
 _SCORE_ZERO_SD = 120.0  # timing SD (min) at which the consistency score hits 0
+
+
+def recommended_minimum_for_age(age) -> float:
+    """AASM/NSF age-banded nightly minimum. Teens need more than adults; the
+    adult floor holds for everyone 18+."""
+    if age is not None and age < 18:
+        return 480.0  # 13-17: >= 8h
+    return RECOMMENDED_MIN_MINUTES  # 18+: >= 7h
 
 
 def _clock_to_min_since_noon(hhmm: Optional[str]) -> Optional[float]:
@@ -22,7 +30,7 @@ def _clock_to_min_since_noon(hhmm: Optional[str]) -> Optional[float]:
         return None
 
 
-def _empty() -> dict:
+def _empty(recommended_min: float = RECOMMENDED_MIN_MINUTES) -> dict:
     return {
         "duration": {
             "total_duration": 0,
@@ -37,7 +45,7 @@ def _empty() -> dict:
             "wake_variability_minutes": None,
             "consistency_score": None,
             "average_nightly_sleep_minutes": None,
-            "recommended_min_minutes": RECOMMENDED_MIN_MINUTES,
+            "recommended_min_minutes": recommended_min,
             "sleep_debt_minutes": None,
             "wearable_nights": 0,
             "manual_nights": 0,
@@ -52,6 +60,7 @@ def derive_nights(
     total_awakenings: Optional[float],
     total_waso: Optional[float],
     days_covered: int,
+    recommended_min: float = RECOMMENDED_MIN_MINUTES,
 ) -> dict:
     """Aggregate reconciled per-night rows into the report blocks. Each night is
     {asleep, bed_min, wake_min, source, quality?}. Duration/consistency/debt span
@@ -60,7 +69,7 @@ def derive_nights(
     nights = [x for x in nights if (x.get("asleep") or 0) > 0]
     n = len(nights)
     if n == 0:
-        return _empty()
+        return _empty(recommended_min)
 
     wearable_nights = sum(1 for x in nights if x["source"] == "wearable")
     manual_nights = n - wearable_nights
@@ -108,8 +117,8 @@ def derive_nights(
             "wake_variability_minutes": wake_var,
             "consistency_score": consistency_score,
             "average_nightly_sleep_minutes": round(avg_asleep, 1),
-            "recommended_min_minutes": RECOMMENDED_MIN_MINUTES,
-            "sleep_debt_minutes": round(max(0.0, RECOMMENDED_MIN_MINUTES - avg_asleep), 1),
+            "recommended_min_minutes": recommended_min,
+            "sleep_debt_minutes": round(max(0.0, recommended_min - avg_asleep), 1),
             "wearable_nights": wearable_nights,
             "manual_nights": manual_nights,
             "subjective_quality": subjective_quality,
@@ -130,6 +139,7 @@ class SleepNightStatistics:
         end_datetime: str,
         days_covered: int,
         sleep_checkins: Optional[List[dict]] = None,
+        recommended_min: float = RECOMMENDED_MIN_MINUTES,
     ) -> dict:
         rows = clickhouse_store.client.execute(
             generate_night_stats_query(patient_id, start_datetime, end_datetime)
@@ -174,4 +184,6 @@ class SleepNightStatistics:
                 }
             )
 
-        return derive_nights(nights, frag_row[0], frag_row[1], days_covered)
+        return derive_nights(
+            nights, frag_row[0], frag_row[1], days_covered, recommended_min
+        )

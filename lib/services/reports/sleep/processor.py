@@ -50,15 +50,17 @@ class SleepStatsProcessor:
             SleepReportType.WEEKLY,
         ],
         sleep_checkins: List[dict] = None,
+        recommended_min_minutes: float = 420.0,
     ) -> List[SleepStats]:
         reports: List[SleepStats] = []
         checkins = sleep_checkins or []
+        rec_min = recommended_min_minutes
 
         if SleepReportType.MONTHLY in report_types:
             reports.append(
                 self._process_period(
                     patient_id, start_datetime, end_datetime,
-                    SleepReportType.MONTHLY, checkins,
+                    SleepReportType.MONTHLY, checkins, rec_min,
                 )
             )
 
@@ -66,7 +68,7 @@ class SleepStatsProcessor:
             week_periods = WeekWisePeriod(start_datetime, end_datetime).periods
             reports.extend(
                 self._process_multiple_periods(
-                    patient_id, week_periods, SleepReportType.WEEKLY, checkins,
+                    patient_id, week_periods, SleepReportType.WEEKLY, checkins, rec_min,
                 )
             )
 
@@ -74,7 +76,7 @@ class SleepStatsProcessor:
             day_periods = DayWisePeriod(start_datetime, end_datetime).periods
             reports.extend(
                 self._process_multiple_periods(
-                    patient_id, day_periods, SleepReportType.DAILY, checkins,
+                    patient_id, day_periods, SleepReportType.DAILY, checkins, rec_min,
                 )
             )
 
@@ -93,6 +95,7 @@ class SleepStatsProcessor:
         end_datetime: datetime,
         report_type: str,
         sleep_checkins: List[dict] = None,
+        recommended_min: float = 420.0,
     ) -> SleepStats:
         start_str = start_datetime.strftime("%Y-%m-%dT%H:%M:%S")
         end_str = end_datetime.strftime("%Y-%m-%dT%H:%M:%S")
@@ -106,7 +109,7 @@ class SleepStatsProcessor:
 
         night_data = SleepNightStatistics.fetch(
             self.clickhouse_store, patient_id, start_str, end_str, days_covered,
-            sleep_checkins=window_checkins,
+            sleep_checkins=window_checkins, recommended_min=recommended_min,
         )
         consistency_data = night_data["consistency"]
         type_distribution_data = SleepTypeDistributionStatistics.fetch(
@@ -211,6 +214,7 @@ class SleepStatsProcessor:
         periods: List[dict],
         report_type: str,
         sleep_checkins: List[dict] = None,
+        recommended_min: float = 420.0,
     ) -> List[SleepStats]:
         stats = []
         for period in periods:
@@ -221,6 +225,7 @@ class SleepStatsProcessor:
                     period["end_date"],
                     report_type,
                     sleep_checkins,
+                    recommended_min,
                 )
             )
         return stats
