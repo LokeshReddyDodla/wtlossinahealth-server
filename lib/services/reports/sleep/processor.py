@@ -4,19 +4,28 @@ from typing import List
 from lib.schemas.sleep_stats import (
     DateRange,
     ReportMetadata,
+    SleepConsistency,
     SleepDuration,
     SleepQuality,
     SleepStats,
     SleepTiming,
+    SleepTrend,
     SleepTypeDistribution,
 )
 from lib.utils.date.periods import DayWisePeriod, WeekWisePeriod
 
-from .duration import SleepDurationStatistics
+from .night_stats import SleepNightStatistics
 from .quality import SleepQualityStatistics
 from .timing import SleepTimingStatistics
 from .type_distribution import SleepTypeDistributionStatistics
 from .queries import generate_total_sessions_query
+
+
+def _stage_per_day(type_dist: dict, stage: str):
+    """Per-night average minutes for a sleep stage from a type-distribution dict."""
+    return (type_dist.get("distribution", {}).get(stage) or {}).get(
+        "per_day_average_minutes"
+    )
 
 
 class SleepReportType:
@@ -40,13 +49,18 @@ class SleepStatsProcessor:
             SleepReportType.DAILY,
             SleepReportType.WEEKLY,
         ],
+        sleep_checkins: List[dict] = None,
+        recommended_min_minutes: float = 420.0,
     ) -> List[SleepStats]:
         reports: List[SleepStats] = []
+        checkins = sleep_checkins or []
+        rec_min = recommended_min_minutes
 
         if SleepReportType.MONTHLY in report_types:
             reports.append(
                 self._process_period(
-                    patient_id, start_datetime, end_datetime, SleepReportType.MONTHLY,
+                    patient_id, start_datetime, end_datetime,
+                    SleepReportType.MONTHLY, checkins, rec_min,
                 )
             )
 
@@ -54,7 +68,7 @@ class SleepStatsProcessor:
             week_periods = WeekWisePeriod(start_datetime, end_datetime).periods
             reports.extend(
                 self._process_multiple_periods(
-                    patient_id, week_periods, SleepReportType.WEEKLY,
+                    patient_id, week_periods, SleepReportType.WEEKLY, checkins, rec_min,
                 )
             )
 
@@ -62,11 +76,17 @@ class SleepStatsProcessor:
             day_periods = DayWisePeriod(start_datetime, end_datetime).periods
             reports.extend(
                 self._process_multiple_periods(
-                    patient_id, day_periods, SleepReportType.DAILY,
+                    patient_id, day_periods, SleepReportType.DAILY, checkins, rec_min,
                 )
             )
 
         return reports
+
+    @staticmethod
+    def _checkins_in(checkins: List[dict], start: datetime, end: datetime) -> List[dict]:
+        """Check-ins whose date falls in [start, end], inclusive."""
+        s, e = start.date(), end.date()
+        return [c for c in checkins if c.get("checkin_date") and s <= c["checkin_date"] <= e]
 
     def _process_period(
         self,
@@ -74,18 +94,24 @@ class SleepStatsProcessor:
         start_datetime: datetime,
         end_datetime: datetime,
         report_type: str,
+        sleep_checkins: List[dict] = None,
+        recommended_min: float = 420.0,
     ) -> SleepStats:
         start_str = start_datetime.strftime("%Y-%m-%dT%H:%M:%S")
         end_str = end_datetime.strftime("%Y-%m-%dT%H:%M:%S")
         days_covered = (end_datetime - start_datetime).days + 1
+        checkins = sleep_checkins or []
+        window_checkins = self._checkins_in(checkins, start_datetime, end_datetime)
 
         query = generate_total_sessions_query(patient_id, start_str, end_str)
         result = self.clickhouse_store.client.execute(query)
         total_sessions = result[0][0] if result else 0
 
-        duration_data = SleepDurationStatistics.fetch(
+        night_data = SleepNightStatistics.fetch(
             self.clickhouse_store, patient_id, start_str, end_str, days_covered,
+            sleep_checkins=window_checkins, recommended_min=recommended_min,
         )
+        consistency_data = night_data["consistency"]
         type_distribution_data = SleepTypeDistributionStatistics.fetch(
             self.clickhouse_store, patient_id, start_str, end_str, days_covered,
         )
@@ -96,6 +122,11 @@ class SleepStatsProcessor:
             self.clickhouse_store, patient_id, start_str, end_str,
         )
 
+        trend = self._compute_trend(
+            patient_id, start_datetime, end_datetime,
+            consistency_data, type_distribution_data, quality_data, checkins,
+        )
+
         return SleepStats(
             metadata=ReportMetadata(
                 date_range=DateRange(
@@ -104,12 +135,77 @@ class SleepStatsProcessor:
                 ),
                 total_sessions=total_sessions,
                 days_covered=days_covered,
+                days_with_data=consistency_data["nights_tracked"],
                 report_type=report_type,
             ),
-            duration=SleepDuration(**duration_data),
+            duration=SleepDuration(**night_data["duration"]),
             type_distribution=SleepTypeDistribution(**type_distribution_data),
             timing=SleepTiming(**timing_data),
-            quality=SleepQuality(**quality_data),
+            quality=SleepQuality(**quality_data, **night_data["fragmentation"]),
+            consistency=SleepConsistency(**consistency_data),
+            trend=trend,
+        )
+
+    def _compute_trend(
+        self,
+        patient_id: str,
+        start_datetime: datetime,
+        end_datetime: datetime,
+        current: dict,
+        current_type_dist: dict,
+        current_quality: dict,
+        sleep_checkins: List[dict] = None,
+    ) -> "SleepTrend | None":
+        """Delta vs the immediately preceding window of equal length. Null unless
+        the previous window actually had nights to compare against."""
+        prev_start = start_datetime - (end_datetime - start_datetime)
+        prev_start_str = prev_start.strftime("%Y-%m-%dT%H:%M:%S")
+        start_str = start_datetime.strftime("%Y-%m-%dT%H:%M:%S")
+        prev_days = (start_datetime - prev_start).days or 1
+        prev_checkins = self._checkins_in(sleep_checkins or [], prev_start, start_datetime)
+
+        prev = SleepNightStatistics.fetch(
+            self.clickhouse_store, patient_id, prev_start_str, start_str, prev_days,
+            sleep_checkins=prev_checkins,
+        )["consistency"]
+
+        if prev["nights_tracked"] <= 0:
+            return None
+
+        prev_type_dist = SleepTypeDistributionStatistics.fetch(
+            self.clickhouse_store, patient_id, prev_start_str, start_str, prev_days,
+        )
+        prev_quality = SleepQualityStatistics.fetch(
+            self.clickhouse_store, patient_id, prev_start_str, start_str,
+        )
+
+        def delta(cur, old):
+            return None if cur is None or old is None else round(cur - old, 1)
+
+        def stage_delta(stage):
+            return delta(
+                _stage_per_day(current_type_dist, stage),
+                _stage_per_day(prev_type_dist, stage),
+            )
+
+        return SleepTrend(
+            previous_average_sleep_minutes=prev["average_nightly_sleep_minutes"],
+            delta_average_sleep_minutes=delta(
+                current["average_nightly_sleep_minutes"],
+                prev["average_nightly_sleep_minutes"],
+            ),
+            previous_consistency_score=prev["consistency_score"],
+            delta_consistency_score=delta(
+                current["consistency_score"], prev["consistency_score"],
+            ),
+            delta_deep_minutes=stage_delta("sleep_deep"),
+            delta_rem_minutes=stage_delta("sleep_rem"),
+            delta_light_minutes=stage_delta("sleep_light"),
+            delta_awake_minutes=stage_delta("sleep_awake"),
+            delta_efficiency=delta(
+                current_quality.get("sleep_efficiency"),
+                prev_quality.get("sleep_efficiency"),
+            ),
         )
 
     def _process_multiple_periods(
@@ -117,6 +213,8 @@ class SleepStatsProcessor:
         patient_id: str,
         periods: List[dict],
         report_type: str,
+        sleep_checkins: List[dict] = None,
+        recommended_min: float = 420.0,
     ) -> List[SleepStats]:
         stats = []
         for period in periods:
@@ -126,6 +224,8 @@ class SleepStatsProcessor:
                     period["start_date"],
                     period["end_date"],
                     report_type,
+                    sleep_checkins,
+                    recommended_min,
                 )
             )
         return stats
