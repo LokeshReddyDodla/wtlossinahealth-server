@@ -23,6 +23,7 @@ from lib.schemas.day_view import (
     Lanes,
     OnCurve,
     SleepLane,
+    SpineSource,
     VitalsRollup,
 )
 from lib.services.day_view import mappers
@@ -125,6 +126,7 @@ class DayViewService:
             doses=dose_markers,
             mood=moods,
             vitals=bp,
+            hr=mappers.hr_hourly(hr) if spine.source != SpineSource.hr else [],
         )
         return DayView(date=day, tz=tz_name, spine=spine,
                        on_curve=on_curve, lanes=lanes, header=header, tasks=task_items)
@@ -134,6 +136,8 @@ class DayViewService:
         self, patient_id: str, day: date, domain: str, *, postgres_session: AsyncSession
     ) -> dict | None:
         """Drill-down: the full pre-computed report for one domain, by (domain, date)."""
+        if domain == "vitals":
+            return await self.repo.vitals_detail(patient_id, day)
         service = {
             "glucose": self.cgm_report_service,
             "meal": self.meal_report_service,

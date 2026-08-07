@@ -136,6 +136,16 @@ def meal_markers(report: dict | None) -> list[MealMarker]:
     return out
 
 
+# ── Heart-rate lane ──────────────────────────────────────────────────────────
+
+def hr_hourly(points: list[Point]) -> list[Point]:
+    """Raw HR samples → 24 hourly-average buckets (bpm) for the sparkline lane."""
+    buckets: dict[int, list[float]] = {}
+    for h, v in points:
+        buckets.setdefault(int(h), []).append(v)
+    return [(float(b), round(sum(vs) / len(vs), 1)) for b, vs in sorted(buckets.items())]
+
+
 # ── Steps lane ───────────────────────────────────────────────────────────────
 
 def steps_lane(report: dict | None) -> StepsLane:

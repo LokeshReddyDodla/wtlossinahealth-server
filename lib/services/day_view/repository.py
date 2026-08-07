@@ -45,6 +45,25 @@ logger = logging.getLogger(__name__)
 _SLOT_HOURS = {"MORNING": 9, "AFTERNOON": 14, "EVENING": 20, "NIGHT": 22}
 _SLEEP_STAGES = ("sleep_deep", "sleep_light", "sleep_rem", "sleep_awake")
 
+# label + unit per stored vital type — both device (blood_oxygen) and manual
+# (spo2) naming variants are keyed so neither is dropped.
+_VITAL_META = {
+    "systolic_bp": ("Systolic BP", "mmHg"),
+    "diastolic_bp": ("Diastolic BP", "mmHg"),
+    "heart_rate": ("Heart rate", "bpm"),
+    "resting_heart_rate": ("Resting HR", "bpm"),
+    "blood_oxygen": ("SpO₂", "%"),
+    "spo2": ("SpO₂", "%"),
+    "respiratory_rate": ("Respiratory rate", "br/min"),
+    "body_temperature": ("Temperature", "°F"),
+    "temperature": ("Temperature", "°F"),
+    "weight": ("Weight", "kg"),
+    "a1c": ("HbA1c", "%"),
+    "creatinine": ("Creatinine", "mg/dL"),
+    "ketones": ("Ketones", "mmol/L"),
+}
+_VITAL_ORDER = {t: i for i, t in enumerate(_VITAL_META)}
+
 
 class DayViewRepository:
     def __init__(self, clickhouse_store: ClickHouseStore):
@@ -121,6 +140,37 @@ class DayViewRepository:
                                        systolic=bp.get("systolic_bp"),
                                        diastolic=bp.get("diastolic_bp")))
         return out
+
+    async def vitals_detail(self, patient_id: str, day: date) -> dict:
+        """Every vital reading for the day, grouped by type with avg/min/max/latest.
+
+        Selects all types present (no hardcoded filter) so no naming variant is
+        silently dropped.
+        """
+        rows = await self._ch(
+            "SELECT type, value, time FROM aihealth.vitals_data FINAL "
+            "WHERE patient_id = %(pid)s AND toDate(time) = %(d)s ORDER BY time",
+            {"pid": patient_id, "d": str(day)},
+        )
+        by_type: dict[str, list[Point]] = {}
+        for vtype, value, ts in rows:
+            h = hour_of(ts)
+            if h is not None:
+                by_type.setdefault(vtype, []).append((round(h, 3), float(value)))
+
+        vitals = []
+        for vtype, readings in by_type.items():
+            values = [v for _, v in readings]
+            label, unit = _VITAL_META.get(vtype, (vtype.replace("_", " ").title(), ""))
+            vitals.append({
+                "type": vtype, "label": label, "unit": unit,
+                "avg": round(sum(values) / len(values), 1),
+                "min": min(values), "max": max(values),
+                "latest": readings[-1][1], "count": len(values),
+                "readings": readings,
+            })
+        vitals.sort(key=lambda x: _VITAL_ORDER.get(x["type"], 999))
+        return {"date": str(day), "vitals": vitals}
 
     # ── Postgres (ported from PatientTimelineService, typed output) ──────────
 
