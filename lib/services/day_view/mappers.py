@@ -22,6 +22,7 @@ from lib.schemas.day_view import (
     SpineSource,
     StageSpan,
     StepsLane,
+    WorkoutMarker,
 )
 
 _STAGE_MINUTES = 60.0  # inactive_duration / durations are in minutes
@@ -132,6 +133,26 @@ def meal_markers(report: dict | None) -> list[MealMarker]:
             comparison=gc.get("outcome"),
             predicted=predicted,
             carbs_g=macros.get("carbohydrates"),
+        ))
+    return out
+
+
+def workout_markers(report: dict | None) -> list[WorkoutMarker]:
+    """Per-session workouts from the fitness report → on-curve glyphs, positioned
+    by `start_time`."""
+    if not report:
+        return []
+    out: list[WorkoutMarker] = []
+    for w in report.get("workouts") or []:
+        h = hour_of(w.get("start_time"))
+        if h is None:
+            continue
+        dur = w.get("total_duration")
+        out.append(WorkoutMarker(
+            t=round(h, 3),
+            type=w.get("type") or "Workout",
+            minutes=int(dur) if dur else None,
+            kcal=w.get("total_energy"),
         ))
     return out
 
