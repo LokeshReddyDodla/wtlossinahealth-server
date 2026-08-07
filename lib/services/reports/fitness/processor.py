@@ -1,8 +1,13 @@
 import logging
 import math
-from datetime import datetime
+from datetime import date, datetime
 from typing import Dict, List, Optional
+from uuid import UUID
 
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
+
+from lib.models.patient_workout import PatientWorkout
 from lib.schemas.fitness_stats import (
     ActivityDistribution,
     DateRange,
@@ -37,10 +42,11 @@ class FitnessReportType:
 
 
 class FitnessStatsProcessor:
-    def __init__(self, clickhouse_store):
+    def __init__(self, clickhouse_store, postgres_store):
         self.clickhouse_store = clickhouse_store
+        self.postgres_store = postgres_store
 
-    def generate_custom_report(
+    async def generate_custom_report(
         self,
         patient_id: str,
         start_date: datetime,
@@ -48,18 +54,19 @@ class FitnessStatsProcessor:
         report_type: str,
     ) -> Optional[FitnessStats]:
         try:
-            report = self._process_period(
-                patient_id, start_date, end_date, report_type
+            manual = await self._fetch_manual_workouts(
+                patient_id, start_date.date(), end_date.date()
             )
-
-            return report
+            return self._process_period(
+                patient_id, start_date, end_date, report_type, manual
+            )
         except Exception as e:
             logging.error(
                 f"Failed to generate {report_type} report for {patient_id} from {start_date} to {end_date}: {e}"
             )
         return None
 
-    def generate_report(
+    async def generate_report(
         self,
         patient_id: str,
         start_date: datetime,
@@ -70,12 +77,17 @@ class FitnessStatsProcessor:
             FitnessReportType.WEEKLY,
         ],
     ) -> List[FitnessStats]:
+        # Device-synced samples come from ClickHouse, manually-logged workouts
+        # from Postgres — fetch the latter once and fold into every covering report.
+        manual = await self._fetch_manual_workouts(
+            patient_id, start_date.date(), end_date.date()
+        )
         reports: List[FitnessStats] = []
 
         if FitnessReportType.MONTHLY in report_types:
             reports.append(
                 self._process_period(
-                    patient_id, start_date, end_date, FitnessReportType.MONTHLY
+                    patient_id, start_date, end_date, FitnessReportType.MONTHLY, manual
                 )
             )
 
@@ -83,7 +95,7 @@ class FitnessStatsProcessor:
             week_periods = WeekWisePeriod(start_date, end_date).periods
             reports.extend(
                 self._process_multiple_periods(
-                    patient_id, week_periods, FitnessReportType.WEEKLY
+                    patient_id, week_periods, FitnessReportType.WEEKLY, manual
                 )
             )
 
@@ -91,7 +103,7 @@ class FitnessStatsProcessor:
             day_periods = DayWisePeriod(start_date, end_date).periods
             reports.extend(
                 self._process_multiple_periods(
-                    patient_id, day_periods, FitnessReportType.DAILY
+                    patient_id, day_periods, FitnessReportType.DAILY, manual
                 )
             )
 
@@ -103,6 +115,7 @@ class FitnessStatsProcessor:
         start_date: datetime,
         end_date: datetime,
         report_type: str,
+        manual_workouts: Optional[List[PatientWorkout]] = None,
     ) -> FitnessStats:
         start_date_str = start_date.strftime("%Y-%m-%dT%H:%M:%S")
         end_date_str = end_date.strftime("%Y-%m-%dT%H:%M:%S")
@@ -151,6 +164,11 @@ class FitnessStatsProcessor:
         )
 
         workouts = self._fetch_workouts(patient_id, start_date_str, end_date_str)
+        manual = self._manual_summaries(
+            manual_workouts, start_date.date(), end_date.date()
+        )
+        if manual:
+            workouts = (workouts or []) + manual
 
         days_covered = (end_date.date() - start_date.date()).days + 1
 
@@ -213,6 +231,7 @@ class FitnessStatsProcessor:
         patient_id: str,
         periods: List[Dict[str, datetime]],
         report_type: str,
+        manual_workouts: Optional[List[PatientWorkout]] = None,
     ) -> List[FitnessStats]:
         stats = []
         for period in periods:
@@ -222,6 +241,7 @@ class FitnessStatsProcessor:
                     period["start_date"],
                     period["end_date"],
                     report_type,
+                    manual_workouts,
                 )
             )
         return stats
@@ -304,3 +324,54 @@ class FitnessStatsProcessor:
             )
             for row in data
         ]
+
+    async def _fetch_manual_workouts(
+        self, patient_id: str, start_date: date, end_date: date
+    ) -> List[PatientWorkout]:
+        """Manually-logged workouts (Postgres). Segments carry the real
+        type/duration — the top-level columns are legacy — so eager-load them."""
+        try:
+            async with self.postgres_store.get_session() as session:
+                result = await session.execute(
+                    select(PatientWorkout)
+                    .where(
+                        PatientWorkout.patient_id == UUID(patient_id),
+                        PatientWorkout.date >= start_date,
+                        PatientWorkout.date <= end_date,
+                    )
+                    .options(selectinload(PatientWorkout.segments))
+                )
+                return list(result.scalars().all())
+        except Exception as e:
+            logging.warning(f"Failed to fetch manual workouts for {patient_id}: {e}")
+            return []
+
+    def _manual_summaries(
+        self,
+        workouts: Optional[List[PatientWorkout]],
+        start_date: date,
+        end_date: date,
+    ) -> List[WorkoutSummary]:
+        return [
+            self._workout_summary(w)
+            for w in (workouts or [])
+            if start_date <= w.date <= end_date
+        ]
+
+    @staticmethod
+    def _workout_summary(w: PatientWorkout) -> WorkoutSummary:
+        segments = w.segments or []
+        total = sum(s.duration_minutes or 0 for s in segments) or (
+            w.duration_minutes or 0
+        )
+        types = sorted({s.type for s in segments if s.type}) or (
+            [w.type] if w.type else []
+        )
+        return WorkoutSummary(
+            type=", ".join(types).title() if types else "Workout",
+            session_count=1,
+            total_duration=float(total),
+            total_energy=float(w.calories_burned or 0),
+            source=w.source or "app",
+            workout_id=str(w.id),
+        )
