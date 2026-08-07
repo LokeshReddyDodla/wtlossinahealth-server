@@ -23,6 +23,7 @@ from lib.schemas.day_view import (
     Lanes,
     OnCurve,
     SleepLane,
+    SpineSource,
     VitalsRollup,
 )
 from lib.services.day_view import mappers
@@ -85,7 +86,7 @@ class DayViewService:
             self.repo.bp_readings(patient_id, day),
             self._postgres_bundle(pid, day, day_start, day_end, postgres_session),
         )
-        moods, symptoms, smbg, workouts, care = pg
+        moods, symptoms, smbg, care = pg
         dose_markers, doses_taken, doses_total, tasks_done, tasks_total, task_items = care
 
         # Spine degrades to the highest-fidelity series present.
@@ -117,7 +118,7 @@ class DayViewService:
         on_curve = OnCurve(
             meals=mappers.meal_markers(meal_rep),
             symptoms=symptoms,
-            workouts=workouts,
+            workouts=mappers.workout_markers(fit_rep),
         )
         lanes = Lanes(
             steps=mappers.steps_lane(fit_rep),
@@ -125,6 +126,7 @@ class DayViewService:
             doses=dose_markers,
             mood=moods,
             vitals=bp,
+            hr=mappers.hr_hourly(hr) if spine.source != SpineSource.hr else [],
         )
         return DayView(date=day, tz=tz_name, spine=spine,
                        on_curve=on_curve, lanes=lanes, header=header, tasks=task_items)
@@ -134,6 +136,8 @@ class DayViewService:
         self, patient_id: str, day: date, domain: str, *, postgres_session: AsyncSession
     ) -> dict | None:
         """Drill-down: the full pre-computed report for one domain, by (domain, date)."""
+        if domain == "vitals":
+            return await self.repo.vitals_detail(patient_id, day)
         service = {
             "glucose": self.cgm_report_service,
             "meal": self.meal_report_service,
@@ -151,12 +155,12 @@ class DayViewService:
         session: AsyncSession,
     ):
         # One AsyncSession can't run concurrent queries — sequential by design.
+        # Workouts are not fetched here — they come from the fitness report.
         moods = await self.repo.moods(pid, day_start, day_end, session)
         symptoms = await self.repo.symptoms(pid, day_start, day_end, session)
         smbg = await self.repo.smbg_points(pid, day_start, day_end, session)
-        workouts = await self.repo.workouts(pid, day, session)
         care = await self.repo.care(pid, day, session)
-        return moods, symptoms, smbg, workouts, care
+        return moods, symptoms, smbg, care
 
     @staticmethod
     async def _safe(fetch_fn, *args):

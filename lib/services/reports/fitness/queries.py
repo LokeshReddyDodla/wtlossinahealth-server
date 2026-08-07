@@ -274,14 +274,16 @@ def generate_daily_detected_workouts_query(
 def generate_workouts_query(
     patient_id: str, start_datetime: str, end_datetime: str
 ) -> str:
-    """Generate query for workout sessions."""
+    """Per-session workout rows (one per event, with timestamps) — not
+    aggregated by type."""
     return f"""
     SELECT
         type,
-        count() AS session_count,
-        SUM(dateDiff('minute', start_datetime, end_datetime)) AS total_duration,
-        SUM(value) AS total_energy,
-        any(source_platform) AS source
+        start_datetime,
+        end_datetime,
+        dateDiff('minute', start_datetime, end_datetime) AS duration,
+        value AS energy,
+        source_platform AS source
     FROM
         aihealth.fitness_data FINAL
     WHERE
@@ -290,6 +292,5 @@ def generate_workouts_query(
         AND end_datetime <= '{end_datetime}'
         AND type NOT IN ('STEPS', 'ACTIVE_ENERGY_BURNED', 'DISTANCE_WALKING_RUNNING',
                          'DISTANCE_DELTA', 'FLIGHTS_CLIMBED', 'EXERCISE_TIME')
-    GROUP BY type
-    ORDER BY total_duration DESC
+    ORDER BY start_datetime
     """

@@ -123,6 +123,7 @@ class Lanes(BaseModel):
     doses: list[DoseMarker] = []
     mood: list[MoodMarker] = []              # discrete markers; NEVER a connecting line
     vitals: list[VitalMarker] = []
+    hr: list[Point] = []                     # hourly-average bpm; empty when HR is the spine
 
 
 class GlucoseRollup(BaseModel):

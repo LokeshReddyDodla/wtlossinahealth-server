@@ -12,7 +12,7 @@ times are patient-local naive wall-clock.
 
 import asyncio
 import logging
-from datetime import date, datetime, time
+from datetime import date, datetime
 from uuid import UUID
 
 from sqlalchemy import or_, select
@@ -24,7 +24,6 @@ from lib.models.gamification import DailyTask
 from lib.models.mood_entry import MoodEntry
 from lib.models.patient_medication import PatientMedication
 from lib.models.patient_smbg import PatientSMBG
-from lib.models.patient_workout import PatientWorkout
 from lib.models.symptom_entry import SymptomEntry
 from lib.schemas.day_view import (
     DoseMarker,
@@ -34,7 +33,6 @@ from lib.schemas.day_view import (
     SymptomMarker,
     TaskItem,
     VitalMarker,
-    WorkoutMarker,
 )
 from lib.schemas.gamification import SourceType
 from lib.services.gamification.task_generator import TaskGeneratorService
@@ -44,6 +42,25 @@ logger = logging.getLogger(__name__)
 
 _SLOT_HOURS = {"MORNING": 9, "AFTERNOON": 14, "EVENING": 20, "NIGHT": 22}
 _SLEEP_STAGES = ("sleep_deep", "sleep_light", "sleep_rem", "sleep_awake")
+
+# label + unit per stored vital type — both device (blood_oxygen) and manual
+# (spo2) naming variants are keyed so neither is dropped.
+_VITAL_META = {
+    "systolic_bp": ("Systolic BP", "mmHg"),
+    "diastolic_bp": ("Diastolic BP", "mmHg"),
+    "heart_rate": ("Heart rate", "bpm"),
+    "resting_heart_rate": ("Resting HR", "bpm"),
+    "blood_oxygen": ("SpO₂", "%"),
+    "spo2": ("SpO₂", "%"),
+    "respiratory_rate": ("Respiratory rate", "br/min"),
+    "body_temperature": ("Temperature", "°F"),
+    "temperature": ("Temperature", "°F"),
+    "weight": ("Weight", "kg"),
+    "a1c": ("HbA1c", "%"),
+    "creatinine": ("Creatinine", "mg/dL"),
+    "ketones": ("Ketones", "mmol/L"),
+}
+_VITAL_ORDER = {t: i for i, t in enumerate(_VITAL_META)}
 
 # clickhouse-driver's Client is one non-concurrent socket connection — two
 # queries in flight at once corrupt the wire protocol ("Simultaneous queries on
@@ -129,6 +146,37 @@ class DayViewRepository:
                                        diastolic=bp.get("diastolic_bp")))
         return out
 
+    async def vitals_detail(self, patient_id: str, day: date) -> dict:
+        """Every vital reading for the day, grouped by type with avg/min/max/latest.
+
+        Selects all types present (no hardcoded filter) so no naming variant is
+        silently dropped.
+        """
+        rows = await self._ch(
+            "SELECT type, value, time FROM aihealth.vitals_data FINAL "
+            "WHERE patient_id = %(pid)s AND toDate(time) = %(d)s ORDER BY time",
+            {"pid": patient_id, "d": str(day)},
+        )
+        by_type: dict[str, list[Point]] = {}
+        for vtype, value, ts in rows:
+            h = hour_of(ts)
+            if h is not None:
+                by_type.setdefault(vtype, []).append((round(h, 3), float(value)))
+
+        vitals = []
+        for vtype, readings in by_type.items():
+            values = [v for _, v in readings]
+            label, unit = _VITAL_META.get(vtype, (vtype.replace("_", " ").title(), ""))
+            vitals.append({
+                "type": vtype, "label": label, "unit": unit,
+                "avg": round(sum(values) / len(values), 1),
+                "min": min(values), "max": max(values),
+                "latest": readings[-1][1], "count": len(values),
+                "readings": readings,
+            })
+        vitals.sort(key=lambda x: _VITAL_ORDER.get(x["type"], 999))
+        return {"date": str(day), "vitals": vitals}
+
     # ── Postgres (ported from PatientTimelineService, typed output) ──────────
 
     async def moods(self, pid: UUID, day_start: datetime, day_end: datetime,
@@ -186,32 +234,6 @@ class DayViewRepository:
             h = hour_of(r.reading_time)
             if h is not None:
                 out.append((round(h, 3), float(r.glucose_level)))
-        return out
-
-    async def workouts(self, pid: UUID, day: date,
-                       session: AsyncSession) -> list[WorkoutMarker]:
-        # ported from PatientTimelineService._query_workouts (per-session, has a start time)
-        rows = (await session.execute(
-            select(PatientWorkout).where(
-                PatientWorkout.patient_id == pid,
-                PatientWorkout.date == day,
-            ).options(selectinload(PatientWorkout.segments))
-        )).scalars().all()
-        out: list[WorkoutMarker] = []
-        for w in rows:
-            ts = datetime.combine(w.date, w.time or time(12, 0))
-            h = hour_of(ts)
-            if h is None:
-                continue
-            segments = w.segments or []
-            total = sum(s.duration_minutes or 0 for s in segments) or (w.duration_minutes or 0)
-            types = sorted({s.type for s in segments if s.type}) or ([w.type] if w.type else [])
-            out.append(WorkoutMarker(
-                t=round(h, 3),
-                type=", ".join(types).title() if types else "Workout",
-                minutes=int(total) or None,
-                kcal=w.calories_burned,
-            ))
         return out
 
     async def care(self, pid: UUID, day: date, session: AsyncSession):
