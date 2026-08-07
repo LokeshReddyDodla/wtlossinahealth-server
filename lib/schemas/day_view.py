@@ -97,7 +97,8 @@ class DoseMarker(BaseModel):
     t: float
     slot: str                                # morning | afternoon | evening | night
     label: str                               # short glyph, e.g. "M" / "S"
-    taken: bool
+    status: Literal["taken", "missed", "scheduled"] = "scheduled"
+    taken: bool                              # shorthand for status == "taken"
     at: str | None = None                    # HH:MM when taken, else None
 
 
@@ -157,6 +158,17 @@ class CareRollup(BaseModel):
     tasks_total: int = 0
 
 
+class TaskItem(BaseModel):
+    title: str
+    status: Literal["pending", "completed", "skipped", "expired"]
+    task_type: str                           # e.g. HIT_STEP_GOAL, TAKE_MEDICATION_MORNING
+    category: str                            # source_type: medication | diet_plan | quest | ...
+    xp: int = 0
+    at: str | None = None                    # HH:MM completed, else None
+    target: float | None = None              # for progress tasks (e.g. steps 8200/10000)
+    current: float | None = None
+
+
 class Header(BaseModel):
     """One rollup number per domain — the day at a glance."""
 
@@ -175,5 +187,6 @@ class DayView(BaseModel):
     on_curve: OnCurve = Field(default_factory=OnCurve)
     lanes: Lanes = Field(default_factory=Lanes)
     header: Header = Field(default_factory=Header)
+    tasks: list[TaskItem] = []
     # Deterministic report IDs for drill-down — derived at read, never stored.
     reports: dict[str, str] = {}

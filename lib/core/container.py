@@ -646,7 +646,10 @@ container.register(
 # 🔹 Fitness Stats Processor
 container.register(
     FitnessStatsProcessor,
-    lambda: FitnessStatsProcessor(clickhouse_store=container.resolve(ClickHouseStore)),
+    lambda: FitnessStatsProcessor(
+        clickhouse_store=container.resolve(ClickHouseStore),
+        postgres_store=container.resolve(PostgresStore),
+    ),
 )
 
 # 🔹 Glucose Stats Processor

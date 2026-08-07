@@ -190,7 +190,7 @@ class CGMStatsProcessor:
             self.clickhouse_store, patient_id, start_date_str, end_date_str
         )
 
-        fitness_report = self.fitness_stats_processor.generate_custom_report(
+        fitness_report = await self.fitness_stats_processor.generate_custom_report(
             patient_id,
             start_date,
             end_date,
