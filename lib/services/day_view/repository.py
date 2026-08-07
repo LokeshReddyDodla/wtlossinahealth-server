@@ -207,13 +207,9 @@ class DayViewRepository:
         return out
 
     async def care(self, pid: UUID, day: date, session: AsyncSession):
-        """Scheduled doses (from active medications) with taken/missed overlay.
+        """Doses (medications = which are due, tasks = taken/missed) + task counts.
 
-        Hybrid: `PatientMedication` is the source of truth for *which* doses are
-        due on `day`; `DailyTask` supplies *taken/missed*. A due dose with no
-        task is emitted as "scheduled" (adherence untracked) rather than dropped,
-        so a prescribed patient never shows a blank lane. Task counts fold in the
-        non-medication tasks too.
+        A due dose with no task is "scheduled" rather than dropped.
         Returns (dose_markers, doses_taken, doses_total, tasks_done, tasks_total).
         """
         tasks = (await session.execute(
@@ -226,17 +222,15 @@ class DayViewRepository:
         tasks_total = len(tasks)
         tasks_done = sum(1 for t in tasks if t.status == "completed")
 
-        # One medication task per slot — prefer a completed row when several collide.
         task_by_slot: dict[str, DailyTask] = {}
         for t in tasks:
-            if t.source_type != SourceType.MEDICATION.value:  # stored lowercase "medication"
+            if t.source_type != SourceType.MEDICATION.value:  # stored lowercase
                 continue
             slot = (t.task_type or "").replace("TAKE_MEDICATION_", "").lower()
             cur = task_by_slot.get(slot)
             if cur is None or (t.status == "completed" and cur.status != "completed"):
                 task_by_slot[slot] = t
 
-        # Which doses are actually due today, straight from active medications.
         meds = (await session.execute(
             select(PatientMedication).where(
                 PatientMedication.patient_id == pid,
@@ -251,7 +245,7 @@ class DayViewRepository:
 
         slot_names: dict[str, list[str]] = {}
         for med in meds:
-            if not TaskGeneratorService._is_medication_due(med, day):  # shared schedule rule
+            if not TaskGeneratorService._is_medication_due(med, day):
                 continue
             for dose in (med.doses or []):
                 slot = (dose.get("slot") or "").lower()
@@ -260,7 +254,6 @@ class DayViewRepository:
 
         markers: list[DoseMarker] = []
         doses_taken = doses_total = 0
-        # Fixed order → markers already time-sorted; union of due + tasked slots.
         for slot in ("morning", "afternoon", "evening", "night"):
             task = task_by_slot.get(slot)
             names = slot_names.get(slot)
