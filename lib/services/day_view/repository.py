@@ -15,13 +15,14 @@ import logging
 from datetime import date, datetime, time
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from lib.core.clickhouse_store import ClickHouseStore
 from lib.models.gamification import DailyTask
 from lib.models.mood_entry import MoodEntry
+from lib.models.patient_medication import PatientMedication
 from lib.models.patient_smbg import PatientSMBG
 from lib.models.patient_workout import PatientWorkout
 from lib.models.symptom_entry import SymptomEntry
@@ -34,6 +35,8 @@ from lib.schemas.day_view import (
     VitalMarker,
     WorkoutMarker,
 )
+from lib.schemas.gamification import SourceType
+from lib.services.gamification.task_generator import TaskGeneratorService
 from lib.services.day_view.mappers import hour_of
 
 logger = logging.getLogger(__name__)
@@ -204,41 +207,81 @@ class DayViewRepository:
         return out
 
     async def care(self, pid: UUID, day: date, session: AsyncSession):
-        """Doses + task counts in one query.
+        """Scheduled doses (from active medications) with taken/missed overlay.
 
-        Ported from PatientTimelineService._query_medications for the dose
-        taken/missed derivation; task counts fold in the non-medication tasks.
+        Hybrid: `PatientMedication` is the source of truth for *which* doses are
+        due on `day`; `DailyTask` supplies *taken/missed*. A due dose with no
+        task is emitted as "scheduled" (adherence untracked) rather than dropped,
+        so a prescribed patient never shows a blank lane. Task counts fold in the
+        non-medication tasks too.
         Returns (dose_markers, doses_taken, doses_total, tasks_done, tasks_total).
         """
-        rows = (await session.execute(
+        tasks = (await session.execute(
             select(DailyTask).where(
                 DailyTask.patient_id == pid,
                 DailyTask.task_date == day,
             ).order_by(DailyTask.completed_at.nulls_last())
         )).scalars().all()
 
-        tasks_total = len(rows)
-        tasks_done = sum(1 for t in rows if t.status == "completed")
+        tasks_total = len(tasks)
+        tasks_done = sum(1 for t in tasks if t.status == "completed")
+
+        # One medication task per slot — prefer a completed row when several collide.
+        task_by_slot: dict[str, DailyTask] = {}
+        for t in tasks:
+            if t.source_type != SourceType.MEDICATION.value:  # stored lowercase "medication"
+                continue
+            slot = (t.task_type or "").replace("TAKE_MEDICATION_", "").lower()
+            cur = task_by_slot.get(slot)
+            if cur is None or (t.status == "completed" and cur.status != "completed"):
+                task_by_slot[slot] = t
+
+        # Which doses are actually due today, straight from active medications.
+        meds = (await session.execute(
+            select(PatientMedication).where(
+                PatientMedication.patient_id == pid,
+                PatientMedication.status == "active",
+                PatientMedication.start_date <= day,
+                or_(
+                    PatientMedication.end_date.is_(None),
+                    PatientMedication.end_date >= day,
+                ),
+            )
+        )).scalars().all()
+
+        slot_names: dict[str, list[str]] = {}
+        for med in meds:
+            if not TaskGeneratorService._is_medication_due(med, day):  # shared schedule rule
+                continue
+            for dose in (med.doses or []):
+                slot = (dose.get("slot") or "").lower()
+                if slot:
+                    slot_names.setdefault(slot, []).append(med.name)
 
         markers: list[DoseMarker] = []
         doses_taken = doses_total = 0
-        for task in rows:
-            if task.source_type != "MEDICATION":
+        # Fixed order → markers already time-sorted; union of due + tasked slots.
+        for slot in ("morning", "afternoon", "evening", "night"):
+            task = task_by_slot.get(slot)
+            names = slot_names.get(slot)
+            if not names and task is None:
                 continue
             doses_total += 1
-            is_taken = task.status == "completed" and task.completed_at is not None
-            slot = (task.task_type or "").replace("TAKE_MEDICATION_", "").upper()
-            if is_taken:
-                ts = task.completed_at
+
+            src = names[0] if names else (task.description if task else "")
+            label = (src or slot or "•").strip()[:1].upper()
+
+            if task is not None and task.status == "completed" and task.completed_at is not None:
+                status = "taken"
                 doses_taken += 1
-                at = ts.strftime("%H:%M")
+                h = hour_of(task.completed_at)
+                at = task.completed_at.strftime("%H:%M")
             else:
-                ts = datetime.combine(day, time(_SLOT_HOURS.get(slot, 12), 0))
+                status = "missed" if task is not None else "scheduled"
+                h = float(_SLOT_HOURS[slot.upper()])
                 at = None
-            h = hour_of(ts)
             if h is None:
                 continue
-            label = (task.description or task.title or slot or "•").strip()[:1].upper()
-            markers.append(DoseMarker(t=round(h, 3), slot=slot.lower(),
-                                      label=label, taken=is_taken, at=at))
+            markers.append(DoseMarker(t=round(h, 3), slot=slot, label=label,
+                                      status=status, taken=status == "taken", at=at))
         return markers, doses_taken, doses_total, tasks_done, tasks_total

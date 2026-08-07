@@ -97,6 +97,11 @@ class DoseMarker(BaseModel):
     t: float
     slot: str                                # morning | afternoon | evening | night
     label: str                               # short glyph, e.g. "M" / "S"
+    # taken: a completed medication task exists. missed: a task exists but was
+    # never completed. scheduled: the medication is due today but no task tracks
+    # it yet — adherence unknown, never a blank lane. `taken` stays as the bool
+    # shorthand (== status "taken") for existing consumers.
+    status: Literal["taken", "missed", "scheduled"] = "scheduled"
     taken: bool
     at: str | None = None                    # HH:MM when taken, else None
 
