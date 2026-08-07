@@ -62,6 +62,12 @@ _VITAL_META = {
 }
 _VITAL_ORDER = {t: i for i, t in enumerate(_VITAL_META)}
 
+# clickhouse-driver's Client is one non-concurrent socket connection — two
+# queries in flight at once corrupt the wire protocol ("Simultaneous queries on
+# single connection"). The resolver fans out several reads via gather, so
+# serialize every ClickHouse call onto the shared connection.
+_CH_LOCK = asyncio.Lock()
+
 
 class DayViewRepository:
     def __init__(self, clickhouse_store: ClickHouseStore):
@@ -71,9 +77,10 @@ class DayViewRepository:
 
     async def _ch(self, sql: str, params: dict) -> list[tuple]:
         try:
-            return await asyncio.to_thread(
-                self.clickhouse_store.client.execute, sql, params
-            )
+            async with _CH_LOCK:
+                return await asyncio.to_thread(
+                    self.clickhouse_store.client.execute, sql, params
+                )
         except Exception:
             logger.exception("day-view clickhouse query failed")
             return []
