@@ -276,7 +276,8 @@ class DayViewRepository:
                 continue
             doses_total += 1
 
-            src = names[0] if names else (task.description if task else "")
+            med_name = ", ".join(names) if names else (task.description if task else None)
+            src = med_name or ""
             label = (src or slot or "•").strip()[:1].upper()
 
             if task is not None and task.status == "completed" and task.completed_at is not None:
@@ -290,6 +291,6 @@ class DayViewRepository:
                 at = None
             if h is None:
                 continue
-            markers.append(DoseMarker(t=round(h, 3), slot=slot, label=label,
+            markers.append(DoseMarker(t=round(h, 3), slot=slot, label=label, name=med_name,
                                       status=status, taken=status == "taken", at=at))
         return markers, doses_taken, doses_total, tasks_done, tasks_total, task_items

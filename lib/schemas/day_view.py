@@ -97,6 +97,7 @@ class DoseMarker(BaseModel):
     t: float
     slot: str                                # morning | afternoon | evening | night
     label: str                               # short glyph, e.g. "M" / "S"
+    name: str | None = None                  # medication name(s), e.g. "Metformin 500mg"
     status: Literal["taken", "missed", "scheduled"] = "scheduled"
     taken: bool                              # shorthand for status == "taken"
     at: str | None = None                    # HH:MM when taken, else None
