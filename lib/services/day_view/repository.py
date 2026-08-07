@@ -32,6 +32,7 @@ from lib.schemas.day_view import (
     Point,
     StageSpan,
     SymptomMarker,
+    TaskItem,
     VitalMarker,
     WorkoutMarker,
 )
@@ -222,6 +223,20 @@ class DayViewRepository:
         tasks_total = len(tasks)
         tasks_done = sum(1 for t in tasks if t.status == "completed")
 
+        task_items = [
+            TaskItem(
+                title=t.title,
+                status=t.status,
+                task_type=t.task_type,
+                category=t.source_type,
+                xp=t.xp_reward or 0,
+                at=t.completed_at.strftime("%H:%M") if t.completed_at else None,
+                target=t.target_value,
+                current=t.current_value,
+            )
+            for t in tasks
+        ]
+
         task_by_slot: dict[str, DailyTask] = {}
         for t in tasks:
             if t.source_type != SourceType.MEDICATION.value:  # stored lowercase
@@ -277,4 +292,4 @@ class DayViewRepository:
                 continue
             markers.append(DoseMarker(t=round(h, 3), slot=slot, label=label,
                                       status=status, taken=status == "taken", at=at))
-        return markers, doses_taken, doses_total, tasks_done, tasks_total
+        return markers, doses_taken, doses_total, tasks_done, tasks_total, task_items

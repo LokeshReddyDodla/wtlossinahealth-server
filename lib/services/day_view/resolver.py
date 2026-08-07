@@ -86,7 +86,7 @@ class DayViewService:
             self._postgres_bundle(pid, day, day_start, day_end, postgres_session),
         )
         moods, symptoms, smbg, workouts, care = pg
-        dose_markers, doses_taken, doses_total, tasks_done, tasks_total = care
+        dose_markers, doses_taken, doses_total, tasks_done, tasks_total, task_items = care
 
         # Spine degrades to the highest-fidelity series present.
         spine = mappers.select_spine(cgm_rep, smbg, hr)
@@ -127,7 +127,7 @@ class DayViewService:
             vitals=bp,
         )
         return DayView(date=day, tz=tz_name, spine=spine,
-                       on_curve=on_curve, lanes=lanes, header=header)
+                       on_curve=on_curve, lanes=lanes, header=header, tasks=task_items)
 
     @with_postgres_session
     async def fetch_domain_report(
