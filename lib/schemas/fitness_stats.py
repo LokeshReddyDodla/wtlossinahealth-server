@@ -63,11 +63,13 @@ class FitnessTrend(BaseModel):
 
 class WorkoutSummary(BaseModel):
     type: str
-    session_count: int
-    total_duration: float
-    total_energy: float
-    source: str = "app"  # actual source_platform from sync, or "app" for manual
-    workout_id: Optional[str] = None  # UUID for manual workouts, None for synced
+    session_count: int = 1
+    total_duration: float                    # minutes (this session)
+    total_energy: float                      # kcal (this session)
+    source: str = "app"                      # source_platform from sync, or "app" for manual
+    workout_id: Optional[str] = None         # UUID for manual workouts, None for synced
+    start_time: Optional[str] = None         # ISO datetime; one entry per session
+    end_time: Optional[str] = None           # ISO datetime
 
 
 class FitnessStats(BaseModel):

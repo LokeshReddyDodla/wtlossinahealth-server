@@ -1,6 +1,6 @@
 import logging
 import math
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta
 from typing import Dict, List, Optional
 from uuid import UUID
 
@@ -314,13 +314,20 @@ class FitnessStatsProcessor:
         data = self.clickhouse_store.client.execute(query)
         if not data:
             return None
+
+        def _iso(v):
+            return v.isoformat() if hasattr(v, "isoformat") else str(v)
+
+        # row: type, start_datetime, end_datetime, duration, energy, source
         return [
             WorkoutSummary(
                 type=row[0],
-                session_count=row[1],
-                total_duration=row[2],
-                total_energy=row[3],
-                source=row[4] if len(row) > 4 and row[4] else "synced",
+                session_count=1,
+                start_time=_iso(row[1]),
+                end_time=_iso(row[2]),
+                total_duration=float(row[3]),
+                total_energy=float(row[4]),
+                source=row[5] if len(row) > 5 and row[5] else "synced",
             )
             for row in data
         ]
@@ -367,6 +374,9 @@ class FitnessStatsProcessor:
         types = sorted({s.type for s in segments if s.type}) or (
             [w.type] if w.type else []
         )
+        # Naive patient-local; noon fallback when no time was recorded.
+        start = datetime.combine(w.date, w.time or time(12, 0))
+        end = start + timedelta(minutes=total)
         return WorkoutSummary(
             type=", ".join(types).title() if types else "Workout",
             session_count=1,
@@ -374,4 +384,6 @@ class FitnessStatsProcessor:
             total_energy=float(w.calories_burned or 0),
             source=w.source or "app",
             workout_id=str(w.id),
+            start_time=start.isoformat(),
+            end_time=end.isoformat(),
         )
