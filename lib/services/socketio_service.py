@@ -240,7 +240,7 @@ async def toggleReaction(sid, data):
             message_id
         )
 
-        # Emit the updated reaction event to all participants in the chat
+        # Actor already applied the reaction optimistically — echo to everyone else.
         await chat_notification_service.notify_participants(
             message_key=EmitMessageKeyEnum.MESSAGE_UPDATED.value,
             data={
@@ -248,6 +248,7 @@ async def toggleReaction(sid, data):
                 "message": updated_message,
             },
             chat_id=chat_id,
+            exclude_user_id=user_id,
         )
 
         return {

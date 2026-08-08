@@ -25,12 +25,13 @@ class ChatMessagingService(BaseChatService):
         try:
             message = self._create_message_instance(message_data)
             saved_message = await self._save_message_to_db(message)
-            await self._update_chat_on_new_message(
-                message, message_data.sender_id
-            )
 
+            # Read the chat once and reuse it for the unread update and the kind.
             chat = await self.mongo_store.db["chats"].find_one(
                 {"_id": message_data.chat_id}
+            )
+            await self._update_chat_on_new_message(
+                message, message_data.sender_id, chat
             )
             chat_kind = (chat or {}).get("kind", "direct")
 
@@ -272,9 +273,23 @@ class ChatMessagingService(BaseChatService):
         return message_dict
 
     async def _update_chat_on_new_message(
-        self, message: ChatMessage, sender_id: str
+        self, message: ChatMessage, sender_id: str, chat: Optional[dict] = None
     ):
-        """Update the chat document after a new message is added."""
+        """Set last_message and bump every non-sender's unread in one write.
+
+        `chat` may be passed by the caller to avoid an extra read; `sender_id`
+        is kept at +0 so its key exists without counting the message as unread.
+        """
+        if chat is None:
+            chat = await self.mongo_store.db["chats"].find_one(
+                {"_id": message.chat_id}, {"participants.id": 1}
+            )
+        inc = {f"unread_counts.{sender_id}": 0}
+        for participant in (chat or {}).get("participants", []):
+            participant_id = participant["id"]
+            if participant_id != sender_id:
+                inc[f"unread_counts.{participant_id}"] = 1
+
         await self.mongo_store.db["chats"].update_one(
             {"_id": message.chat_id},
             {
@@ -282,20 +297,9 @@ class ChatMessagingService(BaseChatService):
                     "last_message": message.id,
                     "updated_at": datetime.utcnow(),
                 },
-                "$inc": {f"unread_counts.{sender_id}": 0},
+                "$inc": inc,
             },
         )
-        chat = await self.mongo_store.db["chats"].find_one(
-            {"_id": message.chat_id}
-        )
-        if chat:
-            for participant in chat["participants"]:
-                participant_id = participant["id"]
-                if participant_id != sender_id:
-                    await self.mongo_store.db["chats"].update_one(
-                        {"_id": message.chat_id},
-                        {"$inc": {f"unread_counts.{participant_id}": 1}},
-                    )
 
     def _create_notification_info(
         self,
