@@ -178,14 +178,22 @@ class ChatManagementService(BaseChatService):
             logger.info(f"MongoDB Error: {e}")
             raise
 
-    async def fetch_chat_messages(self, chat_id: str, user_id: str):
+    async def fetch_chat_messages(
+        self, chat_id: str, user_id: str, before=None, limit: int = 50
+    ):
         try:
-            pipeline = get_chat_messages_pipeline(chat_id)
-            return (
+            pipeline = get_chat_messages_pipeline(
+                chat_id, before=before, limit=limit
+            )
+            docs = (
                 await self.mongo_store.db["chat_messages"]
                 .aggregate(pipeline)
-                .to_list(length=None)
+                .to_list(length=limit)
             )
+            # Pipeline returns newest-first for the limit; flip to ascending so
+            # the page renders oldest → newest.
+            docs.reverse()
+            return docs
         except PyMongoError as e:
             logger.info(f"MongoDB Error: {e}")
             raise

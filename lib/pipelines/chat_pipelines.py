@@ -111,18 +111,19 @@ def get_user_messages_pipeline(
     return pipeline
 
 
-def get_chat_messages_pipeline(chat_id: str):
-    # Match condition only by chat_id
+def get_chat_messages_pipeline(chat_id: str, before=None, limit: int = 50):
+    # Page backwards from newest: match the chat (and messages older than the
+    # `before` cursor when paging), take the newest `limit`. Callers reverse the
+    # result to ascending for display.
     match_condition = {"chat_id": chat_id}
+    if before is not None:
+        match_condition["timestamp"] = {"$lt": before}
 
-    pipeline = [
-        {"$match": match_condition},  # Match the specific chat_id
-        {
-            "$sort": {"timestamp": 1}
-        },  # Sort messages by timestamp in ascending order
+    return [
+        {"$match": match_condition},
+        {"$sort": {"timestamp": -1}},
+        {"$limit": limit},
     ]
-
-    return pipeline
 
 
 def get_chat_pipeline(
