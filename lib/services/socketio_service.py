@@ -118,6 +118,11 @@ async def sendMessage(sid, data):
     if not await _authorize_chat_access(sid, chat_id, sender_id):
         return {"status": "error", "message": "Unauthorized"}
 
+    if not await chat_management_service.can_user_write_to_chat(
+        chat_id, sender_id
+    ):
+        return {"status": "error", "message": "This chat is read-only."}
+
     timestamp = datetime.datetime.now(datetime.timezone.utc)
 
     # Create a message object

@@ -207,6 +207,20 @@ class ChatManagementService(BaseChatService):
         )
         return chat is not None
 
+    async def can_user_write_to_chat(self, chat_id: str, user_id: str) -> bool:
+        """True if the user is a participant who is not read-only — a disabled
+        or archived chat marks its participants read_only and must reject writes."""
+        chat = await self.mongo_store.db["chats"].find_one(
+            {
+                "_id": chat_id,
+                "participants": {
+                    "$elemMatch": {"id": user_id, "is_read_only": {"$ne": True}}
+                },
+            },
+            {"_id": 1},
+        )
+        return chat is not None
+
     async def find_direct_chat(
         self, user_id_1: str, user_id_2: str
     ) -> Optional[str]:
