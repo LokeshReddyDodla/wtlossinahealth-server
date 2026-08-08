@@ -130,7 +130,7 @@ class GlucoseRollup(BaseModel):
     tir_pct: float | None = None
     avg: float | None = None
     gri: float | None = None
-    # [<54, 54-70, 70-180, 180-250, >250] percentages for the glance TIR bar.
+    # [<54, 54-70, 70-180, 180-250, >250] percentages.
     bands: list[float] | None = None
 
 

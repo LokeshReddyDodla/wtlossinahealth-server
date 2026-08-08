@@ -266,8 +266,7 @@ def activity_rollup(report: dict | None, steps_goal: int | None = None) -> Activ
     if not report:
         return ActivityRollup()
     steps = report.get("steps")
-    # Sum session_count so it's right for both per-event (1 each) and older
-    # type-aggregated (n) report shapes.
+    # session_count can exceed 1 (type-aggregated rows), so sum, don't count.
     workouts = sum((w.get("session_count") or 1) for w in (report.get("workouts") or []))
     return ActivityRollup(
         steps=int(steps) if isinstance(steps, (int, float)) else None,
