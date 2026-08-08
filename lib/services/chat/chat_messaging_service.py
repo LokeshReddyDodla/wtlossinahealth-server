@@ -352,16 +352,17 @@ class ChatMessagingService(BaseChatService):
                 },
             }
         )
-        if unread_message_count == 0:
-            await self.mongo_store.db["chats"].update_one(
-                {"_id": chat_id},
-                {
-                    "$set": {
-                        f"unread_counts.{user_id}": 0,
-                        "updated_at": datetime.utcnow(),
-                    }
-                },
-            )
+        # Always store the freshly counted value so a partial read shows the
+        # remaining count, not only a snap-to-zero when everything is read.
+        await self.mongo_store.db["chats"].update_one(
+            {"_id": chat_id},
+            {
+                "$set": {
+                    f"unread_counts.{user_id}": unread_message_count,
+                    "updated_at": datetime.utcnow(),
+                }
+            },
+        )
 
     async def _mark_all_messages_as_read_in_chat(
         self, chat_id: str, user_id: str

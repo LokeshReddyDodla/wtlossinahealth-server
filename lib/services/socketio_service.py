@@ -110,8 +110,9 @@ async def sendMessage(sid, data):
     reply_to = data.get("reply_to")
     metadata = data.get("metadata", {})
 
-    # Ensure that required fields are present
-    if not all([chat_id, sender_id, content]):
+    # A message needs a chat, a sender, and either text or media — a media-only
+    # message carries no content but is still valid.
+    if not chat_id or not sender_id or not (content or media):
         return {"status": "error", "message": "Missing required fields"}
 
     if not await _authorize_chat_access(sid, chat_id, sender_id):
@@ -193,6 +194,13 @@ async def markAsRead(sid, data):
             # Mark all messages as read for this user
             await chat_messaging_service.mark_all_messages_as_read(
                 chat_id, user_id
+            )
+            # Notify the reader's own clients so their unread badge clears —
+            # the DB write alone never reaches the socket layer otherwise.
+            await sio.emit(
+                EmitMessageKeyEnum.ALL_MESSAGES_MARKED_AS_READ.value,
+                {"chat_id": chat_id, "user_id": user_id},
+                room=user_id,
             )
         else:
             # Mark specific message as read
