@@ -42,6 +42,14 @@ async def send_message(
                 message="You don't have access to this chat.",
             )
 
+        if not await chat_management_service.can_user_write_to_chat(
+            chat_id=message_data.chat_id, user_id=user_id
+        ):
+            raise_http_exception(
+                status_code=status.HTTP_403_FORBIDDEN,
+                message="This chat is read-only.",
+            )
+
         await chat_messaging_service.add_message(
             message_data=message_data,
         )

@@ -100,6 +100,8 @@ async def get_user_messages(
 async def get_chat_messages(
     request: Request,
     chat_id: str,
+    limit: int = Query(50, ge=1, le=100),
+    before: Optional[str] = None,
     current_user=Depends(get_current_user),
     chat_management_service: ChatManagementService = Depends(
         get_chat_management_service
@@ -116,8 +118,12 @@ async def get_chat_messages(
                 message="You don't have access to this chat.",
             )
 
+        # Timestamps are stored naive-UTC; parse the cursor to match.
+        before_dt = (
+            datetime.fromisoformat(before.replace("Z", "")) if before else None
+        )
         messages = await chat_management_service.fetch_chat_messages(
-            chat_id, user_id
+            chat_id, user_id, before=before_dt, limit=limit
         )
         messages = await enrich_messages_with_sender_profiles(messages)
 

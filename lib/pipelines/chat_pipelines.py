@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Optional
+from typing import Optional
 
 
 def get_user_chat_pipeline(user_id: str):
@@ -77,12 +77,8 @@ def get_single_chat_pipeline(chat_id: str, user_id: str):
 def get_user_messages_pipeline(
     user_id: str, last_sync_time: Optional[datetime] = None
 ):
-    match_condition = {
-        "$or": [
-            {"sender_id": user_id},
-            {"participants.id": user_id},
-        ]
-    }
+    # Match against the chats collection by participant; it has no sender_id.
+    match_condition = {"participants.id": user_id}
 
     pipeline = [
         {"$match": match_condition},  # Match the user in chats
@@ -111,101 +107,16 @@ def get_user_messages_pipeline(
     return pipeline
 
 
-def get_chat_messages_pipeline(chat_id: str):
-    # Match condition only by chat_id
+def get_chat_messages_pipeline(chat_id: str, before=None, limit: int = 50):
+    # Page backwards from newest: match the chat (and messages older than the
+    # `before` cursor when paging), take the newest `limit`. Callers reverse the
+    # result to ascending for display.
     match_condition = {"chat_id": chat_id}
+    if before is not None:
+        match_condition["timestamp"] = {"$lt": before}
 
-    pipeline = [
-        {"$match": match_condition},  # Match the specific chat_id
-        {
-            "$sort": {"timestamp": 1}
-        },  # Sort messages by timestamp in ascending order
+    return [
+        {"$match": match_condition},
+        {"$sort": {"timestamp": -1}},
+        {"$limit": limit},
     ]
-
-    return pipeline
-
-
-def get_chat_pipeline(
-    user_id: str,
-    fetch_last_message: bool = False,
-    fetch_all_messages: bool = False,
-    is_group: bool = False,
-):
-    pipeline = [
-        {"$match": {"participants.id": user_id}},
-        {"$unwind": {"path": "$messages", "preserveNullAndEmptyArrays": True}},
-        {"$sort": {"messages.timestamp": -1}},
-    ]
-
-    group_stage = {
-        "_id": "$_id",
-        "is_group": {"$first": "$is_group"},
-        "participants": {"$first": "$participants"},
-        "updated_at": {"$first": "$updated_at"},
-        "unread_count": {
-            "$sum": {
-                "$cond": {
-                    "if": {
-                        "$and": [
-                            {
-                                "$ne": ["$messages", []]
-                            },  # Check if messages exist
-                            {
-                                "$ne": ["$messages.read_receipts", []]
-                            },  # Check if read_receipts exist
-                            {
-                                "$not": {
-                                    "$in": [
-                                        user_id,
-                                        {
-                                            "$ifNull": [
-                                                "$messages.read_receipts.reader_id",
-                                                [],
-                                            ]
-                                        },
-                                    ]
-                                }
-                            },
-                        ]
-                    },
-                    "then": 0,
-                    "else": 1,
-                }
-            }
-        },
-    }
-
-    if fetch_last_message:
-        group_stage["last_message"] = {"$first": "$messages"}
-
-    if fetch_all_messages:
-        group_stage["messages"] = {"$push": "$messages"}
-
-    pipeline.append({"$group": group_stage})
-
-    if not is_group:
-        pipeline.append(
-            {
-                "$addFields": {
-                    "chat_name": {
-                        "$arrayElemAt": [
-                            {
-                                "$filter": {
-                                    "input": "$participants",
-                                    "as": "participant",
-                                    "cond": {
-                                        "$ne": ["$$participant.id", user_id]
-                                    },
-                                }
-                            },
-                            0,
-                        ]
-                    }
-                }
-            }
-        )
-
-    # Final sort by updated_at to get most recent chats first
-    pipeline.append({"$sort": {"updated_at": -1}})
-
-    return pipeline
