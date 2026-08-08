@@ -312,14 +312,13 @@ class DayViewRepository:
             if task is not None and task.status == "completed" and task.completed_at is not None:
                 status = "taken"
                 doses_taken += 1
-                h = hour_of(task.completed_at)
                 at = task.completed_at.strftime("%H:%M")
             else:
                 status = "missed" if task is not None else "scheduled"
-                h = float(_SLOT_HOURS[slot.upper()])
                 at = None
-            if h is None:
-                continue
+            # Position by scheduled slot so slots stay spread across the day; the
+            # actual completion time rides along in `at` for the tooltip.
+            h = float(_SLOT_HOURS[slot.upper()])
             markers.append(DoseMarker(t=round(h, 3), slot=slot, label=label, name=med_name,
                                       status=status, taken=status == "taken", at=at))
         return markers, doses_taken, doses_total, tasks_done, tasks_total, task_items
