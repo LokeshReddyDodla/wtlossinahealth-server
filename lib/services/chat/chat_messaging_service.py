@@ -356,8 +356,8 @@ class ChatMessagingService(BaseChatService):
                 },
             }
         )
-        # Always store the freshly counted value so a partial read shows the
-        # remaining count, not only a snap-to-zero when everything is read.
+        # Store the freshly counted value so the badge reflects the remaining
+        # unread, including after a partial read.
         await self.mongo_store.db["chats"].update_one(
             {"_id": chat_id},
             {
