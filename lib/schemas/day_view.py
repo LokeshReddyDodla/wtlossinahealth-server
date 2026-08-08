@@ -130,6 +130,8 @@ class GlucoseRollup(BaseModel):
     tir_pct: float | None = None
     avg: float | None = None
     gri: float | None = None
+    # [<54, 54-70, 70-180, 180-250, >250] percentages for the glance TIR bar.
+    bands: list[float] | None = None
 
 
 class NutritionRollup(BaseModel):
@@ -146,6 +148,7 @@ class SleepRollup(BaseModel):
 class ActivityRollup(BaseModel):
     steps: int | None = None
     steps_goal: int | None = None
+    workouts: int | None = None
 
 
 class VitalsRollup(BaseModel):

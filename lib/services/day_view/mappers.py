@@ -192,10 +192,18 @@ def glucose_rollup(report: dict | None) -> GlucoseRollup:
         return GlucoseRollup()
     rng = report.get("cgm_range_stats") or {}
     summ = report.get("cgm_summary_stats") or {}
+    bands = [
+        rng.get("below_54_percent"),
+        rng.get("below_70_above_54_percent"),
+        rng.get("in_target_70_180_percent"),
+        rng.get("above_180_below_250_percent"),
+        rng.get("above_250_percent"),
+    ]
     return GlucoseRollup(
         tir_pct=rng.get("in_target_70_180_percent"),
         avg=summ.get("average_glucose_mgdl"),
         gri=summ.get("gri"),
+        bands=[float(b or 0) for b in bands] if any(b is not None for b in bands) else None,
     )
 
 
@@ -258,7 +266,11 @@ def activity_rollup(report: dict | None, steps_goal: int | None = None) -> Activ
     if not report:
         return ActivityRollup()
     steps = report.get("steps")
+    # Sum session_count so it's right for both per-event (1 each) and older
+    # type-aggregated (n) report shapes.
+    workouts = sum((w.get("session_count") or 1) for w in (report.get("workouts") or []))
     return ActivityRollup(
         steps=int(steps) if isinstance(steps, (int, float)) else None,
         steps_goal=steps_goal,
+        workouts=workouts or None,
     )
