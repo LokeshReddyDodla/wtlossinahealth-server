@@ -10,6 +10,7 @@ from lib.schemas.day_view import (
     DoseMarker,
     GlucoseRollup,
     Spine,
+    SpineEvent,
     SpineSource,
     VitalMarker,
 )
@@ -125,15 +126,13 @@ _TAKEN = DoseMarker(t=8, slot="morning", label="M", status="taken", taken=True)
 _MISSED = DoseMarker(t=20, slot="evening", label="E", status="missed", taken=False)
 
 
-def _cgm(source: SpineSource = SpineSource.cgm) -> Spine:
-    return Spine(source=source, unit="mg/dL", band=(70.0, 180.0))
+def _cgm(source: SpineSource = SpineSource.cgm, events: list[SpineEvent] | None = None) -> Spine:
+    return Spine(source=source, unit="mg/dL", band=(70.0, 180.0), events=events or [])
 
 
-def _roll(bands, tir=None, cv=None, low=None, high=None,
-          tir_preg=None, tbr_54_63=None, tar_140=None) -> GlucoseRollup:
+def _roll(bands, tir=None, cv=None, tir_preg=None) -> GlucoseRollup:
     # bands = [<54, 54-70, 70-180, 180-250, >250] percentages
-    return GlucoseRollup(tir_pct=tir, cv_pct=cv, low_mgdl=low, high_mgdl=high, bands=bands,
-                         tir_preg_pct=tir_preg, tbr_54_63_pct=tbr_54_63, tar_140_pct=tar_140)
+    return GlucoseRollup(tir_pct=tir, cv_pct=cv, bands=bands, tir_preg_pct=tir_preg)
 
 
 def test_target_tier_from_profile():
@@ -143,47 +142,50 @@ def test_target_tier_from_profile():
 
 
 def test_alerts_flag_a_bad_day():
-    g = _roll([3, 5, 40, 22, 30], tir=40, cv=44, low=45, high=305)
+    events = [SpineEvent(type="hypo", start=3.0, end=3.5, peak=48),
+              SpineEvent(type="hyper", start=20.0, end=22.0, peak=288)]
+    g = _roll([3, 5, 40, 22, 30], tir=40, cv=44)
     bp = [VitalMarker(t=14.0, systolic=148, diastolic=96)]
-    alerts = M.day_alerts(g, _cgm(), bp, [_MISSED, _TAKEN], M._STANDARD)
+    alerts = M.day_alerts(g, _cgm(events=events), bp, [_MISSED, _TAKEN], M._STANDARD)
     cats = {a.category for a in alerts}
-    assert {"tbr_l2", "tar_high", "tir_low", "glucose_cv", "bp_high", "doses_missed"} <= cats
-    assert alerts[0].severity == "critical"  # serious lows sort first
+    assert {"glucose_low", "glucose_high", "tir_low", "glucose_cv", "bp_high", "doses_missed"} <= cats
+    assert alerts[0].severity == "critical"  # serious low (nadir 48) sorts first
 
 
-def test_alerts_read_precomputed_percentages():
-    g = _roll([0, 6, 84, 8, 2], tir=84, low=58)  # 6% time <70 breaches the 4% target
-    alerts = M.day_alerts(g, _cgm(), [], [_TAKEN], M._STANDARD)
-    low = next(a for a in alerts if a.category == "tbr_l1")
-    assert low.severity == "attention" and "6% of day below 70" in low.label and "low 58" in low.label
+def test_brief_serious_low_still_flags():
+    # Every % is within target, but a short dip to 48 must still surface critically.
+    g = _roll([0.5, 1, 96, 2, 0.5], tir=96, cv=30)
+    events = [SpineEvent(type="hypo", start=15.0, end=15.2, peak=48)]
+    low = next(a for a in M.day_alerts(g, _cgm(events=events), [], [_TAKEN], M._STANDARD)
+               if a.category == "glucose_low")
+    assert low.severity == "critical" and "dipped to 48" in low.label and low.t == 15.0
 
 
-def test_alerts_within_consensus_targets_are_silent():
-    g = _roll([0, 2, 95, 3, 0], tir=95, cv=30)  # every band inside standard targets
+def test_severe_high_carries_the_above_250_span():
+    events = [SpineEvent(type="hyper", start=12.0, end=13.0, peak=267)]
+    g = _roll([0, 0, 90, 2, 8], tir=90)
+    high = next(a for a in M.day_alerts(g, _cgm(events=events), [], [_TAKEN], M._STANDARD)
+                if a.category == "glucose_high")
+    assert "8% of day above 250" in high.label and "peak 267" in high.label
+
+
+def test_alerts_silent_on_a_clean_day():
+    g = _roll([0, 2, 95, 3, 0], tir=95, cv=30)  # no events, every metric within target
     assert M.day_alerts(g, _cgm(), [], [_TAKEN], M._STANDARD) == []
 
 
-def test_older_tier_flags_tighter_lows():
-    g = _roll([0, 2, 96, 2, 0], tir=96, cv=30)  # 2% <70: fine for standard, breaches older (<1%)
-    assert M.day_alerts(g, _cgm(), [], [_TAKEN], M._STANDARD) == []
-    older = M.day_alerts(g, _cgm(), [], [_TAKEN], M._OLDER)
-    assert [a.category for a in older] == ["tbr_l1"]
+def test_older_tier_relaxes_the_tir_floor():
+    g = _roll([0, 0, 60, 30, 10], tir=60, cv=30)  # TIR 60: below 70, above 50
+    assert any(a.category == "tir_low" for a in M.day_alerts(g, _cgm(), [], [_TAKEN], M._STANDARD))
+    assert not any(a.category == "tir_low" for a in M.day_alerts(g, _cgm(), [], [_TAKEN], M._OLDER))
 
 
-def test_pregnancy_uses_tighter_63_140_targets():
-    # Adult bands read in-range, but the tighter pregnancy range flags the day.
-    g = _roll([0, 2, 83, 15, 0], tir=83, tir_preg=60, tbr_54_63=2, tar_140=30)
-    assert M.day_alerts(g, _cgm(), [], [_TAKEN], M._STANDARD) == []
+def test_pregnancy_uses_the_63_140_tir():
+    # TIR 83% of 70-180 is fine, but 60% of 63-140 is below the pregnancy floor.
+    g = _roll([0, 2, 83, 15, 0], tir=83, tir_preg=60)
+    assert not any(a.category == "tir_low" for a in M.day_alerts(g, _cgm(), [], [_TAKEN], M._STANDARD))
     preg = M.day_alerts(g, _cgm(), [], [_TAKEN], M._PREGNANCY)
-    assert {a.category for a in preg} == {"tir_low", "tar_high"}
-    assert "above 140" in next(a for a in preg if a.category == "tar_high").label
-
-
-def test_pregnancy_needs_report_refresh_when_bands_absent():
-    g = _roll([0, 2, 83, 15, 0], tir=83)  # report without the 63-140 bands
-    alerts = M.day_alerts(g, _cgm(), [], [_TAKEN], M._PREGNANCY)
-    assert [a.category for a in alerts] == ["glucose_targets_unsupported"]
-    assert alerts[0].severity == "info"
+    assert any(a.category == "tir_low" and "60%" in a.label for a in preg)
 
 
 def test_pregnancy_band_and_tir_follow_profile():
