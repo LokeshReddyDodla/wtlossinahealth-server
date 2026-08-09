@@ -8,11 +8,12 @@ All report dicts are `model_dump(exclude_none=True)`, so absent keys are the
 norm — read with `.get()`, never index blindly.
 """
 
-from datetime import datetime, time
+from datetime import datetime, time, timezone, tzinfo
 
 from lib.schemas.day_view import (
     ActivityRollup,
     GlucoseRollup,
+    InsightMarker,
     MealMarker,
     NutritionRollup,
     Point,
@@ -273,3 +274,40 @@ def activity_rollup(report: dict | None, steps_goal: int | None = None) -> Activ
         steps_goal=steps_goal,
         workouts=workouts or None,
     )
+
+
+# ── Proactive insights ───────────────────────────────────────────────────────
+
+def insight_markers(docs: list[dict], tz: tzinfo) -> list[InsightMarker]:
+    """Proactive-monitor insights placed at their source event's local hour.
+
+    Docs come from InsightTracker (Mongo, UTC-aware timestamps) — unlike every
+    other day-view series these are stored in UTC, so `t` is a real conversion
+    into `tz`, not a wall-clock read. `engagement_drop` is dropped: it's a
+    delivery signal, not a health observation.
+    """
+    markers: list[InsightMarker] = []
+    for doc in docs:
+        if doc.get("category") == "engagement_drop":
+            continue
+        placed = doc.get("event_time") or doc.get("created_at")
+        if not isinstance(placed, datetime):
+            continue
+        if placed.tzinfo is None:
+            placed = placed.replace(tzinfo=timezone.utc)
+        local = placed.astimezone(tz)
+        streak = doc.get("consecutive_days")
+        markers.append(InsightMarker(
+            t=round(local.hour + local.minute / 60 + local.second / 3600, 4),
+            insight_id=doc.get("insight_id"),
+            severity=doc.get("severity") or "info",
+            category=doc.get("category") or "",
+            title=doc.get("title"),
+            message=doc.get("message") or "",
+            suggested_query=doc.get("suggested_query"),
+            entity_type=doc.get("entity_type"),
+            entity_id=str(doc["entity_id"]) if doc.get("entity_id") else None,
+            recurring_days=streak if isinstance(streak, int) and streak > 1 else None,
+        ))
+    markers.sort(key=lambda m: m.t)
+    return markers

@@ -9,11 +9,13 @@ Spec: docs/day-timeline-resolver.md
 
 import asyncio
 import logging
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTracker
 from lib.core.clickhouse_store import ClickHouseStore
 from lib.core.postgres_store import PostgresStore
 from lib.schemas.day_view import (
@@ -53,6 +55,7 @@ class DayViewService:
         meal_report_service: MealReportService,
         sleep_report_service: SleepReportService,
         fitness_report_service: FitnessReportService,
+        insight_tracker: InsightTracker,
     ):
         self.postgres_store = postgres_store
         self.repo = DayViewRepository(clickhouse_store)
@@ -60,6 +63,7 @@ class DayViewService:
         self.meal_report_service = meal_report_service
         self.sleep_report_service = sleep_report_service
         self.fitness_report_service = fitness_report_service
+        self.insight_tracker = insight_tracker
 
     @with_postgres_session
     async def resolve(
@@ -68,15 +72,23 @@ class DayViewService:
         tz_name = resolve_timezone_name(
             await get_patient_timezone(patient_id, postgres_session)
         )
+        try:
+            tz = ZoneInfo(tz_name)
+        except Exception:
+            tz = timezone.utc
         # `day` is the patient-local calendar date; columns are local-naive, so we
         # bound directly (matches the feed service — see docs, tz item is parked).
         day_start = datetime.combine(day, time.min)
         day_end = datetime.combine(day + timedelta(days=1), time.min)
+        # Insights are the exception — stored UTC-aware in Mongo, so the local day
+        # must be converted to a real UTC window to select and place them.
+        insight_from = day_start.replace(tzinfo=tz).astimezone(timezone.utc)
+        insight_to = day_end.replace(tzinfo=tz).astimezone(timezone.utc)
         pid = UUID(patient_id)
 
         (
             cgm_rep, meal_rep, sleep_rep, fit_rep,
-            hr, bp, pg,
+            hr, bp, pg, insight_docs,
         ) = await asyncio.gather(
             self._safe(self.cgm_report_service.fetch_daily_report, patient_id, day),
             self._safe(self.meal_report_service.fetch_daily_report, patient_id, day),
@@ -85,6 +97,7 @@ class DayViewService:
             self.repo.hr_series(patient_id, day),
             self.repo.bp_readings(patient_id, day),
             self._postgres_bundle(pid, day, day_start, day_end, postgres_session),
+            self._fetch_insights(patient_id, insight_from, insight_to),
         )
         moods, symptoms, smbg, care = pg
         dose_markers, doses_taken, doses_total, tasks_done, tasks_total, task_items = care
@@ -129,7 +142,8 @@ class DayViewService:
             hr=mappers.hr_hourly(hr) if spine.source != SpineSource.hr else [],
         )
         return DayView(date=day, tz=tz_name, spine=spine,
-                       on_curve=on_curve, lanes=lanes, header=header, tasks=task_items)
+                       on_curve=on_curve, lanes=lanes, header=header,
+                       insights=mappers.insight_markers(insight_docs, tz), tasks=task_items)
 
     @with_postgres_session
     async def fetch_domain_report(
@@ -161,6 +175,21 @@ class DayViewService:
         smbg = await self.repo.smbg_points(pid, day_start, day_end, session)
         care = await self.repo.care(pid, day, session)
         return moods, symptoms, smbg, care
+
+    async def _fetch_insights(
+        self, patient_id: str, from_utc: datetime, to_utc: datetime,
+    ) -> list[dict]:
+        # by_event_time places a retro-logged meal's insight on the day the meal
+        # happened, not the day the scan ran. get_history already drops the
+        # dedup-only records that carry no insight_id.
+        try:
+            return await self.insight_tracker.get_history(
+                patient_id, limit=50, from_date=from_utc, to_date=to_utc,
+                by_event_time=True,
+            )
+        except Exception:
+            logger.exception("day-view insight fetch failed")
+            return []
 
     @staticmethod
     async def _safe(fetch_fn, *args):
