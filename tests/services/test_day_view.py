@@ -24,13 +24,12 @@ _CGM_REP = {
     ]},
 }
 _SMBG = [(6.8, 94.0), (8.2, 148.0)]
-_HR = [(0.0, 56.0), (12.0, 72.0)]
 
 
 # ── spine degradation ────────────────────────────────────────────────────────
 
 def test_spine_prefers_cgm():
-    spine = M.select_spine(_CGM_REP, _SMBG, _HR)
+    spine = M.select_spine(_CGM_REP, _SMBG)
     assert spine.source is SpineSource.cgm
     assert len(spine.points) == 2
     assert {e.type for e in spine.events} == {"hypo", "hyper"}
@@ -38,28 +37,27 @@ def test_spine_prefers_cgm():
 
 
 def test_spine_falls_to_smbg_without_cgm():
-    spine = M.select_spine(None, _SMBG, _HR)
+    spine = M.select_spine(None, _SMBG)
     assert spine.source is SpineSource.smbg
     assert spine.points == _SMBG
     assert not spine.events  # dots carry no excursion spans
 
 
-def test_spine_falls_to_hr_without_glucose():
-    spine = M.select_spine(None, [], _HR)
-    assert spine.source is SpineSource.hr
-    assert spine.unit == "bpm"
-    assert spine.band == (60.0, 100.0)
+def test_hr_is_never_the_spine():
+    # HR has its own lane; no glucose means an empty plot, not an HR spine.
+    spine = M.select_spine(None, [])
+    assert spine.source is SpineSource.none
 
 
 def test_spine_none_when_nothing():
-    spine = M.select_spine(None, [], [])
+    spine = M.select_spine(None, [])
     assert spine.source is SpineSource.none
     assert spine.points == []
 
 
 def test_cgm_with_empty_readings_is_not_a_cgm_spine():
     # A report present but curve-less must not win the spine over SMBG.
-    spine = M.select_spine({"cgm_summary_stats": {"average_glucose_mgdl": 130}}, _SMBG, _HR)
+    spine = M.select_spine({"cgm_summary_stats": {"average_glucose_mgdl": 130}}, _SMBG)
     assert spine.source is SpineSource.smbg
 
 
