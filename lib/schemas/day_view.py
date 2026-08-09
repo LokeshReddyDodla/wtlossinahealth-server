@@ -220,7 +220,7 @@ class DayAlert(BaseModel):
     """
 
     severity: Literal["critical", "attention", "info"]
-    # tbr_l2 | tbr_l1 | tar_high | tir_low | glucose_cv | bp_high | doses_missed | no_glucose | glucose_targets_unsupported
+    # glucose_low | glucose_high | tir_low | glucose_cv | bp_high | doses_missed | no_glucose
     category: str
     label: str                               # clinical short text, e.g. "Serious lows · 3% of day below 54"
     t: float | None = None                   # local hour when the flag is event-anchored (e.g. a BP reading)
