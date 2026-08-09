@@ -207,6 +207,19 @@ def test_pregnancy_rollup_has_no_bands_before_report_refresh():
     assert roll.tir_pct is None and roll.bands is None
 
 
+def test_hyper_excursions_at_pregnancy_threshold():
+    readings = [
+        {"device_timestamp": "2026-08-06T08:00:00", "glucose_mgdl": 120},  # below 140
+        {"device_timestamp": "2026-08-06T08:15:00", "glucose_mgdl": 150},
+        {"device_timestamp": "2026-08-06T08:30:00", "glucose_mgdl": 165},
+        {"device_timestamp": "2026-08-06T08:45:00", "glucose_mgdl": 130},  # ends the run
+        {"device_timestamp": "2026-08-06T09:00:00", "glucose_mgdl": 145},  # lone point, no run
+    ]
+    ev = M.hyper_excursions(readings, threshold=140)
+    assert len(ev) == 1
+    assert ev[0]["peak_glucose_mgdl"] == 165 and ev[0]["duration_minutes"] == 15.0
+
+
 def test_bp_crisis_outranks_high():
     alerts = M.day_alerts(GlucoseRollup(), _cgm(), [VitalMarker(t=10, systolic=184, diastolic=110)], [], M._STANDARD)
     bp = next(a for a in alerts if a.category == "bp_high")

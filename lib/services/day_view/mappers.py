@@ -223,6 +223,51 @@ def glucose_rollup(report: dict | None, preg: bool = False) -> GlucoseRollup:
     )
 
 
+def _to_dt(value) -> datetime | None:
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    return None
+
+
+def hyper_excursions(readings: list[dict], threshold: float = 140.0) -> list[dict]:
+    """Sustained runs above `threshold` from raw readings, as HyperEvent dicts.
+
+    Read-time detection for the pregnancy target (140) — the stored report's
+    hyper_events use the 180 threshold, which misses GDM-relevant 140-180 highs.
+    A run is >=2 consecutive above-threshold readings; the >180 severe events
+    remain a subset, distinguishable by peak.
+    """
+    pts = [(_to_dt(r.get("device_timestamp")), r.get("glucose_mgdl")) for r in readings]
+    pts = sorted((t, float(g)) for t, g in pts if t is not None and g is not None)
+
+    events: list[dict] = []
+    run: list[tuple[datetime, float]] = []
+
+    def flush() -> None:
+        if len(run) >= 2:
+            start, end = run[0][0], run[-1][0]
+            events.append({
+                "start_time": start.isoformat(),
+                "end_time": end.isoformat(),
+                "duration_minutes": round((end - start).total_seconds() / 60, 1),
+                "peak_glucose_mgdl": max(g for _, g in run),
+            })
+
+    for t, g in pts:
+        if g > threshold:
+            run.append((t, g))
+        else:
+            flush()
+            run = []
+    flush()
+    return events
+
+
 def nutrition_rollup(report: dict | None) -> NutritionRollup:
     if not report:
         return NutritionRollup()

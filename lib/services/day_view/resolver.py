@@ -164,7 +164,17 @@ class DayViewService:
         }.get(domain)
         if service is None:
             return None
-        return await self._safe(service.fetch_daily_report, patient_id, day)
+        report = await self._safe(service.fetch_daily_report, patient_id, day)
+        if domain == "glucose" and report:
+            _, is_pregnant = await self.repo.glucose_profile(UUID(patient_id), postgres_session)
+            if is_pregnant:
+                # Re-detect highs against the 63-140 pregnancy target; the stored
+                # events use 180 and miss GDM-relevant 140-180 excursions.
+                events = mappers.hyper_excursions(report.get("cgm_readings") or [])
+                hyper = report.setdefault("hyper_stats", {})
+                hyper["hyper_events"] = events
+                hyper["hyper_events_count"] = len(events)
+        return report
 
     # ── internals ────────────────────────────────────────────────────────────
 
