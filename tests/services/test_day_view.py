@@ -186,6 +186,14 @@ def test_pregnancy_needs_report_refresh_when_bands_absent():
     assert alerts[0].severity == "info"
 
 
+def test_pregnancy_band_and_tir_follow_profile():
+    assert M.select_spine(_CGM_REP, _SMBG, M._PREGNANCY.in_range).band == (63.0, 140.0)
+    assert M.select_spine(_CGM_REP, _SMBG).band == (70.0, 180.0)
+    rep = {"cgm_range_stats": {"in_target_70_180_percent": 80, "in_target_63_140_percent": 55}}
+    assert M.glucose_rollup(rep).tir_pct == 80
+    assert M.glucose_rollup(rep, preg=True).tir_pct == 55
+
+
 def test_bp_crisis_outranks_high():
     alerts = M.day_alerts(GlucoseRollup(), _cgm(), [VitalMarker(t=10, systolic=184, diastolic=110)], [], M._STANDARD)
     bp = next(a for a in alerts if a.category == "bp_high")

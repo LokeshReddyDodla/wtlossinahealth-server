@@ -101,8 +101,11 @@ class DayViewService:
         dose_markers, doses_taken, doses_total, tasks_done, tasks_total, task_items = care
         age, is_pregnant = profile
 
+        # One profile-derived target tier drives the chart band, headline TIR,
+        # and alerts — 63-140 in pregnancy, 70-180 otherwise.
+        targets = mappers.select_glucose_targets(age, is_pregnant)
         # Spine degrades to the highest-fidelity series present.
-        spine = mappers.select_spine(cgm_rep, smbg)
+        spine = mappers.select_spine(cgm_rep, smbg, targets.in_range)
 
         sleep_roll, asleep_h, efficiency = mappers.sleep_rollup(sleep_rep)
         # Prefer the report's timed hypnogram; fall back to a raw sleep_data query
@@ -119,7 +122,7 @@ class DayViewService:
             bp_latest = f"{int(bp[-1].systolic)}/{int(bp[-1].diastolic)}"
 
         header = Header(
-            glucose=mappers.glucose_rollup(cgm_rep),
+            glucose=mappers.glucose_rollup(cgm_rep, preg=is_pregnant),
             nutrition=mappers.nutrition_rollup(meal_rep),
             sleep=sleep_roll,
             activity=mappers.activity_rollup(fit_rep),
@@ -143,9 +146,7 @@ class DayViewService:
         return DayView(date=day, tz=tz_name, spine=spine,
                        on_curve=on_curve, lanes=lanes, header=header,
                        insights=mappers.insight_markers(insight_docs, tz),
-                       alerts=mappers.day_alerts(
-                           header.glucose, spine, bp, dose_markers,
-                           mappers.select_glucose_targets(age, is_pregnant)),
+                       alerts=mappers.day_alerts(header.glucose, spine, bp, dose_markers, targets),
                        tasks=task_items)
 
     @with_postgres_session
