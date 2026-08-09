@@ -8,6 +8,7 @@ All report dicts are `model_dump(exclude_none=True)`, so absent keys are the
 norm — read with `.get()`, never index blindly.
 """
 
+from dataclasses import dataclass
 from datetime import datetime, time, timezone, tzinfo
 
 from lib.ai_foundation.agents.proactive_monitor.contracts import InsightCategory
@@ -203,6 +204,9 @@ def glucose_rollup(report: dict | None) -> GlucoseRollup:
         tir_pct=rng.get("in_target_70_180_percent"),
         avg=summ.get("average_glucose_mgdl"),
         gri=summ.get("gri"),
+        cv_pct=summ.get("coefficient_of_variation_percent"),
+        low_mgdl=summ.get("lowest_glucose_mgdl"),
+        high_mgdl=summ.get("highest_glucose_mgdl"),
         bands=[float(b or 0) for b in bands] if any(b is not None for b in bands) else None,
     )
 
@@ -322,9 +326,69 @@ def insight_markers(docs: list[dict], tz: tzinfo) -> list[InsightMarker]:
     return markers
 
 
-# ── Deterministic clinical alerts ────────────────────────────────────────────
+# ── Clinical alerts (2019 International Consensus on Time in Range) ────────────
 
 _SEVERITY_ORDER = {"critical": 0, "attention": 1, "info": 2}
+_CV_MAX = 36.0  # glucose-stability ceiling (CV%), constant across tiers
+
+
+@dataclass(frozen=True)
+class GlucoseTargets:
+    """Per-population CGM targets as % of day. Battelino et al., Diabetes Care
+    2019;42:1593-1603, Table 1. Severity labels are ours; the numbers are not."""
+
+    tier: str
+    tir_min: float       # in-range 70-180 floor
+    tbr_l1_max: float    # time <70 ceiling
+    tbr_l2_max: float    # time <54 ceiling
+    tar_l2_max: float    # time >250 ceiling
+
+
+_STANDARD = GlucoseTargets(tier="standard", tir_min=70, tbr_l1_max=4, tbr_l2_max=1, tar_l2_max=5)
+_OLDER = GlucoseTargets(tier="older_high_risk", tir_min=50, tbr_l1_max=1, tbr_l2_max=1, tar_l2_max=10)
+
+
+def select_glucose_targets(age: float | None, is_pregnant: bool) -> GlucoseTargets | None:
+    """The consensus target tier for a patient. Pregnancy uses a tighter 63-140
+    range the CGM report does not yet compute, so it returns None — the caller
+    suppresses glucose-target alerts rather than apply adult targets that would
+    under-flag."""
+    if is_pregnant:
+        return None
+    if age is not None and age >= 65:
+        return _OLDER
+    return _STANDARD
+
+
+def _glucose_alerts(g: GlucoseRollup, t: GlucoseTargets) -> list[DayAlert]:
+    """Compare the pre-computed CGM percentages to the tier's consensus targets."""
+    if g.bands is None:
+        return []
+    tbr_l2, tbr_54_70, _tir, _tar_l1, tar_l2 = g.bands  # [<54, 54-70, 70-180, 180-250, >250]
+    tbr_l1 = tbr_l2 + tbr_54_70                          # total time <70
+    low = f" · low {int(g.low_mgdl)}" if g.low_mgdl is not None else ""
+    high = f" · peak {int(g.high_mgdl)}" if g.high_mgdl is not None else ""
+
+    out: list[DayAlert] = []
+    if tbr_l2 > t.tbr_l2_max:
+        out.append(DayAlert(severity="critical", category="tbr_l2",
+                            label=f"Serious lows · {tbr_l2:.0f}% of day below 54{low}"))
+    elif tbr_l1 > t.tbr_l1_max:
+        out.append(DayAlert(severity="attention", category="tbr_l1",
+                            label=f"Lows · {tbr_l1:.0f}% of day below 70{low}"))
+
+    if tar_l2 > t.tar_l2_max:
+        out.append(DayAlert(severity="attention", category="tar_l2",
+                            label=f"Very high · {tar_l2:.0f}% of day above 250{high}"))
+
+    if g.tir_pct is not None and g.tir_pct < t.tir_min:
+        out.append(DayAlert(severity="attention", category="tir_low",
+                            label=f"Time in range {g.tir_pct:.0f}% (target >{t.tir_min:.0f}%)"))
+
+    if g.cv_pct is not None and g.cv_pct > _CV_MAX:
+        out.append(DayAlert(severity="attention", category="glucose_cv",
+                            label=f"Glucose swings · CV {g.cv_pct:.0f}%"))
+    return out
 
 
 def day_alerts(
@@ -332,48 +396,35 @@ def day_alerts(
     spine: Spine,
     bp: list[VitalMarker],
     doses: list[DoseMarker],
+    targets: GlucoseTargets | None,
 ) -> list[DayAlert]:
     """Provider-facing clinical flags for the day, most-severe first.
 
-    Reads only values the report pipeline already computed — hypo/hyper events
-    (with nadir/peak), TIR, dose statuses — and applies thresholds. No clinical
-    stat is re-derived here.
+    Reads only pre-computed values — the CGM range/summary percentages, BP
+    readings, dose statuses — and compares them to `targets`, the consensus tier
+    chosen from the patient profile. No clinical stat is re-derived here.
     """
     out: list[DayAlert] = []
 
-    # Lows/highs come straight from the pre-computed excursion events. For a hypo
-    # event `peak` holds the nadir; for a hyper event, the peak high.
-    lows = [e for e in spine.events if e.type == "hypo"]
-    if lows:
-        worst = min(lows, key=lambda e: e.peak)
-        plural = "s" if len(lows) != 1 else ""
-        out.append(DayAlert(
-            severity="critical" if worst.peak < 54 else "attention",
-            category="glucose_low",
-            label=f"{len(lows)} low{plural} · dipped to {int(worst.peak)} mg/dL",
-            t=worst.start,
-        ))
+    if spine.source == SpineSource.none:
+        out.append(DayAlert(severity="info", category="no_glucose", label="No glucose data"))
+    elif targets is None:
+        out.append(DayAlert(severity="info", category="glucose_targets_unsupported",
+                            label="Glucose targets need pregnancy range"))
+    else:
+        out += _glucose_alerts(glucose, targets)
 
-    highs = [e for e in spine.events if e.type == "hyper" and e.peak >= 250]
-    if highs:
-        worst = max(highs, key=lambda e: e.peak)
-        plural = "s" if len(highs) != 1 else ""
-        out.append(DayAlert(severity="attention", category="glucose_high",
-                            label=f"{len(highs)} severe high{plural} · peaked {int(worst.peak)} mg/dL", t=worst.start))
-
-    if glucose.tir_pct is not None:
-        tir = glucose.tir_pct
-        if tir < 50:
-            out.append(DayAlert(severity="critical", category="tir_low", label=f"Time in range {tir:.0f}%"))
-        elif tir < 70:
-            out.append(DayAlert(severity="attention", category="tir_low", label=f"Time in range {tir:.0f}%"))
-
-    bp_highs = [
-        v for v in bp
-        if (v.systolic is not None and v.systolic >= 140) or (v.diastolic is not None and v.diastolic >= 90)
-    ]
-    if bp_highs:
-        worst = max(bp_highs, key=lambda v: v.systolic or 0)
+    crisis = [v for v in bp if (v.systolic is not None and v.systolic >= 180)
+              or (v.diastolic is not None and v.diastolic >= 120)]
+    highs = [v for v in bp if (v.systolic is not None and v.systolic >= 140)
+             or (v.diastolic is not None and v.diastolic >= 90)]
+    if crisis:
+        worst = max(crisis, key=lambda v: v.systolic or 0)
+        out.append(DayAlert(severity="critical", category="bp_high",
+                            label=f"Hypertensive crisis · BP {int(worst.systolic or 0)}/{int(worst.diastolic or 0)}",
+                            t=worst.t))
+    elif highs:
+        worst = max(highs, key=lambda v: v.systolic or 0)
         out.append(DayAlert(severity="attention", category="bp_high",
                             label=f"BP {int(worst.systolic or 0)}/{int(worst.diastolic or 0)}", t=worst.t))
 
@@ -381,9 +432,6 @@ def day_alerts(
     if missed > 0:
         out.append(DayAlert(severity="attention", category="doses_missed",
                             label=f"{missed} dose{'s' if missed != 1 else ''} missed"))
-
-    if spine.source == SpineSource.none:
-        out.append(DayAlert(severity="info", category="no_glucose", label="No glucose data"))
 
     out.sort(key=lambda a: _SEVERITY_ORDER.get(a.severity, 3))
     return out

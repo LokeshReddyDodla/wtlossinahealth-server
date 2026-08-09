@@ -22,6 +22,7 @@ from sqlalchemy.orm import selectinload
 from lib.core.clickhouse_store import ClickHouseStore
 from lib.models.gamification import DailyTask
 from lib.models.mood_entry import MoodEntry
+from lib.models.patient import Patient
 from lib.models.patient_medication import PatientMedication
 from lib.models.patient_smbg import PatientSMBG
 from lib.models.symptom_entry import SymptomEntry
@@ -235,6 +236,18 @@ class DayViewRepository:
             if h is not None:
                 out.append((round(h, 3), float(r.glucose_level)))
         return out
+
+    async def glucose_profile(self, pid: UUID, session: AsyncSession) -> tuple[float | None, bool]:
+        """(age, is_pregnant) — the profile facts the CGM target tier keys on."""
+        patient = (await session.execute(
+            select(Patient).options(selectinload(Patient.diabetic_history))
+            .where(Patient.patient_id == pid)
+        )).scalar_one_or_none()
+        if patient is None:
+            return None, False
+        history = patient.diabetic_history
+        is_pregnant = bool(history and history.is_pregnant)
+        return patient.age, is_pregnant
 
     async def care(self, pid: UUID, day: date, session: AsyncSession):
         """Doses (medications = which are due, tasks = taken/missed) + task counts.

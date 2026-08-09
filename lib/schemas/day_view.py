@@ -130,6 +130,9 @@ class GlucoseRollup(BaseModel):
     tir_pct: float | None = None
     avg: float | None = None
     gri: float | None = None
+    cv_pct: float | None = None               # coefficient of variation (stability)
+    low_mgdl: float | None = None             # day nadir
+    high_mgdl: float | None = None            # day peak
     # [<54, 54-70, 70-180, 180-250, >250] percentages.
     bands: list[float] | None = None
 
@@ -205,14 +208,17 @@ class InsightMarker(BaseModel):
 
 
 class DayAlert(BaseModel):
-    """A deterministic clinical flag for the day — threshold math over already
-    computed values, framed for a clinician. NOT a patient insight: no LLM, no
+    """A clinical flag for the day, framed for a clinician. Glucose thresholds
+    are the 2019 International Consensus on Time in Range (Battelino et al.,
+    Diabetes Care 2019), applied to the pre-computed CGM percentages against the
+    patient's profile-selected target tier. NOT a patient insight: no LLM, no
     coaching voice.
     """
 
     severity: Literal["critical", "attention", "info"]
-    category: str                            # glucose_low | glucose_high | tir_low | bp_high | doses_missed | no_glucose
-    label: str                               # clinical short text, e.g. "2 lows · dipped to 48 mg/dL"
+    # tbr_l2 | tbr_l1 | tar_l2 | tir_low | glucose_cv | bp_high | doses_missed | no_glucose | glucose_targets_unsupported
+    category: str
+    label: str                               # clinical short text, e.g. "Serious lows · 3% of day below 54"
     t: float | None = None                   # local hour when the flag is event-anchored (e.g. a BP reading)
 
 
