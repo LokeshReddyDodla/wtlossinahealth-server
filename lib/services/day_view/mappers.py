@@ -414,6 +414,16 @@ def select_glucose_targets(age: float | None, is_pregnant: bool) -> GlucoseTarge
     return _STANDARD
 
 
+# Diabetes types for whom glucose is part of care — so "no data" is worth flagging.
+_GLUCOSE_MONITORED = {"T1", "T2", "GESTATIONAL", "LADA", "MODY", "PRE"}
+
+
+def glucose_monitored(diabetes_type: str | None) -> bool:
+    """Is glucose actually monitored for this patient? A non-diabetic having no
+    CGM is expected, not an alert."""
+    return (diabetes_type or "").upper() in _GLUCOSE_MONITORED
+
+
 def _glucose_alerts(g: GlucoseRollup, t: GlucoseTargets, events: list[SpineEvent]) -> list[DayAlert]:
     """Acute excursions flag as events — any low, any severe high (>=250) — so a
     brief but dangerous dip or spike is never hidden by a day-level percentage.
@@ -456,6 +466,7 @@ def day_alerts(
     bp: list[VitalMarker],
     doses: list[DoseMarker],
     targets: GlucoseTargets,
+    glucose_expected: bool = True,
 ) -> list[DayAlert]:
     """Provider-facing clinical flags for the day, most-severe first.
 
@@ -466,7 +477,10 @@ def day_alerts(
     out: list[DayAlert] = []
 
     if spine.source == SpineSource.none:
-        out.append(DayAlert(severity="info", category="no_glucose", label="No glucose data"))
+        # Missing glucose only matters where glucose is monitored (a diabetic);
+        # a non-diabetic simply has none to show.
+        if glucose_expected:
+            out.append(DayAlert(severity="info", category="no_glucose", label="No glucose data"))
     else:
         out += _glucose_alerts(glucose, targets, spine.events)
 
