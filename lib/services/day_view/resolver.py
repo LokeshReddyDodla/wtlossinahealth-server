@@ -25,7 +25,6 @@ from lib.schemas.day_view import (
     Lanes,
     OnCurve,
     SleepLane,
-    SpineSource,
     VitalsRollup,
 )
 from lib.services.day_view import mappers
@@ -102,7 +101,7 @@ class DayViewService:
         dose_markers, doses_taken, doses_total, tasks_done, tasks_total, task_items = care
 
         # Spine degrades to the highest-fidelity series present.
-        spine = mappers.select_spine(cgm_rep, smbg, hr)
+        spine = mappers.select_spine(cgm_rep, smbg)
 
         sleep_roll, asleep_h, efficiency = mappers.sleep_rollup(sleep_rep)
         # Prefer the report's timed hypnogram; fall back to a raw sleep_data query
@@ -138,7 +137,7 @@ class DayViewService:
             doses=dose_markers,
             mood=moods,
             vitals=bp,
-            hr=mappers.hr_hourly(hr) if spine.source != SpineSource.hr else [],
+            hr=mappers.hr_hourly(hr),
         )
         return DayView(date=day, tz=tz_name, spine=spine,
                        on_curve=on_curve, lanes=lanes, header=header,
