@@ -141,7 +141,9 @@ class DayViewService:
         )
         return DayView(date=day, tz=tz_name, spine=spine,
                        on_curve=on_curve, lanes=lanes, header=header,
-                       insights=mappers.insight_markers(insight_docs, tz), tasks=task_items)
+                       insights=mappers.insight_markers(insight_docs, tz),
+                       alerts=mappers.day_alerts(header.glucose, spine, bp, dose_markers),
+                       tasks=task_items)
 
     @with_postgres_session
     async def fetch_domain_report(

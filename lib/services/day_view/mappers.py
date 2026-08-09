@@ -13,6 +13,8 @@ from datetime import datetime, time, timezone, tzinfo
 from lib.ai_foundation.agents.proactive_monitor.contracts import InsightCategory
 from lib.schemas.day_view import (
     ActivityRollup,
+    DayAlert,
+    DoseMarker,
     GlucoseRollup,
     InsightMarker,
     MealMarker,
@@ -24,6 +26,7 @@ from lib.schemas.day_view import (
     SpineSource,
     StageSpan,
     StepsLane,
+    VitalMarker,
     WorkoutMarker,
 )
 
@@ -317,3 +320,70 @@ def insight_markers(docs: list[dict], tz: tzinfo) -> list[InsightMarker]:
         ))
     markers.sort(key=lambda m: m.t)
     return markers
+
+
+# ── Deterministic clinical alerts ────────────────────────────────────────────
+
+_SEVERITY_ORDER = {"critical": 0, "attention": 1, "info": 2}
+
+
+def day_alerts(
+    glucose: GlucoseRollup,
+    spine: Spine,
+    bp: list[VitalMarker],
+    doses: list[DoseMarker],
+) -> list[DayAlert]:
+    """Provider-facing clinical flags for the day, most-severe first.
+
+    Reads only values the report pipeline already computed — hypo/hyper events
+    (with nadir/peak), TIR, dose statuses — and applies thresholds. No clinical
+    stat is re-derived here.
+    """
+    out: list[DayAlert] = []
+
+    # Lows/highs come straight from the pre-computed excursion events. For a hypo
+    # event `peak` holds the nadir; for a hyper event, the peak high.
+    lows = [e for e in spine.events if e.type == "hypo"]
+    if lows:
+        worst = min(lows, key=lambda e: e.peak)
+        plural = "s" if len(lows) != 1 else ""
+        out.append(DayAlert(
+            severity="critical" if worst.peak < 54 else "attention",
+            category="glucose_low",
+            label=f"{len(lows)} low{plural} · nadir {int(worst.peak)} mg/dL",
+            t=worst.start,
+        ))
+
+    highs = [e for e in spine.events if e.type == "hyper" and e.peak >= 250]
+    if highs:
+        worst = max(highs, key=lambda e: e.peak)
+        plural = "s" if len(highs) != 1 else ""
+        out.append(DayAlert(severity="attention", category="glucose_high",
+                            label=f"{len(highs)} severe high{plural} · peak {int(worst.peak)} mg/dL", t=worst.start))
+
+    if glucose.tir_pct is not None:
+        tir = glucose.tir_pct
+        if tir < 50:
+            out.append(DayAlert(severity="critical", category="tir_low", label=f"Time in range {tir:.0f}%"))
+        elif tir < 70:
+            out.append(DayAlert(severity="attention", category="tir_low", label=f"Time in range {tir:.0f}%"))
+
+    bp_highs = [
+        v for v in bp
+        if (v.systolic is not None and v.systolic >= 140) or (v.diastolic is not None and v.diastolic >= 90)
+    ]
+    if bp_highs:
+        worst = max(bp_highs, key=lambda v: v.systolic or 0)
+        out.append(DayAlert(severity="attention", category="bp_high",
+                            label=f"BP {int(worst.systolic or 0)}/{int(worst.diastolic or 0)}", t=worst.t))
+
+    missed = sum(1 for d in doses if d.status == "missed")
+    if missed > 0:
+        out.append(DayAlert(severity="attention", category="doses_missed",
+                            label=f"{missed} dose{'s' if missed != 1 else ''} missed"))
+
+    if spine.source == SpineSource.none:
+        out.append(DayAlert(severity="info", category="no_glucose", label="No glucose data"))
+
+    out.sort(key=lambda a: _SEVERITY_ORDER.get(a.severity, 3))
+    return out
