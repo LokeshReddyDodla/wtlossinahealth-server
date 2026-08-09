@@ -10,6 +10,7 @@ norm — read with `.get()`, never index blindly.
 
 from datetime import datetime, time, timezone, tzinfo
 
+from lib.ai_foundation.agents.proactive_monitor.contracts import PROVIDER_HIDDEN_CATEGORIES
 from lib.schemas.day_view import (
     ActivityRollup,
     GlucoseRollup,
@@ -278,17 +279,21 @@ def activity_rollup(report: dict | None, steps_goal: int | None = None) -> Activ
 
 # ── Proactive insights ───────────────────────────────────────────────────────
 
+_HIDDEN_CATEGORY_VALUES = frozenset(c.value for c in PROVIDER_HIDDEN_CATEGORIES)
+
+
 def insight_markers(docs: list[dict], tz: tzinfo) -> list[InsightMarker]:
     """Proactive-monitor insights placed at their source event's local hour.
 
     Docs come from InsightTracker (Mongo, UTC-aware timestamps) — unlike every
     other day-view series these are stored in UTC, so `t` is a real conversion
-    into `tz`, not a wall-clock read. `engagement_drop` is dropped: it's a
-    delivery signal, not a health observation.
+    into `tz`, not a wall-clock read. Patient-directed coaching and adherence
+    nudges are dropped (PROVIDER_HIDDEN_CATEGORIES): a provider wants the AI's
+    analysis, and adherence already reads off the timeline lanes.
     """
     markers: list[InsightMarker] = []
     for doc in docs:
-        if doc.get("category") == "engagement_drop":
+        if doc.get("category") in _HIDDEN_CATEGORY_VALUES:
             continue
         placed = doc.get("event_time") or doc.get("created_at")
         if not isinstance(placed, datetime):
