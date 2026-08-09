@@ -208,6 +208,9 @@ def glucose_rollup(report: dict | None) -> GlucoseRollup:
         low_mgdl=summ.get("lowest_glucose_mgdl"),
         high_mgdl=summ.get("highest_glucose_mgdl"),
         bands=[float(b or 0) for b in bands] if any(b is not None for b in bands) else None,
+        tir_preg_pct=rng.get("in_target_63_140_percent"),
+        tbr_54_63_pct=rng.get("below_63_above_54_percent"),
+        tar_140_pct=rng.get("above_140_percent"),
     )
 
 
@@ -338,34 +341,46 @@ class GlucoseTargets:
     2019;42:1593-1603, Table 1. Severity labels are ours; the numbers are not."""
 
     tier: str
-    tir_min: float       # in-range 70-180 floor
-    tbr_l1_max: float    # time <70 ceiling
+    tir_min: float       # in-range floor
+    tbr_l1_max: float    # time below the L1 low edge, ceiling
     tbr_l2_max: float    # time <54 ceiling
-    tar_l2_max: float    # time >250 ceiling
+    tar_max: float       # time above the high edge, ceiling
+    tbr_l1_edge: int     # mg/dL edge for the L1 low band (70; 63 in pregnancy)
+    tar_edge: int        # mg/dL edge for the high band (250; 140 in pregnancy)
 
 
-_STANDARD = GlucoseTargets(tier="standard", tir_min=70, tbr_l1_max=4, tbr_l2_max=1, tar_l2_max=5)
-_OLDER = GlucoseTargets(tier="older_high_risk", tir_min=50, tbr_l1_max=1, tbr_l2_max=1, tar_l2_max=10)
+_STANDARD = GlucoseTargets("standard", tir_min=70, tbr_l1_max=4, tbr_l2_max=1, tar_max=5, tbr_l1_edge=70, tar_edge=250)
+_OLDER = GlucoseTargets("older_high_risk", tir_min=50, tbr_l1_max=1, tbr_l2_max=1, tar_max=10, tbr_l1_edge=70, tar_edge=250)
+_PREGNANCY = GlucoseTargets("pregnancy", tir_min=70, tbr_l1_max=4, tbr_l2_max=1, tar_max=25, tbr_l1_edge=63, tar_edge=140)
 
 
-def select_glucose_targets(age: float | None, is_pregnant: bool) -> GlucoseTargets | None:
-    """The consensus target tier for a patient. Pregnancy uses a tighter 63-140
-    range the CGM report does not yet compute, so it returns None — the caller
-    suppresses glucose-target alerts rather than apply adult targets that would
-    under-flag."""
+def select_glucose_targets(age: float | None, is_pregnant: bool) -> GlucoseTargets:
+    """The consensus target tier for a patient — pregnancy (63-140 range) and
+    older/high-risk each carry their own targets in the 2019 consensus."""
     if is_pregnant:
-        return None
+        return _PREGNANCY
     if age is not None and age >= 65:
         return _OLDER
     return _STANDARD
 
 
 def _glucose_alerts(g: GlucoseRollup, t: GlucoseTargets) -> list[DayAlert]:
-    """Compare the pre-computed CGM percentages to the tier's consensus targets."""
+    """Compare the pre-computed CGM percentages to the tier's consensus targets.
+    Pregnancy reads the 63-140 bands; every other tier the canonical 70-180."""
+    if t.tier == "pregnancy" and g.tir_preg_pct is None:
+        return [DayAlert(severity="info", category="glucose_targets_unsupported",
+                         label="Glucose targets need a report refresh")]
     if g.bands is None:
         return []
-    tbr_l2, tbr_54_70, _tir, _tar_l1, tar_l2 = g.bands  # [<54, 54-70, 70-180, 180-250, >250]
-    tbr_l1 = tbr_l2 + tbr_54_70                          # total time <70
+
+    tbr_l2 = g.bands[0]                               # <54, every tier
+    if t.tier == "pregnancy":
+        tbr_l1 = tbr_l2 + (g.tbr_54_63_pct or 0.0)   # <63
+        tir, tar = g.tir_preg_pct, (g.tar_140_pct or 0.0)
+    else:
+        tbr_l1 = tbr_l2 + g.bands[1]                  # <70
+        tir, tar = g.tir_pct, g.bands[4]             # >250
+
     low = f" · low {int(g.low_mgdl)}" if g.low_mgdl is not None else ""
     high = f" · peak {int(g.high_mgdl)}" if g.high_mgdl is not None else ""
 
@@ -375,15 +390,15 @@ def _glucose_alerts(g: GlucoseRollup, t: GlucoseTargets) -> list[DayAlert]:
                             label=f"Serious lows · {tbr_l2:.0f}% of day below 54{low}"))
     elif tbr_l1 > t.tbr_l1_max:
         out.append(DayAlert(severity="attention", category="tbr_l1",
-                            label=f"Lows · {tbr_l1:.0f}% of day below 70{low}"))
+                            label=f"Lows · {tbr_l1:.0f}% of day below {t.tbr_l1_edge}{low}"))
 
-    if tar_l2 > t.tar_l2_max:
-        out.append(DayAlert(severity="attention", category="tar_l2",
-                            label=f"Very high · {tar_l2:.0f}% of day above 250{high}"))
+    if tar > t.tar_max:
+        out.append(DayAlert(severity="attention", category="tar_high",
+                            label=f"Very high · {tar:.0f}% of day above {t.tar_edge}{high}"))
 
-    if g.tir_pct is not None and g.tir_pct < t.tir_min:
+    if tir is not None and tir < t.tir_min:
         out.append(DayAlert(severity="attention", category="tir_low",
-                            label=f"Time in range {g.tir_pct:.0f}% (target >{t.tir_min:.0f}%)"))
+                            label=f"Time in range {tir:.0f}% (target >{t.tir_min:.0f}%)"))
 
     if g.cv_pct is not None and g.cv_pct > _CV_MAX:
         out.append(DayAlert(severity="attention", category="glucose_cv",
@@ -396,7 +411,7 @@ def day_alerts(
     spine: Spine,
     bp: list[VitalMarker],
     doses: list[DoseMarker],
-    targets: GlucoseTargets | None,
+    targets: GlucoseTargets,
 ) -> list[DayAlert]:
     """Provider-facing clinical flags for the day, most-severe first.
 
@@ -408,9 +423,6 @@ def day_alerts(
 
     if spine.source == SpineSource.none:
         out.append(DayAlert(severity="info", category="no_glucose", label="No glucose data"))
-    elif targets is None:
-        out.append(DayAlert(severity="info", category="glucose_targets_unsupported",
-                            label="Glucose targets need pregnancy range"))
     else:
         out += _glucose_alerts(glucose, targets)
 

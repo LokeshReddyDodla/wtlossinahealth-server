@@ -28,6 +28,11 @@ class CGMRangeStats(BaseModel):
     above_250_percent: float
     # Tight range, additive to the canonical 70-180 TIR (not a replacement).
     in_tight_target_70_140_percent: float = 0.0
+    # Pregnancy targets (63-140 range), 2019 consensus. None on reports generated
+    # before the band existed — absent, not zero.
+    in_target_63_140_percent: Optional[float] = None
+    below_63_above_54_percent: Optional[float] = None
+    above_140_percent: Optional[float] = None
 
 
 class CGMEvent(BaseModel):

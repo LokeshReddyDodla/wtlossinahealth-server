@@ -135,6 +135,10 @@ class GlucoseRollup(BaseModel):
     high_mgdl: float | None = None            # day peak
     # [<54, 54-70, 70-180, 180-250, >250] percentages.
     bands: list[float] | None = None
+    # Pregnancy-range percentages (63-140), None until the report computes them.
+    tir_preg_pct: float | None = None         # in-range 63-140
+    tbr_54_63_pct: float | None = None        # time in 54-63
+    tar_140_pct: float | None = None          # time >140
 
 
 class NutritionRollup(BaseModel):
@@ -216,7 +220,7 @@ class DayAlert(BaseModel):
     """
 
     severity: Literal["critical", "attention", "info"]
-    # tbr_l2 | tbr_l1 | tar_l2 | tir_low | glucose_cv | bp_high | doses_missed | no_glucose | glucose_targets_unsupported
+    # tbr_l2 | tbr_l1 | tar_high | tir_low | glucose_cv | bp_high | doses_missed | no_glucose | glucose_targets_unsupported
     category: str
     label: str                               # clinical short text, e.g. "Serious lows · 3% of day below 54"
     t: float | None = None                   # local hour when the flag is event-anchored (e.g. a BP reading)

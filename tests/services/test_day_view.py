@@ -129,15 +129,17 @@ def _cgm(source: SpineSource = SpineSource.cgm) -> Spine:
     return Spine(source=source, unit="mg/dL", band=(70.0, 180.0))
 
 
-def _roll(bands, tir=None, cv=None, low=None, high=None) -> GlucoseRollup:
+def _roll(bands, tir=None, cv=None, low=None, high=None,
+          tir_preg=None, tbr_54_63=None, tar_140=None) -> GlucoseRollup:
     # bands = [<54, 54-70, 70-180, 180-250, >250] percentages
-    return GlucoseRollup(tir_pct=tir, cv_pct=cv, low_mgdl=low, high_mgdl=high, bands=bands)
+    return GlucoseRollup(tir_pct=tir, cv_pct=cv, low_mgdl=low, high_mgdl=high, bands=bands,
+                         tir_preg_pct=tir_preg, tbr_54_63_pct=tbr_54_63, tar_140_pct=tar_140)
 
 
 def test_target_tier_from_profile():
     assert M.select_glucose_targets(40, False).tier == "standard"
     assert M.select_glucose_targets(72, False).tier == "older_high_risk"
-    assert M.select_glucose_targets(30, True) is None  # pregnancy range unsupported
+    assert M.select_glucose_targets(30, True).tier == "pregnancy"
 
 
 def test_alerts_flag_a_bad_day():
@@ -145,7 +147,7 @@ def test_alerts_flag_a_bad_day():
     bp = [VitalMarker(t=14.0, systolic=148, diastolic=96)]
     alerts = M.day_alerts(g, _cgm(), bp, [_MISSED, _TAKEN], M._STANDARD)
     cats = {a.category for a in alerts}
-    assert {"tbr_l2", "tar_l2", "tir_low", "glucose_cv", "bp_high", "doses_missed"} <= cats
+    assert {"tbr_l2", "tar_high", "tir_low", "glucose_cv", "bp_high", "doses_missed"} <= cats
     assert alerts[0].severity == "critical"  # serious lows sort first
 
 
@@ -168,9 +170,18 @@ def test_older_tier_flags_tighter_lows():
     assert [a.category for a in older] == ["tbr_l1"]
 
 
-def test_pregnancy_targets_unsupported():
-    g = _roll([0, 0, 60, 30, 10], tir=60)  # would breach adult targets, but tier is None
-    alerts = M.day_alerts(g, _cgm(), [], [_TAKEN], None)
+def test_pregnancy_uses_tighter_63_140_targets():
+    # Adult bands read in-range, but the tighter pregnancy range flags the day.
+    g = _roll([0, 2, 83, 15, 0], tir=83, tir_preg=60, tbr_54_63=2, tar_140=30)
+    assert M.day_alerts(g, _cgm(), [], [_TAKEN], M._STANDARD) == []
+    preg = M.day_alerts(g, _cgm(), [], [_TAKEN], M._PREGNANCY)
+    assert {a.category for a in preg} == {"tir_low", "tar_high"}
+    assert "above 140" in next(a for a in preg if a.category == "tar_high").label
+
+
+def test_pregnancy_needs_report_refresh_when_bands_absent():
+    g = _roll([0, 2, 83, 15, 0], tir=83)  # report predates the 63-140 band
+    alerts = M.day_alerts(g, _cgm(), [], [_TAKEN], M._PREGNANCY)
     assert [a.category for a in alerts] == ["glucose_targets_unsupported"]
     assert alerts[0].severity == "info"
 
