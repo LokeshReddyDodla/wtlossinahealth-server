@@ -350,7 +350,7 @@ def day_alerts(
         out.append(DayAlert(
             severity="critical" if worst.peak < 54 else "attention",
             category="glucose_low",
-            label=f"{len(lows)} low{plural} · nadir {int(worst.peak)} mg/dL",
+            label=f"{len(lows)} low{plural} · dipped to {int(worst.peak)} mg/dL",
             t=worst.start,
         ))
 
@@ -359,7 +359,7 @@ def day_alerts(
         worst = max(highs, key=lambda e: e.peak)
         plural = "s" if len(highs) != 1 else ""
         out.append(DayAlert(severity="attention", category="glucose_high",
-                            label=f"{len(highs)} severe high{plural} · peak {int(worst.peak)} mg/dL", t=worst.start))
+                            label=f"{len(highs)} severe high{plural} · peaked {int(worst.peak)} mg/dL", t=worst.start))
 
     if glucose.tir_pct is not None:
         tir = glucose.tir_pct

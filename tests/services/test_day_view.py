@@ -149,7 +149,7 @@ def test_alerts_use_precomputed_event_values():
     spine = _cgm([SpineEvent(type="hypo", start=3.0, end=3.5, peak=61)])  # nadir 61 → not severe
     alerts = M.day_alerts(g, spine, [], [_TAKEN])
     low = next(a for a in alerts if a.category == "glucose_low")
-    assert low.severity == "attention" and "nadir 61" in low.label and low.t == 3.0
+    assert low.severity == "attention" and "dipped to 61" in low.label and low.t == 3.0
 
 
 def test_alerts_empty_on_a_clean_day():
