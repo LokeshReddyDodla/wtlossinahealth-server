@@ -186,11 +186,10 @@ class Header(BaseModel):
 
 
 class InsightMarker(BaseModel):
-    """The proactive monitor's narration for the day.
+    """A proactive-monitor insight.
 
-    Placed at the source event's local hour, in its own band above the plot —
-    NOT on the spine y-axis. `t` is derived by converting the insight's UTC
-    event_time (created_at for cron insights) into the patient's local hour.
+    `t` is the source event's local hour (created_at for cron insights); it is
+    NOT a spine y-value.
     """
 
     t: float

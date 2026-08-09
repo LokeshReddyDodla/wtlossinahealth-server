@@ -10,6 +10,7 @@ norm — read with `.get()`, never index blindly.
 
 from datetime import datetime, time, timezone, tzinfo
 
+from lib.ai_foundation.agents.proactive_monitor.contracts import InsightCategory
 from lib.schemas.day_view import (
     ActivityRollup,
     GlucoseRollup,
@@ -278,17 +279,26 @@ def activity_rollup(report: dict | None, steps_goal: int | None = None) -> Activ
 
 # ── Proactive insights ───────────────────────────────────────────────────────
 
+_PROVIDER_HIDDEN = (
+    InsightCategory.COACHING_HABIT,
+    InsightCategory.COACHING_CELEBRATION,
+    InsightCategory.COACHING_CORRECTION,
+    InsightCategory.COACHING_MEDICATION,
+    InsightCategory.MEAL_MISSED,
+    InsightCategory.ENGAGEMENT_DROP,
+)
+_HIDDEN_CATEGORY_VALUES = frozenset(c.value for c in _PROVIDER_HIDDEN)
+
+
 def insight_markers(docs: list[dict], tz: tzinfo) -> list[InsightMarker]:
     """Proactive-monitor insights placed at their source event's local hour.
 
-    Docs come from InsightTracker (Mongo, UTC-aware timestamps) — unlike every
-    other day-view series these are stored in UTC, so `t` is a real conversion
-    into `tz`, not a wall-clock read. `engagement_drop` is dropped: it's a
-    delivery signal, not a health observation.
+    Stored UTC-aware in Mongo (unlike the other day-view series), so `t` is a real
+    conversion into `tz`, not a wall-clock read.
     """
     markers: list[InsightMarker] = []
     for doc in docs:
-        if doc.get("category") == "engagement_drop":
+        if doc.get("category") in _HIDDEN_CATEGORY_VALUES:
             continue
         placed = doc.get("event_time") or doc.get("created_at")
         if not isinstance(placed, datetime):

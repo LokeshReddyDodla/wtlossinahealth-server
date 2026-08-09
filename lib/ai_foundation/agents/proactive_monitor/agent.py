@@ -95,6 +95,9 @@ _STRIP_KEYS = frozenset({
 # Max concurrent patient scans in a batch
 _SCAN_CONCURRENCY = 5
 
+# Feedback can mute only these; warning/alert always fire regardless of dislikes.
+_SUPPRESSIBLE_SEVERITIES = frozenset({InsightSeverity.INFO, InsightSeverity.ATTENTION})
+
 
 class ProactiveMonitorAgent(BaseAgent):
     """Background health monitor: detects when to reach out, then delegates the
@@ -185,6 +188,16 @@ class ProactiveMonitorAgent(BaseAgent):
             logger.warning("smbg value lookup failed for %s: %s", patient_id, exc)
         return None
 
+    async def _disliked_categories(self, patient_id: str) -> set[str]:
+        """Categories the patient has net-downvoted (empty when no tracker)."""
+        if not self._insight_tracker:
+            return set()
+        try:
+            return await self._insight_tracker.get_disliked_categories(patient_id)
+        except Exception:
+            logger.exception("disliked-category lookup failed for %s", patient_id[:8])
+            return set()
+
     async def _event_insight(
         self,
         patient_id: str,
@@ -200,6 +213,9 @@ class ProactiveMonitorAgent(BaseAgent):
         notify (empty insights).
         """
         category, severity, tier = await self._classify(patient_id, trigger, anchor)
+        if severity in _SUPPRESSIBLE_SEVERITIES and category.value in await self._disliked_categories(patient_id):
+            logger.info("proactive: muted disliked %s for %s", category.value, patient_id[:8])
+            return ScanResult(patient_id=patient_id, insights=[])
         ref = event_ref(trigger, anchor)
 
         start = time.perf_counter()
@@ -294,6 +310,12 @@ class ProactiveMonitorAgent(BaseAgent):
                 await self._record_morning_adherence(patient_id, display_name, scan_date, scan_label)
 
             insights = await self._cron_narration(patient_id, display_name, scan_period)
+            if insights:
+                disliked = await self._disliked_categories(patient_id)
+                insights = [
+                    ins for ins in insights
+                    if ins.severity not in _SUPPRESSIBLE_SEVERITIES or ins.category.value not in disliked
+                ]
             for ins in insights:
                 logger.info(
                     "proactive_monitor.published_insight | patient=%s mode=cron cat=%s severity=%s title=%r",

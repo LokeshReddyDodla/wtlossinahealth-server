@@ -155,19 +155,15 @@ async def submit_insight_feedback(
             patient_id=parse_patient_uuid(str(doc["patient_id"])),
             care_provider_access_service=care_provider_access_service,
         )
-        trace_id = doc.get("trace_id") if doc else None
-        if not trace_id:
-            raise ValueError("No trace_id found for insight feedback")
-        gateway.log_score(
-            trace_id=trace_id,
-            name="insight_feedback",
-            value=1.0 if payload.thumbs_up else 0.0,
-            comment=payload.comment,
-        )
-        # Persist on the insight row too, so the signal actually steers future
-        # targeting (get_disliked_categories) instead of dead-ending in Langfuse.
-        await tracker.record_feedback(payload.insight_id, payload.thumbs_up)
-        recorded = True
+        recorded = await tracker.record_feedback(payload.insight_id, payload.thumbs_up)
+        trace_id = doc.get("trace_id")
+        if trace_id:
+            gateway.log_score(
+                trace_id=trace_id,
+                name="insight_feedback",
+                value=1.0 if payload.thumbs_up else 0.0,
+                comment=payload.comment,
+            )
     except HTTPException:
         raise
     except Exception as exc:
