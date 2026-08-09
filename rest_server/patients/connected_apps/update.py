@@ -1,14 +1,19 @@
 from typing import Union
+from uuid import UUID
 
 from fastapi import Depends, HTTPException, Query, Request, status
 
-from lib.dependencies.auth.base import get_current_user
+from lib.core.constants import ProfileTypeEnum
+from lib.dependencies.actor import Actor, get_current_actor
 from lib.dependencies.auth.patient_auth import get_current_patient
+from lib.dependencies.patient_access import resolve_patient_access
 from lib.dependencies.service_dependencies import (
+    get_care_provider_access_service,
     get_libreview_service,
     get_patient_connected_app_service,
 )
 from lib.models.patient import Patient
+from lib.services.care_provider_access_service import CareProviderAccessService
 from lib.schemas.patient_connected_app import (
     PatientLibreView as PatientLibreViewSchema,
 )
@@ -68,10 +73,28 @@ async def sync_libreview(
     patient_id: str = Query(...),
     force: bool = Query(default=False),
     libreview_service: LibreViewService = Depends(get_libreview_service),
-    current_user=Depends(get_current_user),
+    current_actor: Actor = Depends(
+        get_current_actor(
+            allowed_roles=[
+                ProfileTypeEnum.PATIENT,
+                ProfileTypeEnum.CARE_PROVIDER,
+                ProfileTypeEnum.ADMIN,
+            ],
+            check_permissions=False,
+        )
+    ),
+    care_provider_access_service: CareProviderAccessService = Depends(
+        get_care_provider_access_service
+    ),
 ):
     try:
-        result = await libreview_service.sync_libreview(patient_id, force=force)
+        # A patient may sync only their own; a care provider only an assigned patient.
+        verified_patient_id = await resolve_patient_access(
+            actor=current_actor,
+            patient_id=UUID(patient_id),
+            care_provider_access_service=care_provider_access_service,
+        )
+        result = await libreview_service.sync_libreview(str(verified_patient_id), force=force)
 
         if result.get("status") == "in_queue":
             return InQueueResponse(**result)
