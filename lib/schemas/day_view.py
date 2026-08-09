@@ -204,6 +204,18 @@ class InsightMarker(BaseModel):
     recurring_days: int | None = None        # consecutive-day streak once a pattern escalates
 
 
+class DayAlert(BaseModel):
+    """A deterministic clinical flag for the day — threshold math over already
+    computed values, framed for a clinician. NOT a patient insight: no LLM, no
+    coaching voice.
+    """
+
+    severity: Literal["critical", "attention", "info"]
+    category: str                            # glucose_low | glucose_high | tir_low | bp_high | doses_missed | no_glucose
+    label: str                               # clinical short text, e.g. "2 lows · nadir 48 mg/dL"
+    t: float | None = None                   # local hour when the flag is event-anchored (e.g. a BP reading)
+
+
 class DayView(BaseModel):
     date: date
     tz: str
@@ -212,6 +224,7 @@ class DayView(BaseModel):
     lanes: Lanes = Field(default_factory=Lanes)
     header: Header = Field(default_factory=Header)
     insights: list[InsightMarker] = []
+    alerts: list[DayAlert] = []
     tasks: list[TaskItem] = []
     # Deterministic report IDs for drill-down — derived at read, never stored.
     reports: dict[str, str] = {}

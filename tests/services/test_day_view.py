@@ -6,7 +6,14 @@ No database — every function under test takes plain dicts/lists. The DB paths
 
 from datetime import datetime
 
-from lib.schemas.day_view import SpineSource
+from lib.schemas.day_view import (
+    DoseMarker,
+    GlucoseRollup,
+    Spine,
+    SpineEvent,
+    SpineSource,
+    VitalMarker,
+)
 from lib.services.day_view import mappers as M
 
 _CGM_REP = {
@@ -111,6 +118,55 @@ def test_missing_keys_never_crash():
     assert M.steps_lane(None).hourly == []
     roll, asleep, eff = M.sleep_rollup(None)
     assert (asleep, eff) == (None, None)
+
+
+# ── deterministic clinical alerts ────────────────────────────────────────────
+
+_TAKEN = DoseMarker(t=8, slot="morning", label="M", status="taken", taken=True)
+_MISSED = DoseMarker(t=20, slot="evening", label="E", status="missed", taken=False)
+
+
+def _cgm(events: list[SpineEvent] | None = None) -> Spine:
+    return Spine(source=SpineSource.cgm, unit="mg/dL", band=(70.0, 180.0), events=events or [])
+
+
+def test_alerts_flag_a_bad_day():
+    g = GlucoseRollup(tir_pct=48)
+    spine = _cgm([
+        SpineEvent(type="hypo", start=3.2, end=3.7, peak=48),   # peak = nadir for hypo
+        SpineEvent(type="hyper", start=20.0, end=22.0, peak=288),
+    ])
+    bp = [VitalMarker(t=14.0, systolic=148, diastolic=96)]
+    alerts = M.day_alerts(g, spine, bp, [_MISSED, _TAKEN])
+    cats = {a.category for a in alerts}
+    assert {"glucose_low", "glucose_high", "tir_low", "bp_high", "doses_missed"} <= cats
+    # Nadir 48 (<54) and TIR 48 (<50) are critical, and sort first.
+    assert alerts[0].severity == "critical"
+
+
+def test_alerts_use_precomputed_event_values():
+    g = GlucoseRollup(tir_pct=85)
+    spine = _cgm([SpineEvent(type="hypo", start=3.0, end=3.5, peak=61)])  # nadir 61 → not severe
+    alerts = M.day_alerts(g, spine, [], [_TAKEN])
+    low = next(a for a in alerts if a.category == "glucose_low")
+    assert low.severity == "attention" and "nadir 61" in low.label and low.t == 3.0
+
+
+def test_alerts_empty_on_a_clean_day():
+    g = GlucoseRollup(tir_pct=90)
+    assert M.day_alerts(g, _cgm(), [], [_TAKEN]) == []
+
+
+def test_alerts_missed_counts_only_missed_not_pending():
+    scheduled = DoseMarker(t=22, slot="night", label="N", status="scheduled", taken=False)
+    alerts = M.day_alerts(GlucoseRollup(), _cgm(), [], [_TAKEN, scheduled, _MISSED])
+    dose_alerts = [a for a in alerts if a.category == "doses_missed"]
+    assert len(dose_alerts) == 1 and dose_alerts[0].label == "1 dose missed"
+
+
+def test_alerts_no_glucose_device():
+    alerts = M.day_alerts(GlucoseRollup(), Spine(source=SpineSource.none), [], [])
+    assert [a.category for a in alerts] == ["no_glucose"]
 
 
 if __name__ == "__main__":
