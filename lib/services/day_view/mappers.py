@@ -89,22 +89,17 @@ def smbg_spine(points: list[Point]) -> Spine:
     return Spine(source=SpineSource.smbg, unit="mg/dL", points=points, band=(70.0, 180.0))
 
 
-def hr_spine(points: list[Point]) -> Spine:
-    """Continuous heart rate — its own axis, not a glucose surrogate."""
-    return Spine(source=SpineSource.hr, unit="bpm", points=points, band=(60.0, 100.0))
-
-
 def empty_spine() -> Spine:
-    """No glucose device and no watch — behavioral day, no plot."""
+    """No glucose device — behavioral day, no plot. HR still renders in its lane."""
     return Spine(source=SpineSource.none)
 
 
-def select_spine(cgm_report: dict | None, smbg: list[Point], hr: list[Point]) -> Spine:
-    """Highest-fidelity spine available: CGM → SMBG dots → HR → behavioral."""
+def select_spine(cgm_report: dict | None, smbg: list[Point]) -> Spine:
+    """Glucose spine: CGM → SMBG dots → none. HR is never the spine — it has its
+    own lane, and plotting meals on a heart-rate axis misleads."""
     return (
         cgm_spine(cgm_report)
         or (smbg_spine(smbg) if smbg else None)
-        or (hr_spine(hr) if hr else None)
         or empty_spine()
     )
 

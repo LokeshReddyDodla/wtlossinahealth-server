@@ -87,6 +87,13 @@ class FitnessUploadService:
                     await sync_profile_weight(patient_id, float(latest.value))
                 except Exception:
                     pass
+
+            # Sleep via HealthKit / wearable — completes the "Log your sleep" task
+            # for patients who never open the app's daily check-in.
+            if (fitness_data.sleep_deep or fitness_data.sleep_light
+                    or fitness_data.sleep_rem or fitness_data.sleep_in_bed
+                    or fitness_data.sleep_awake):
+                await handler.on_sleep_logged(_UUID(patient_id))
         except Exception:
             pass
 

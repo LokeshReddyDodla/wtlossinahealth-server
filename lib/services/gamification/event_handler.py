@@ -137,10 +137,17 @@ class GamificationEventHandler:
         # Ensure tasks exist (on-demand for mid-day signups)
         await self._ensure_tasks_exist(patient_id)
 
+        # The weekly weigh-in is dated to Monday but completable any day that
+        # week; everything else is a same-day task.
+        if task_type == TaskType.LOG_WEIGHT.value:
+            date_filter = DailyTask.task_date >= today - timedelta(days=today.weekday())
+        else:
+            date_filter = DailyTask.task_date == today
+
         result = await postgres_session.execute(
             select(DailyTask).where(
                 DailyTask.patient_id == patient_id,
-                DailyTask.task_date == today,
+                date_filter,
                 DailyTask.task_type == task_type,
                 DailyTask.status == TaskStatus.PENDING.value,
             )
