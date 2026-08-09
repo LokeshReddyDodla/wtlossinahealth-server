@@ -180,7 +180,7 @@ def test_pregnancy_uses_tighter_63_140_targets():
 
 
 def test_pregnancy_needs_report_refresh_when_bands_absent():
-    g = _roll([0, 2, 83, 15, 0], tir=83)  # report predates the 63-140 band
+    g = _roll([0, 2, 83, 15, 0], tir=83)  # report without the 63-140 bands
     alerts = M.day_alerts(g, _cgm(), [], [_TAKEN], M._PREGNANCY)
     assert [a.category for a in alerts] == ["glucose_targets_unsupported"]
     assert alerts[0].severity == "info"
