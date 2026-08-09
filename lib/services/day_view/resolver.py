@@ -99,7 +99,7 @@ class DayViewService:
         )
         moods, symptoms, smbg, care, profile = pg
         dose_markers, doses_taken, doses_total, tasks_done, tasks_total, task_items = care
-        age, is_pregnant = profile
+        age, is_pregnant, diabetes_type = profile
 
         # One profile-derived target tier drives the chart band, headline TIR,
         # and alerts — 63-140 in pregnancy, 70-180 otherwise.
@@ -146,7 +146,9 @@ class DayViewService:
         return DayView(date=day, tz=tz_name, spine=spine,
                        on_curve=on_curve, lanes=lanes, header=header,
                        insights=mappers.insight_markers(insight_docs, tz),
-                       alerts=mappers.day_alerts(header.glucose, spine, bp, dose_markers, targets),
+                       alerts=mappers.day_alerts(
+                           header.glucose, spine, bp, dose_markers, targets,
+                           mappers.glucose_monitored(diabetes_type)),
                        tasks=task_items)
 
     @with_postgres_session

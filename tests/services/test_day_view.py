@@ -240,6 +240,19 @@ def test_alerts_no_glucose_device():
     assert [a.category for a in alerts] == ["no_glucose"]
 
 
+def test_no_glucose_alert_only_when_monitored():
+    none_spine = Spine(source=SpineSource.none)
+    monitored = M.day_alerts(GlucoseRollup(), none_spine, [], [], M._STANDARD, True)
+    assert [a.category for a in monitored] == ["no_glucose"]
+    # Non-diabetic: no glucose is expected, so no alert.
+    assert M.day_alerts(GlucoseRollup(), none_spine, [], [], M._STANDARD, False) == []
+
+
+def test_glucose_monitored_by_type():
+    assert M.glucose_monitored("T2") and M.glucose_monitored("GESTATIONAL") and M.glucose_monitored("pre")
+    assert not M.glucose_monitored("NONE") and not M.glucose_monitored(None) and not M.glucose_monitored("OTHER")
+
+
 if __name__ == "__main__":
     import sys
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
