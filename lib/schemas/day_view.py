@@ -185,6 +185,26 @@ class Header(BaseModel):
     care: CareRollup = Field(default_factory=CareRollup)
 
 
+class InsightMarker(BaseModel):
+    """The proactive monitor's narration for the day.
+
+    Placed at the source event's local hour, in its own band above the plot —
+    NOT on the spine y-axis. `t` is derived by converting the insight's UTC
+    event_time (created_at for cron insights) into the patient's local hour.
+    """
+
+    t: float
+    insight_id: str | None = None
+    severity: str                            # info | attention | warning | alert
+    category: str
+    title: str | None = None
+    message: str
+    suggested_query: str | None = None
+    entity_type: str | None = None           # meal | smbg | symptom — source anchor
+    entity_id: str | None = None
+    recurring_days: int | None = None        # consecutive-day streak once a pattern escalates
+
+
 class DayView(BaseModel):
     date: date
     tz: str
@@ -192,6 +212,7 @@ class DayView(BaseModel):
     on_curve: OnCurve = Field(default_factory=OnCurve)
     lanes: Lanes = Field(default_factory=Lanes)
     header: Header = Field(default_factory=Header)
+    insights: list[InsightMarker] = []
     tasks: list[TaskItem] = []
     # Deterministic report IDs for drill-down — derived at read, never stored.
     reports: dict[str, str] = {}
