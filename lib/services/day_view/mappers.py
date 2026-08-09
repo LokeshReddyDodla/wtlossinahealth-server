@@ -286,6 +286,7 @@ _PROVIDER_HIDDEN = (
     InsightCategory.COACHING_MEDICATION,
     InsightCategory.MEAL_MISSED,
     InsightCategory.ENGAGEMENT_DROP,
+    InsightCategory.GENERAL,
 )
 _HIDDEN_CATEGORY_VALUES = frozenset(c.value for c in _PROVIDER_HIDDEN)
 
