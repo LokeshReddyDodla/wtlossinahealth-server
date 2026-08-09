@@ -195,15 +195,20 @@ def glucose_rollup(report: dict | None, preg: bool = False) -> GlucoseRollup:
         return GlucoseRollup()
     rng = report.get("cgm_range_stats") or {}
     summ = report.get("cgm_summary_stats") or {}
-    bands = [
-        rng.get("below_54_percent"),
-        rng.get("below_70_above_54_percent"),
-        rng.get("in_target_70_180_percent"),
-        rng.get("above_180_below_250_percent"),
-        rng.get("above_250_percent"),
-    ]
-    # The headline TIR follows the profile's target window: 63-140 in pregnancy.
-    tir_key = "in_target_63_140_percent" if preg else "in_target_70_180_percent"
+    # `bands` describes the same window as tir_pct so every bar matches its number:
+    # 4 pregnancy bands (63-140) or the canonical 5 (70-180).
+    if preg:
+        band_keys = ["below_54_percent", "below_63_above_54_percent",
+                     "in_target_63_140_percent", "above_140_percent"]
+        tir_key = "in_target_63_140_percent"
+    else:
+        band_keys = ["below_54_percent", "below_70_above_54_percent", "in_target_70_180_percent",
+                     "above_180_below_250_percent", "above_250_percent"]
+        tir_key = "in_target_70_180_percent"
+    raw = [rng.get(k) for k in band_keys]
+    bands = [float(b or 0) for b in raw] if any(b is not None for b in raw) else None
+    if preg and rng.get("in_target_63_140_percent") is None:
+        bands = None   # pregnancy report not yet regenerated with the 63-140 bands
     return GlucoseRollup(
         tir_pct=rng.get(tir_key),
         avg=summ.get("average_glucose_mgdl"),
@@ -211,11 +216,56 @@ def glucose_rollup(report: dict | None, preg: bool = False) -> GlucoseRollup:
         cv_pct=summ.get("coefficient_of_variation_percent"),
         low_mgdl=summ.get("lowest_glucose_mgdl"),
         high_mgdl=summ.get("highest_glucose_mgdl"),
-        bands=[float(b or 0) for b in bands] if any(b is not None for b in bands) else None,
+        bands=bands,
         tir_preg_pct=rng.get("in_target_63_140_percent"),
         tbr_54_63_pct=rng.get("below_63_above_54_percent"),
         tar_140_pct=rng.get("above_140_percent"),
     )
+
+
+def _to_dt(value) -> datetime | None:
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    return None
+
+
+def hyper_excursions(readings: list[dict], threshold: float = 140.0) -> list[dict]:
+    """Sustained runs above `threshold` from raw readings, as HyperEvent dicts.
+
+    Read-time detection for the pregnancy target (140) — the stored report's
+    hyper_events use the 180 threshold, which misses GDM-relevant 140-180 highs.
+    A run is >=2 consecutive above-threshold readings; the >180 severe events
+    remain a subset, distinguishable by peak.
+    """
+    pts = [(_to_dt(r.get("device_timestamp")), r.get("glucose_mgdl")) for r in readings]
+    pts = sorted((t, float(g)) for t, g in pts if t is not None and g is not None)
+
+    events: list[dict] = []
+    run: list[tuple[datetime, float]] = []
+
+    def flush() -> None:
+        if len(run) >= 2:
+            start, end = run[0][0], run[-1][0]
+            events.append({
+                "start_time": start.isoformat(),
+                "end_time": end.isoformat(),
+                "duration_minutes": round((end - start).total_seconds() / 60, 1),
+                "peak_glucose_mgdl": max(g for _, g in run),
+            })
+
+    for t, g in pts:
+        if g > threshold:
+            run.append((t, g))
+        else:
+            flush()
+            run = []
+    flush()
+    return events
 
 
 def nutrition_rollup(report: dict | None) -> NutritionRollup:
