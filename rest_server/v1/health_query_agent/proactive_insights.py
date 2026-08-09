@@ -155,8 +155,6 @@ async def submit_insight_feedback(
             patient_id=parse_patient_uuid(str(doc["patient_id"])),
             care_provider_access_service=care_provider_access_service,
         )
-        # Persist on the insight row first, so the thumbs survive whether or not
-        # the insight carries a Langfuse trace — get_disliked_categories reads it.
         recorded = await tracker.record_feedback(payload.insight_id, payload.thumbs_up)
         trace_id = doc.get("trace_id")
         if trace_id:

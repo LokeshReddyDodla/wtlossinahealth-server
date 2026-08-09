@@ -127,15 +127,6 @@ _CROSS_DOMAIN_CATEGORIES = [
     InsightCategory.LIFESTYLE_PATTERN,
 ]
 
-# Patient-directed coaching + adherence nudges — noise on a provider surface,
-# where adherence and engagement already read straight off the timeline lanes.
-# A provider wants the AI's analysis (concerns, cross-domain, positives), not the
-# action-prompts the patient receives.
-PROVIDER_HIDDEN_CATEGORIES = frozenset(
-    _COACHING_CATEGORIES + [InsightCategory.MEAL_MISSED, InsightCategory.ENGAGEMENT_DROP]
-)
-
-
 LLM_INSIGHT_CATEGORIES_PROMPT = (
     "CATEGORIES — pick the one that fits best:\n"
     f"Concerns: {', '.join(c.value for c in _CONCERN_CATEGORIES)}\n"

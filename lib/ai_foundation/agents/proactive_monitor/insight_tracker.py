@@ -186,11 +186,9 @@ class InsightTracker:
         await self._collection.insert_one(doc)
 
     async def record_feedback(self, insight_id: str, thumbs_up: bool) -> bool:
-        """Persist thumbs feedback on the insight row. Returns True if a row matched.
+        """Persist thumbs feedback on the insight row; True if a row matched.
 
-        Kept on the document (not only in Langfuse) so :meth:`get_disliked_categories`
-        can read it. Latest verdict wins — a patient who changes their mind
-        overwrites, rather than double-counting the same insight.
+        A re-vote overwrites — never double-counts the same insight.
         """
         await self._maybe_ensure_indexes()
         result = await self._collection.update_one(
@@ -200,11 +198,7 @@ class InsightTracker:
         return result.matched_count > 0
 
     async def get_disliked_categories(self, patient_id: str, *, since_days: int = 30) -> set[str]:
-        """Categories the patient has net-downvoted within the window.
-
-        A lone thumbs-down mutes nothing — a category qualifies only when its
-        dislikes outweigh its likes — so one off day doesn't silence a topic.
-        """
+        """Categories whose thumbs-downs outweigh their thumbs-ups within the window."""
         await self._maybe_ensure_indexes()
         since = datetime.now(timezone.utc) - timedelta(days=since_days)
         pipeline = [

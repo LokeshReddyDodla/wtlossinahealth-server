@@ -80,8 +80,7 @@ class DayViewService:
         # bound directly (matches the feed service — see docs, tz item is parked).
         day_start = datetime.combine(day, time.min)
         day_end = datetime.combine(day + timedelta(days=1), time.min)
-        # Insights are the exception — stored UTC-aware in Mongo, so the local day
-        # must be converted to a real UTC window to select and place them.
+        # Insights are stored UTC-aware in Mongo; convert the local day to a UTC window.
         insight_from = day_start.replace(tzinfo=tz).astimezone(timezone.utc)
         insight_to = day_end.replace(tzinfo=tz).astimezone(timezone.utc)
         pid = UUID(patient_id)
