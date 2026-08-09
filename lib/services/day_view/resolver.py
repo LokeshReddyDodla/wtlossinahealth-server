@@ -97,8 +97,9 @@ class DayViewService:
             self._postgres_bundle(pid, day, day_start, day_end, postgres_session),
             self._fetch_insights(patient_id, insight_from, insight_to),
         )
-        moods, symptoms, smbg, care = pg
+        moods, symptoms, smbg, care, profile = pg
         dose_markers, doses_taken, doses_total, tasks_done, tasks_total, task_items = care
+        age, is_pregnant = profile
 
         # Spine degrades to the highest-fidelity series present.
         spine = mappers.select_spine(cgm_rep, smbg)
@@ -142,7 +143,9 @@ class DayViewService:
         return DayView(date=day, tz=tz_name, spine=spine,
                        on_curve=on_curve, lanes=lanes, header=header,
                        insights=mappers.insight_markers(insight_docs, tz),
-                       alerts=mappers.day_alerts(header.glucose, spine, bp, dose_markers),
+                       alerts=mappers.day_alerts(
+                           header.glucose, spine, bp, dose_markers,
+                           mappers.select_glucose_targets(age, is_pregnant)),
                        tasks=task_items)
 
     @with_postgres_session
@@ -174,7 +177,8 @@ class DayViewService:
         symptoms = await self.repo.symptoms(pid, day_start, day_end, session)
         smbg = await self.repo.smbg_points(pid, day_start, day_end, session)
         care = await self.repo.care(pid, day, session)
-        return moods, symptoms, smbg, care
+        profile = await self.repo.glucose_profile(pid, session)
+        return moods, symptoms, smbg, care, profile
 
     async def _fetch_insights(
         self, patient_id: str, from_utc: datetime, to_utc: datetime,

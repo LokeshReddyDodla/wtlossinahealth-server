@@ -57,6 +57,27 @@ class CGMRangeStatistics:
                 "glucose_level >= 250",
                 "above_250",
             ),
+            "in_target_63_140": generate_range_coverage_query(
+                patient_id,
+                start_date_str,
+                end_date_str,
+                "glucose_level >= 63 AND glucose_level <= 140",
+                "in_target_63_140",
+            ),
+            "below_63_above_54": generate_range_coverage_query(
+                patient_id,
+                start_date_str,
+                end_date_str,
+                "glucose_level < 63 AND glucose_level >= 54",
+                "below_63_above_54",
+            ),
+            "above_140": generate_range_coverage_query(
+                patient_id,
+                start_date_str,
+                end_date_str,
+                "glucose_level > 140",
+                "above_140",
+            ),
         }
 
         results = {}
@@ -74,6 +95,9 @@ class CGMRangeStatistics:
             in_tight_target_70_140_percent=results.get("in_tight_target_70_140", 0.0),
             above_180_below_250_percent=results.get("above_180_below_250", 0.0),
             above_250_percent=results.get("above_250", 0.0),
+            in_target_63_140_percent=results.get("in_target_63_140", 0.0),
+            below_63_above_54_percent=results.get("below_63_above_54", 0.0),
+            above_140_percent=results.get("above_140", 0.0),
         )
 
     @staticmethod
