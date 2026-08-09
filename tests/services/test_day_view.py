@@ -189,9 +189,22 @@ def test_pregnancy_needs_report_refresh_when_bands_absent():
 def test_pregnancy_band_and_tir_follow_profile():
     assert M.select_spine(_CGM_REP, _SMBG, M._PREGNANCY.in_range).band == (63.0, 140.0)
     assert M.select_spine(_CGM_REP, _SMBG).band == (70.0, 180.0)
-    rep = {"cgm_range_stats": {"in_target_70_180_percent": 80, "in_target_63_140_percent": 55}}
-    assert M.glucose_rollup(rep).tir_pct == 80
-    assert M.glucose_rollup(rep, preg=True).tir_pct == 55
+    rep = {"cgm_range_stats": {
+        "below_54_percent": 1, "below_70_above_54_percent": 3, "in_target_70_180_percent": 80,
+        "above_180_below_250_percent": 10, "above_250_percent": 6,
+        "below_63_above_54_percent": 2, "in_target_63_140_percent": 55, "above_140_percent": 42,
+    }}
+    std = M.glucose_rollup(rep)
+    preg = M.glucose_rollup(rep, preg=True)
+    # bands describe the same window as tir_pct: 5 standard, 4 pregnancy.
+    assert std.tir_pct == 80 and len(std.bands) == 5
+    assert preg.tir_pct == 55 and preg.bands == [1.0, 2.0, 55.0, 42.0]
+
+
+def test_pregnancy_rollup_has_no_bands_before_report_refresh():
+    rep = {"cgm_range_stats": {"in_target_70_180_percent": 80, "below_54_percent": 1}}
+    roll = M.glucose_rollup(rep, preg=True)
+    assert roll.tir_pct is None and roll.bands is None
 
 
 def test_bp_crisis_outranks_high():
