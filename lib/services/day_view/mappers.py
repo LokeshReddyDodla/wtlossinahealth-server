@@ -59,7 +59,7 @@ def hour_of(value) -> float | None:
 
 # ── Spine (CGM) ──────────────────────────────────────────────────────────────
 
-def cgm_spine(report: dict | None) -> Spine | None:
+def cgm_spine(report: dict | None, band: tuple[float, float] = (70.0, 180.0)) -> Spine | None:
     """The continuous glucose spine + excursion event spans, or None if no curve."""
     if not report:
         return None
@@ -85,12 +85,12 @@ def cgm_spine(report: dict | None) -> Spine | None:
             events.append(SpineEvent(type="hypo", start=round(start, 3),
                                      end=round(end, 3), peak=float(e.get("lowest_glucose_mgdl") or 0)))
 
-    return Spine(source=SpineSource.cgm, unit="mg/dL", points=points, band=(70.0, 180.0), events=events)
+    return Spine(source=SpineSource.cgm, unit="mg/dL", points=points, band=band, events=events)
 
 
-def smbg_spine(points: list[Point]) -> Spine:
+def smbg_spine(points: list[Point], band: tuple[float, float] = (70.0, 180.0)) -> Spine:
     """Finger-stick dots — never joined into a line."""
-    return Spine(source=SpineSource.smbg, unit="mg/dL", points=points, band=(70.0, 180.0))
+    return Spine(source=SpineSource.smbg, unit="mg/dL", points=points, band=band)
 
 
 def empty_spine() -> Spine:
@@ -98,12 +98,14 @@ def empty_spine() -> Spine:
     return Spine(source=SpineSource.none)
 
 
-def select_spine(cgm_report: dict | None, smbg: list[Point]) -> Spine:
+def select_spine(cgm_report: dict | None, smbg: list[Point],
+                 band: tuple[float, float] = (70.0, 180.0)) -> Spine:
     """Glucose spine: CGM → SMBG dots → none. HR is never the spine — it has its
-    own lane, and plotting meals on a heart-rate axis misleads."""
+    own lane, and plotting meals on a heart-rate axis misleads. `band` is the
+    profile's target range (63-140 in pregnancy) drawn as the chart target."""
     return (
-        cgm_spine(cgm_report)
-        or (smbg_spine(smbg) if smbg else None)
+        cgm_spine(cgm_report, band)
+        or (smbg_spine(smbg, band) if smbg else None)
         or empty_spine()
     )
 
@@ -188,7 +190,7 @@ def steps_lane(report: dict | None) -> StepsLane:
 
 # ── Header rollups ───────────────────────────────────────────────────────────
 
-def glucose_rollup(report: dict | None) -> GlucoseRollup:
+def glucose_rollup(report: dict | None, preg: bool = False) -> GlucoseRollup:
     if not report:
         return GlucoseRollup()
     rng = report.get("cgm_range_stats") or {}
@@ -200,8 +202,10 @@ def glucose_rollup(report: dict | None) -> GlucoseRollup:
         rng.get("above_180_below_250_percent"),
         rng.get("above_250_percent"),
     ]
+    # The headline TIR follows the profile's target window: 63-140 in pregnancy.
+    tir_key = "in_target_63_140_percent" if preg else "in_target_70_180_percent"
     return GlucoseRollup(
-        tir_pct=rng.get("in_target_70_180_percent"),
+        tir_pct=rng.get(tir_key),
         avg=summ.get("average_glucose_mgdl"),
         gri=summ.get("gri"),
         cv_pct=summ.get("coefficient_of_variation_percent"),
@@ -341,17 +345,18 @@ class GlucoseTargets:
     2019;42:1593-1603, Table 1. Severity labels are ours; the numbers are not."""
 
     tier: str
-    tir_min: float       # in-range floor
-    tbr_l1_max: float    # time below the L1 low edge, ceiling
-    tbr_l2_max: float    # time <54 ceiling
-    tar_max: float       # time above the high edge, ceiling
-    tbr_l1_edge: int     # mg/dL edge for the L1 low band (70; 63 in pregnancy)
-    tar_edge: int        # mg/dL edge for the high band (250; 140 in pregnancy)
+    tir_min: float                  # in-range floor
+    tbr_l1_max: float               # time below the L1 low edge, ceiling
+    tbr_l2_max: float               # time <54 ceiling
+    tar_max: float                  # time above the high edge, ceiling
+    tbr_l1_edge: int                # mg/dL edge for the L1 low band (70; 63 in pregnancy)
+    tar_edge: int                   # mg/dL edge for the high band (250; 140 in pregnancy)
+    in_range: tuple[float, float]   # the chart target band + the headline TIR window
 
 
-_STANDARD = GlucoseTargets("standard", tir_min=70, tbr_l1_max=4, tbr_l2_max=1, tar_max=5, tbr_l1_edge=70, tar_edge=250)
-_OLDER = GlucoseTargets("older_high_risk", tir_min=50, tbr_l1_max=1, tbr_l2_max=1, tar_max=10, tbr_l1_edge=70, tar_edge=250)
-_PREGNANCY = GlucoseTargets("pregnancy", tir_min=70, tbr_l1_max=4, tbr_l2_max=1, tar_max=25, tbr_l1_edge=63, tar_edge=140)
+_STANDARD = GlucoseTargets("standard", tir_min=70, tbr_l1_max=4, tbr_l2_max=1, tar_max=5, tbr_l1_edge=70, tar_edge=250, in_range=(70.0, 180.0))
+_OLDER = GlucoseTargets("older_high_risk", tir_min=50, tbr_l1_max=1, tbr_l2_max=1, tar_max=10, tbr_l1_edge=70, tar_edge=250, in_range=(70.0, 180.0))
+_PREGNANCY = GlucoseTargets("pregnancy", tir_min=70, tbr_l1_max=4, tbr_l2_max=1, tar_max=25, tbr_l1_edge=63, tar_edge=140, in_range=(63.0, 140.0))
 
 
 def select_glucose_targets(age: float | None, is_pregnant: bool) -> GlucoseTargets:
