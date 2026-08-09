@@ -238,15 +238,20 @@ class DayViewRepository:
         return out
 
     async def glucose_profile(self, pid: UUID, session: AsyncSession) -> tuple[float | None, bool]:
-        """(age, is_pregnant) — the profile facts the CGM target tier keys on."""
+        """(age, is_pregnant) — the profile facts the CGM target tier keys on.
+        Pregnancy is recorded in either reproductive_health or diabetic_history;
+        the flag is true if set in either."""
         patient = (await session.execute(
-            select(Patient).options(selectinload(Patient.diabetic_history))
-            .where(Patient.patient_id == pid)
+            select(Patient).options(
+                selectinload(Patient.reproductive_health),
+                selectinload(Patient.diabetic_history),
+            ).where(Patient.patient_id == pid)
         )).scalar_one_or_none()
         if patient is None:
             return None, False
+        repro = patient.reproductive_health
         history = patient.diabetic_history
-        is_pregnant = bool(history and history.is_pregnant)
+        is_pregnant = bool((repro and repro.is_pregnant) or (history and history.is_pregnant))
         return patient.age, is_pregnant
 
     async def care(self, pid: UUID, day: date, session: AsyncSession):
