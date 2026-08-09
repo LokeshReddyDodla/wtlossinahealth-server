@@ -258,7 +258,13 @@ class PatientDietPlanService:
                 )
 
             for field, value in update_data.items():
-                if hasattr(diet_plan, field):
+                if not hasattr(diet_plan, field):
+                    continue
+                # Merge JSONB content so sub-fields the caller didn't send (e.g.
+                # micronutrients) survive — the request already dropped unset keys.
+                if field == "content" and isinstance(value, dict) and isinstance(diet_plan.content, dict):
+                    setattr(diet_plan, field, {**diet_plan.content, **value})
+                else:
                     setattr(diet_plan, field, value)
 
             await postgres_session.commit()

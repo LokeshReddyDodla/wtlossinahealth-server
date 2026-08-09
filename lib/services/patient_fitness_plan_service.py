@@ -259,7 +259,13 @@ class PatientFitnessPlanService:
                 )
 
             for field, value in update_data.items():
-                if hasattr(fitness_plan, field):
+                if not hasattr(fitness_plan, field):
+                    continue
+                # Merge JSONB content so sub-fields the caller didn't send (e.g.
+                # rest_days, sessions_per_week) survive — the request drops unset keys.
+                if field == "content" and isinstance(value, dict) and isinstance(fitness_plan.content, dict):
+                    setattr(fitness_plan, field, {**fitness_plan.content, **value})
+                else:
                     setattr(fitness_plan, field, value)
 
             await postgres_session.commit()
