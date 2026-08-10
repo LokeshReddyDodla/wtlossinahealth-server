@@ -68,24 +68,24 @@ def generate_time_period_stats_query(patient_id: str, start_date: str, end_date:
     return f"""
     SELECT
         CASE
-            WHEN formatDateTime(time, '%H:%M') BETWEEN '00:00' AND '05:59' THEN 'overnight'
-            WHEN formatDateTime(time, '%H:%M') BETWEEN '06:00' AND '11:59' THEN 'breakfast'
-            WHEN formatDateTime(time, '%H:%M') BETWEEN '12:00' AND '17:59' THEN 'lunch'
-            WHEN formatDateTime(time, '%H:%M') BETWEEN '18:00' AND '23:59' THEN 'dinner'
+            WHEN formatDateTime(time, '%H:%i') BETWEEN '00:00' AND '05:59' THEN 'overnight'
+            WHEN formatDateTime(time, '%H:%i') BETWEEN '06:00' AND '11:59' THEN 'breakfast'
+            WHEN formatDateTime(time, '%H:%i') BETWEEN '12:00' AND '17:59' THEN 'lunch'
+            WHEN formatDateTime(time, '%H:%i') BETWEEN '18:00' AND '23:59' THEN 'dinner'
             ELSE 'unknown'
         END AS time_period,
         CASE
-            WHEN formatDateTime(time, '%H:%M') BETWEEN '00:00' AND '05:59' THEN '00:00:00'
-            WHEN formatDateTime(time, '%H:%M') BETWEEN '06:00' AND '11:59' THEN '06:00:00'
-            WHEN formatDateTime(time, '%H:%M') BETWEEN '12:00' AND '17:59' THEN '12:00:00'
-            WHEN formatDateTime(time, '%H:%M') BETWEEN '18:00' AND '23:59' THEN '18:00:00'
+            WHEN formatDateTime(time, '%H:%i') BETWEEN '00:00' AND '05:59' THEN '00:00:00'
+            WHEN formatDateTime(time, '%H:%i') BETWEEN '06:00' AND '11:59' THEN '06:00:00'
+            WHEN formatDateTime(time, '%H:%i') BETWEEN '12:00' AND '17:59' THEN '12:00:00'
+            WHEN formatDateTime(time, '%H:%i') BETWEEN '18:00' AND '23:59' THEN '18:00:00'
             ELSE NULL
         END AS from_time,
         CASE
-            WHEN formatDateTime(time, '%H:%M') BETWEEN '00:00' AND '05:59' THEN '05:59:59'
-            WHEN formatDateTime(time, '%H:%M') BETWEEN '06:00' AND '11:59' THEN '11:59:59'
-            WHEN formatDateTime(time, '%H:%M') BETWEEN '12:00' AND '17:59' THEN '17:59:59'
-            WHEN formatDateTime(time, '%H:%M') BETWEEN '18:00' AND '23:59' THEN '23:59:59'
+            WHEN formatDateTime(time, '%H:%i') BETWEEN '00:00' AND '05:59' THEN '05:59:59'
+            WHEN formatDateTime(time, '%H:%i') BETWEEN '06:00' AND '11:59' THEN '11:59:59'
+            WHEN formatDateTime(time, '%H:%i') BETWEEN '12:00' AND '17:59' THEN '17:59:59'
+            WHEN formatDateTime(time, '%H:%i') BETWEEN '18:00' AND '23:59' THEN '23:59:59'
             ELSE NULL
         END AS to_time,
         AVG(glucose_level) AS avg_glucose_mgdl,
