@@ -314,7 +314,9 @@ class CGMUploadService:
 
         df = df_raw[required_cols].copy()
         df["timestamp"] = pd.to_datetime(
-            df["time point"], dayfirst=True, errors="coerce"
+            df["time point"],
+            dayfirst=self._infer_dayfirst(df["time point"]),
+            errors="coerce",
         ).dt.tz_localize(None)
         df = df.dropna(subset=["timestamp"])
 
@@ -327,6 +329,19 @@ class CGMUploadService:
         df["glucose_mgdl"] = df["glucose_mgdl"].astype(int)
 
         return df
+
+    @staticmethod
+    def _infer_dayfirst(col: pd.Series) -> bool:
+        """A CGM export uses one date order throughout. A value >12 in the
+        first field marks it as the day (day-first); a value >12 in the
+        second field marks that as the day (month-first).
+        ponytail: heuristic fails only if every row is ambiguous (all
+        fields <= 12); month-first is Sinocare's known default in that case.
+        """
+        s = col.astype(str)
+        first = s.str.extract(r"^(\d{1,2})[/-]")[0].dropna().astype(int)
+        second = s.str.extract(r"^\d{1,2}[/-](\d{1,2})")[0].dropna().astype(int)
+        return (first > 12).any() and not (second > 12).any()
 
     def _parse_linx_file(self, file_contents: bytes) -> pd.DataFrame:
         """Parse Linx CSV file and normalize data."""
