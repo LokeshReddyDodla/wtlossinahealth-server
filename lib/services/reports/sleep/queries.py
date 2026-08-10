@@ -4,12 +4,15 @@
 def generate_total_sessions_query(
     patient_id: str, start_datetime: str, end_datetime: str
 ) -> str:
+    """Segment count over the nighttime sleep window — same filter as the other
+    aggregates so the report describes one consistent window."""
     return f"""
     SELECT count() AS total_sessions
     FROM aihealth.sleep_data FINAL
     WHERE patient_id = '{patient_id}'
         AND sleep_start_time >= '{start_datetime}'
         AND sleep_end_time <= '{end_datetime}'
+        AND (toHour(sleep_start_time) >= 18 OR toHour(sleep_end_time) < 12)
     """
 
 
@@ -86,6 +89,9 @@ def generate_hypnogram_query(
 def generate_type_distribution_query(
     patient_id: str, start_datetime: str, end_datetime: str
 ) -> str:
+    """Per-stage totals over the nighttime sleep window — same filter as
+    night_stats/hypnogram/timing so every aggregate covers one window and the
+    asleep totals reconcile (daytime naps would otherwise inflate this alone)."""
     return f"""
     SELECT
         type,
@@ -94,6 +100,7 @@ def generate_type_distribution_query(
     WHERE patient_id = '{patient_id}'
         AND sleep_start_time >= '{start_datetime}'
         AND sleep_end_time <= '{end_datetime}'
+        AND (toHour(sleep_start_time) >= 18 OR toHour(sleep_end_time) < 12)
     GROUP BY type
     """
 
@@ -126,6 +133,8 @@ def generate_timing_stats_query(
 def generate_quality_stats_query(
     patient_id: str, start_datetime: str, end_datetime: str
 ) -> str:
+    """Per-stage totals over the nighttime sleep window (same filter as the other
+    aggregates) so efficiency and stage percentages match duration/type_dist."""
     return f"""
     SELECT
         type,
@@ -134,5 +143,6 @@ def generate_quality_stats_query(
     WHERE patient_id = '{patient_id}'
         AND sleep_start_time >= '{start_datetime}'
         AND sleep_end_time <= '{end_datetime}'
+        AND (toHour(sleep_start_time) >= 18 OR toHour(sleep_end_time) < 12)
     GROUP BY type
     """
