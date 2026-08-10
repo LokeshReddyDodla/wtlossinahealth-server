@@ -168,7 +168,7 @@ class DayViewService:
             return None
         report = await self._safe(service.fetch_daily_report, patient_id, day)
         if domain == "glucose" and report:
-            _, is_pregnant = await self.repo.glucose_profile(UUID(patient_id), postgres_session)
+            _, is_pregnant, _ = await self.repo.glucose_profile(UUID(patient_id), postgres_session)
             if is_pregnant:
                 # Re-detect highs against the 63-140 pregnancy target; the stored
                 # events use 180 and miss GDM-relevant 140-180 excursions.
