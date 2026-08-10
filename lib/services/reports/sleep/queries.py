@@ -71,8 +71,8 @@ def generate_hypnogram_query(
     return f"""
     SELECT
         type,
-        formatDateTime(sleep_start_time, '%Y-%m-%dT%H:%M:%S') AS start_time,
-        formatDateTime(sleep_end_time, '%Y-%m-%dT%H:%M:%S') AS end_time
+        formatDateTime(sleep_start_time, '%Y-%m-%dT%H:%i:%S') AS start_time,
+        formatDateTime(sleep_end_time, '%Y-%m-%dT%H:%i:%S') AS end_time
     FROM aihealth.sleep_data FINAL
     WHERE patient_id = '{patient_id}'
         AND sleep_start_time >= '{start_datetime}'
@@ -104,14 +104,14 @@ def generate_timing_stats_query(
     """Timing stats for nighttime sleep (start >= 18:00 or end < 12:00), excluding awake."""
     return f"""
     SELECT
-        if(count() > 0, formatDateTime(min(sleep_start_time), '%H:%M:%S'), '') AS earliest_start,
-        if(count() > 0, formatDateTime(max(sleep_end_time), '%H:%M:%S'), '') AS latest_end,
+        if(count() > 0, formatDateTime(min(sleep_start_time), '%H:%i:%S'), '') AS earliest_start,
+        if(count() > 0, formatDateTime(max(sleep_end_time), '%H:%i:%S'), '') AS latest_end,
         if(count() > 0,
-            formatDateTime(toDateTime(toUInt32(avg(toUnixTimestamp(toTime(sleep_start_time))))), '%H:%M:%S'),
+            formatDateTime(toDateTime(toUInt32(avg(toUnixTimestamp(toTime(sleep_start_time))))), '%H:%i:%S'),
             ''
         ) AS avg_start,
         if(count() > 0,
-            formatDateTime(toDateTime(toUInt32(avg(toUnixTimestamp(toTime(sleep_end_time))))), '%H:%M:%S'),
+            formatDateTime(toDateTime(toUInt32(avg(toUnixTimestamp(toTime(sleep_end_time))))), '%H:%i:%S'),
             ''
         ) AS avg_end
     FROM aihealth.sleep_data FINAL
