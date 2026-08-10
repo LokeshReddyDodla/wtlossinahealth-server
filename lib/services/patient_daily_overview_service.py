@@ -240,12 +240,14 @@ class PatientDailyOverviewService:
             if not report:
                 return SleepMetrics()
 
-            duration = report.get("duration_analysis", {})
-            quality = report.get("quality_analysis", {})
+            # The report renamed duration_analysis -> duration; older docs keep
+            # the old key.
+            duration = report.get("duration") or report.get("duration_analysis") or {}
+            metadata = report.get("metadata") or {}
 
             return SleepMetrics(
-                duration=float(duration.get("total_duration", 0)),
-                records_count=int(quality.get("sleep_quality", 0)),
+                duration=float(duration.get("total_duration") or 0),
+                records_count=int(metadata.get("total_sessions") or 0),
             )
 
         except Exception as e:
@@ -383,7 +385,9 @@ class PatientDailyOverviewService:
 
         sleep_duration: float | None = None
         if sleep_report:
-            duration = sleep_report.get("duration_analysis", {}).get("total_duration")
+            duration = (
+                sleep_report.get("duration") or sleep_report.get("duration_analysis") or {}
+            ).get("total_duration")
             sleep_duration = float(duration) if duration is not None else None
 
         average_glucose: float | None = None
