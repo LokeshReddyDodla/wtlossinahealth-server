@@ -662,6 +662,9 @@ container.register(
         fitness_stats_processor=cast(
             FitnessStatsProcessor, container.resolve(FitnessStatsProcessor)
         ),
+        sleep_stats_processor=cast(
+            SleepStatsProcessor, container.resolve(SleepStatsProcessor)
+        ),
         meal_report_service=cast(
             MealReportService, container.resolve(MealReportService)
         ),
@@ -741,6 +744,9 @@ container.register(
         ),
         fitness_report_service=cast(
             FitnessReportService, container.resolve(FitnessReportService)
+        ),
+        sleep_report_service=cast(
+            SleepReportService, container.resolve(SleepReportService)
         ),
         patient_summary_service=cast(
             PatientSummaryService, container.resolve(PatientSummaryService)

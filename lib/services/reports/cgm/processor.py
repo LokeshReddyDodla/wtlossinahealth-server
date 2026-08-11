@@ -39,11 +39,13 @@ class CGMStatsProcessor:
         clickhouse_store,
         meal_service,
         fitness_stats_processor,
+        sleep_stats_processor,
         meal_report_service,
     ):
         self.clickhouse_store = clickhouse_store
         self.meal_service = meal_service
         self.fitness_stats_processor = fitness_stats_processor
+        self.sleep_stats_processor = sleep_stats_processor
         self.meal_report_service = meal_report_service
 
     def get_readings_in_range(
@@ -197,6 +199,13 @@ class CGMStatsProcessor:
             report_type=report_type,
         )
 
+        sleep_report = await self.sleep_stats_processor.generate_custom_report(
+            patient_id,
+            start_date,
+            end_date,
+            report_type=report_type,
+        )
+
         cgm_readings: Optional[List[CGMReading]] = None
         meal_report_id: Optional[str] = None
 
@@ -252,6 +261,7 @@ class CGMStatsProcessor:
             time_period_stats=time_period_stats,
             trend=trend,
             fitness_report=fitness_report,
+            sleep_report=sleep_report,
             meal_report_id=meal_report_id,
         )
 

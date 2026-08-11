@@ -1,5 +1,6 @@
+import logging
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 
 from lib.schemas.sleep_stats import (
     DateRange,
@@ -15,7 +16,7 @@ from lib.schemas.sleep_stats import (
 )
 from lib.utils.date.periods import DayWisePeriod, WeekWisePeriod
 
-from .night_stats import SleepNightStatistics
+from .night_stats import SleepNightStatistics, recommended_minimum_for_age
 from .quality import SleepQualityStatistics
 from .timing import SleepTimingStatistics
 from .type_distribution import SleepTypeDistributionStatistics
@@ -82,6 +83,83 @@ class SleepStatsProcessor:
             )
 
         return reports
+
+    async def generate_custom_report(
+        self,
+        patient_id: str,
+        start_date: datetime,
+        end_date: datetime,
+        report_type: str,
+    ) -> Optional[SleepStats]:
+        """One sleep report for an arbitrary window, self-fetching its Postgres
+        inputs — the shape CGM embeds per sensor-lifecycle period."""
+        try:
+            checkins = await self._fetch_sleep_checkins(
+                patient_id, start_date, end_date
+            )
+            recommended_min = await self._recommended_sleep_minimum(patient_id)
+            return self._process_period(
+                patient_id, start_date, end_date, report_type,
+                checkins, recommended_min,
+            )
+        except Exception as e:
+            logging.error(
+                f"Failed to generate {report_type} sleep report for {patient_id} "
+                f"from {start_date} to {end_date}: {e}"
+            )
+        return None
+
+    @staticmethod
+    async def _fetch_sleep_checkins(
+        patient_id: str, start_date: datetime, end_date: datetime
+    ) -> List[dict]:
+        """Manual sleep check-ins for the range, so no-wearable nights still count."""
+        from sqlalchemy import select
+
+        from lib.dependencies.database import get_async_postgres_session
+        from lib.models.sleep_checkin import SleepCheckin
+
+        try:
+            async with get_async_postgres_session() as session:
+                result = await session.execute(
+                    select(SleepCheckin).where(
+                        SleepCheckin.patient_id == patient_id,
+                        SleepCheckin.checkin_date >= start_date.date(),
+                        SleepCheckin.checkin_date <= end_date.date(),
+                    )
+                )
+                return [
+                    {
+                        "checkin_date": r.checkin_date,
+                        "hours_slept": r.hours_slept,
+                        "quality": r.quality,
+                        "bed_time": r.bed_time,
+                        "wake_time": r.wake_time,
+                    }
+                    for r in result.scalars().all()
+                ]
+        except Exception as e:
+            logging.error(f"Failed to fetch sleep check-ins for {patient_id}: {e}")
+            return []
+
+    @staticmethod
+    async def _recommended_sleep_minimum(patient_id: str) -> float:
+        """Age-banded nightly sleep target from the patient's DOB; adult 7h default."""
+        from sqlalchemy import select
+
+        from lib.dependencies.database import get_async_postgres_session
+        from lib.models.patient import Patient
+
+        try:
+            async with get_async_postgres_session() as session:
+                result = await session.execute(
+                    select(Patient).where(Patient.patient_id == patient_id)
+                )
+                patient = result.scalar_one_or_none()
+                return recommended_minimum_for_age(patient.age if patient else None)
+        except Exception as e:
+            logging.error(f"Failed to derive sleep minimum for {patient_id}: {e}")
+            return 420.0
 
     @staticmethod
     def _checkins_in(checkins: List[dict], start: datetime, end: datetime) -> List[dict]:

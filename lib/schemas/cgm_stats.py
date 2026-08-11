@@ -4,6 +4,7 @@ from typing import Dict, List, Optional, Union
 from pydantic import BaseModel, Field
 
 from lib.schemas.fitness_stats import FitnessStats
+from lib.schemas.sleep_stats import SleepStats
 
 
 class DateRange(BaseModel):
@@ -161,6 +162,7 @@ class CGMStats(BaseModel):
     trend: Optional[CGMTrend] = None
 
     fitness_report: Optional[FitnessStats] = None
+    sleep_report: Optional[SleepStats] = None
     meal_report_id: Optional[str] = None
 
     @property
