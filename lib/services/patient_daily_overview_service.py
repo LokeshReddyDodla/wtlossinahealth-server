@@ -240,8 +240,8 @@ class PatientDailyOverviewService:
             if not report:
                 return SleepMetrics()
 
-            # The report renamed duration_analysis -> duration; older docs keep
-            # the old key.
+            # total_duration lives under `duration`; older stored reports key it
+            # as `duration_analysis`.
             duration = report.get("duration") or report.get("duration_analysis") or {}
             metadata = report.get("metadata") or {}
 

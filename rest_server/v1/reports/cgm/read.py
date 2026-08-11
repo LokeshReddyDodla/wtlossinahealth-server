@@ -1,5 +1,9 @@
+from datetime import datetime
+
 from fastapi import Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from lib.dependencies.database import get_postgres_session
 from lib.dependencies.report_access import (
@@ -10,14 +14,53 @@ from lib.dependencies.service_dependencies import (
     get_cgm_report_service,
     get_patient_profile_service,
 )
+from lib.models.symptom_entry import SymptomEntry
 from lib.schemas.patient import CorePatientProfile
 from lib.services.reports import CGMReportService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import SuccessResponse
 
-from .api_schema import GetCGMReportResponse
+from .api_schema import GetCGMReportResponse, SymptomLog, SymptomLogItem
 from .router import router
+
+
+async def _fetch_symptoms(
+    patient_id, report: dict, session: AsyncSession
+) -> list[SymptomLog]:
+    date_range = (report.get("metadata") or {}).get("date_range") or {}
+    start, end = date_range.get("start"), date_range.get("end")
+    if not (start and end):
+        return []
+
+    # recorded_at is stored naive; report window is naive isoformat — compare as-is.
+    rows = (
+        await session.execute(
+            select(SymptomEntry)
+            .where(
+                SymptomEntry.patient_id == patient_id,
+                SymptomEntry.recorded_at >= datetime.fromisoformat(start),
+                SymptomEntry.recorded_at <= datetime.fromisoformat(end),
+            )
+            .options(selectinload(SymptomEntry.items))
+            .order_by(SymptomEntry.recorded_at)
+        )
+    ).scalars().all()
+
+    return [
+        SymptomLog(
+            recorded_at=entry.recorded_at,
+            notes=entry.notes,
+            items=[
+                SymptomLogItem(
+                    name=item.custom_label or item.symptom_name,
+                    severity=item.severity,
+                )
+                for item in entry.items
+            ],
+        )
+        for entry in rows
+    ]
 
 
 @router.get(
@@ -58,11 +101,16 @@ async def get_cgm_report(
             include_health_data=True,
         )
 
+        symptoms = await _fetch_symptoms(
+            access_info.target_patient_id, cgm_report, session
+        )
+
         return SuccessResponse(
             message="CGM report retrieved successfully",
             data={
                 "patient_info": CorePatientProfile.from_orm(patient_profile),
                 "report": cgm_report,
+                "symptoms": symptoms,
             },
         )
 
