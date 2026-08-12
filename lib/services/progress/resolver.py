@@ -21,6 +21,7 @@ from lib.core.clickhouse_store import ClickHouseStore
 from lib.core.postgres_store import PostgresStore
 from lib.schemas.progress import (
     Engagement,
+    IntentAdherence,
     MetricSeries,
     Outcome,
     ProgressView,
@@ -128,16 +129,15 @@ class ProgressService:
         # Only the engagement coroutine touches the session (its two queries run
         # sequentially inside it); vitals and glucose use ClickHouse/Mongo, so the
         # three fan out concurrently.
-        vitals_rows, glucose_reports, (completion, (cur_streak, longest_streak)) = (
-            await asyncio.gather(
-                self.repo.vitals_daily(patient_id, start_dt, end_dt),
-                self._safe(
-                    self.cgm_report_service.fetch_daily_reports,
-                    patient_id, start_dt, end_dt,
-                ),
-                self._engagement(pid, start, end, postgres_session),
-            )
+        vitals_rows, glucose_reports, session_bundle = await asyncio.gather(
+            self.repo.vitals_daily(patient_id, start_dt, end_dt),
+            self._safe(
+                self.cgm_report_service.fetch_daily_reports,
+                patient_id, start_dt, end_dt,
+            ),
+            self._session_bundle(pid, start, end, postgres_session),
         )
+        completion, (cur_streak, longest_streak), adherence = session_bundle
 
         metrics: list[MetricSeries] = []
 
@@ -187,15 +187,17 @@ class ProgressService:
             range=range_key, resolution=resolution, start=start, end=end,
             outcomes=self._outcomes(metrics, engagement),
             metrics=metrics, engagement=engagement,
+            care_intents=[IntentAdherence(**a) for a in adherence],
         )
 
     # ── internals ────────────────────────────────────────────────────────────
 
-    async def _engagement(self, pid, start, end, session):
+    async def _session_bundle(self, pid, start, end, session):
         # One AsyncSession can't run concurrent queries — sequential by design.
         completion = await self.repo.task_completion_daily(pid, start, end, session)
         streak = await self.repo.streak(pid, session)
-        return completion, streak
+        adherence = await self.repo.care_intent_adherence(pid, start, end, session)
+        return completion, streak, adherence
 
     @staticmethod
     def _build(category, key, label, unit, direction, target, daily_points, resolution):
