@@ -123,14 +123,32 @@ _MEAL = [
 _FITNESS = [
     ("steps", "Steps /day", "", "up", 8000.0, _flat("steps")),
     ("active_energy", "Active energy", "kcal", "up", None, _flat("active_energy")),
-    ("active_minutes", "Active minutes", "min", "up", 30.0, _flat("active_duration")),
+    # exercise_time is the Apple exercise-ring minute count; active_duration sums
+    # raw session spans and over-counts, so it's not the "active minutes" a provider means.
+    ("active_minutes", "Active minutes", "min", "up", 30.0, _flat("exercise_time")),
     ("workouts", "Workouts /period", "", "up", None, _workout_count),
 ]
+
+
+# A daily report is written even for a day with no synced data; skip those so an
+# unsynced day doesn't count as a zero and tank the baseline.
+def _empty_sleep(r):
+    return ((r.get("metadata") or {}).get("total_sessions") or 0) == 0
+
+
+def _empty_meal(r):
+    return not r.get("meal_count")
+
+
+def _empty_fitness(r):
+    return ((r.get("metadata") or {}).get("days_with_data") or 0) == 0
 
 
 def _improved(direction: str, delta: float | None) -> bool | None:
     if delta is None:
         return None
+    if abs(delta) < 1e-9:
+        return None  # no change reads neutral, not bad
     if direction == "up":
         return delta > 0
     if direction == "down":
@@ -222,9 +240,9 @@ class ProgressService:
 
         # ── report-backed categories (stored daily reports) ──────────────────
         metrics += self._collect(glucose_reports, "Glucose", _GLUCOSE, resolution)
-        metrics += self._collect(sleep_reports, "Sleep", _SLEEP, resolution)
-        metrics += self._collect(meal_reports, "Nutrition", _MEAL, resolution)
-        metrics += self._collect(fitness_reports, "Activity", _FITNESS, resolution)
+        metrics += self._collect(sleep_reports, "Sleep", _SLEEP, resolution, _empty_sleep)
+        metrics += self._collect(meal_reports, "Nutrition", _MEAL, resolution, _empty_meal)
+        metrics += self._collect(fitness_reports, "Activity", _FITNESS, resolution, _empty_fitness)
 
         # ── SMBG (finger-stick glucose, Postgres — for non-CGM patients) ─────
         smbg_series = self._build("SMBG", "smbg_avg", "Avg glucose (SMBG)", "mg/dL",
@@ -259,12 +277,13 @@ class ProgressService:
         return completion, streak, adherence, smbg
 
     @staticmethod
-    def _collect(reports, category, defs, resolution) -> list[MetricSeries]:
-        """Group each metric's daily points across a report stream, then build."""
+    def _collect(reports, category, defs, resolution, empty=None) -> list[MetricSeries]:
+        """Group each metric's daily points across a report stream, then build.
+        `empty(report)` drops no-data days so they don't count as zeros."""
         points: dict[str, list[tuple[date, float]]] = {}
         for report in reports or []:
             d = _report_date(report)
-            if d is None:
+            if d is None or (empty and empty(report)):
                 continue
             for key, _l, _u, _dir, _t, extract in defs:
                 val = extract(report)
@@ -281,8 +300,8 @@ class ProgressService:
     @staticmethod
     def _build(category, key, label, unit, direction, target, daily_points, resolution):
         pts = bucketize(daily_points, resolution)
-        if not pts:
-            return None
+        if not pts or not any(v != 0 for _, v in pts):
+            return None  # no data, or an all-zero series that was never synced
         points = [TrendPoint(t=t, value=v) for t, v in pts]
         baseline, current = points[0].value, points[-1].value
         return MetricSeries(
