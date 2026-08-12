@@ -97,6 +97,7 @@ from lib.services.patient_data_availability_service import (
 from lib.services.patient_daily_overview_service import PatientDailyOverviewService
 from lib.services.patient_timeline_service import PatientTimelineService
 from lib.services.day_view.resolver import DayViewService
+from lib.services.progress.resolver import ProgressService
 from lib.services.patient_data_export_service import PatientDataExportService
 from lib.services.care_provider_query_service import CareProviderQueryService
 from lib.services.package_query_service import PackageQueryService
@@ -382,6 +383,16 @@ container.register(
         sleep_report_service=cast(SleepReportService, container.resolve(SleepReportService)),
         fitness_report_service=cast(FitnessReportService, container.resolve(FitnessReportService)),
         insight_tracker=cast(InsightTracker, container.resolve(InsightTracker)),
+    ),
+)
+
+# 🔹 Progress Service (longitudinal trends — compose on read)
+container.register(
+    ProgressService,
+    lambda: ProgressService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        clickhouse_store=cast(ClickHouseStore, container.resolve(ClickHouseStore)),
+        cgm_report_service=cast(CGMReportService, container.resolve(CGMReportService)),
     ),
 )
 
