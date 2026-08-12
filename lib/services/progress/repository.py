@@ -16,6 +16,7 @@ from lib.core.clickhouse_store import ClickHouseStore
 from lib.models.care_intent import CareIntent
 from lib.models.care_intent_event import CareIntentEvent
 from lib.models.gamification import DailyTask, PlayerProfile
+from lib.models.patient_smbg import PatientSMBG
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,28 @@ class ProgressRepository:
         if profile is None:
             return 0, 0
         return profile.current_streak or 0, profile.longest_streak or 0
+
+    async def smbg_daily(
+        self, pid, start_dt: datetime, end_dt: datetime, session: AsyncSession
+    ) -> list[tuple[date, float]]:
+        """Daily average finger-stick glucose over the range (non-CGM patients)."""
+        rows = (await session.execute(
+            select(
+                func.date(PatientSMBG.reading_time).label("d"),
+                func.avg(PatientSMBG.glucose_level),
+            )
+            .where(
+                PatientSMBG.patient_id == pid,
+                PatientSMBG.reading_time >= start_dt,
+                PatientSMBG.reading_time < end_dt,
+            )
+            .group_by(func.date(PatientSMBG.reading_time))
+        )).all()
+        out: list[tuple[date, float]] = []
+        for d, avg in rows:
+            dd = d if isinstance(d, date) else date.fromisoformat(str(d))
+            out.append((dd, round(float(avg), 1)))
+        return out
 
     async def care_intent_adherence(
         self, pid, start: date, end: date, session: AsyncSession

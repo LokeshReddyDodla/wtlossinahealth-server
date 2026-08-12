@@ -34,6 +34,9 @@ from lib.services.gamification.time_utils import (
 from lib.services.progress.bucketing import bucketize, months_ago, window_for
 from lib.services.progress.repository import ProgressRepository
 from lib.services.reports.cgm.service import CGMReportService
+from lib.services.reports.fitness.service import FitnessReportService
+from lib.services.reports.meal.service import MealReportService
+from lib.services.reports.sleep.service import SleepReportService
 from lib.utils.postgres_session_decorator import with_postgres_session
 
 logger = logging.getLogger(__name__)
@@ -64,6 +67,22 @@ def _nested(path: list[str]):
     return get
 
 
+def _flat(key: str):
+    return lambda r: r.get(key) if isinstance(r, dict) else None
+
+
+def _minutes_to_hours(get):
+    def wrapped(r):
+        v = get(r)
+        return round(v / 60, 2) if v is not None else None
+    return wrapped
+
+
+def _workout_count(r):
+    # session_count can exceed 1 (type-aggregated rows), so sum, don't count.
+    return sum((w.get("session_count") or 1) for w in (r.get("workouts") or []))
+
+
 # key, label, unit, direction, target, extractor(report_dict)
 _GLUCOSE = [
     ("tir", "Time in range", "%", "up", 70.0,
@@ -74,6 +93,38 @@ _GLUCOSE = [
      _nested(["cgm_summary_stats", "average_glucose_mgdl"])),
     ("cv", "Variability (CV)", "%", "down", 36.0,
      _nested(["cgm_summary_stats", "coefficient_of_variation_percent"])),
+]
+
+_SLEEP = [
+    ("sleep_duration", "Sleep duration", "h", "up", 7.0,
+     _minutes_to_hours(_nested(["duration", "per_day_average_duration"]))),
+    ("sleep_efficiency", "Efficiency", "%", "up", 85.0,
+     _nested(["quality", "sleep_efficiency"])),
+    ("deep_sleep", "Deep sleep", "%", "up", None,
+     _nested(["quality", "deep_sleep_percentage"])),
+    ("rem_sleep", "REM sleep", "%", "up", None,
+     _nested(["quality", "rem_sleep_percentage"])),
+    ("awakenings", "Awakenings /night", "", "down", None,
+     _nested(["quality", "average_awakenings"])),
+    ("sleep_debt", "Sleep debt", "min", "down", None,
+     _nested(["consistency", "sleep_debt_minutes"])),
+]
+
+# Weight-loss / T2D framing: fewer calories & carbs = improving, more fiber &
+# protein = improving.
+_MEAL = [
+    ("calories", "Calories", "kcal", "down", None, _flat("calories")),
+    ("carbs", "Carbs", "g", "down", None, _flat("carbohydrates")),
+    ("fiber", "Fiber", "g", "up", 25.0, _flat("fiber")),
+    ("protein", "Protein", "g", "up", None, _flat("proteins")),
+    ("fat", "Fat", "g", "flat", None, _flat("fats")),
+]
+
+_FITNESS = [
+    ("steps", "Steps /day", "", "up", 8000.0, _flat("steps")),
+    ("active_energy", "Active energy", "kcal", "up", None, _flat("active_energy")),
+    ("active_minutes", "Active minutes", "min", "up", 30.0, _flat("active_duration")),
+    ("workouts", "Workouts /period", "", "up", None, _workout_count),
 ]
 
 
@@ -88,7 +139,9 @@ def _improved(direction: str, delta: float | None) -> bool | None:
 
 
 def _report_date(report: dict) -> date | None:
-    raw = (((report or {}).get("metadata") or {}).get("date_range") or {}).get("start")
+    # Meal reports key the day at top-level `date`; the rest use metadata.date_range.
+    r = report or {}
+    raw = r.get("date") or ((r.get("metadata") or {}).get("date_range") or {}).get("start")
     if not raw:
         return None
     try:
@@ -103,10 +156,16 @@ class ProgressService:
         postgres_store: PostgresStore,
         clickhouse_store: ClickHouseStore,
         cgm_report_service: CGMReportService,
+        sleep_report_service: SleepReportService,
+        meal_report_service: MealReportService,
+        fitness_report_service: FitnessReportService,
     ):
         self.postgres_store = postgres_store
         self.repo = ProgressRepository(clickhouse_store)
         self.cgm_report_service = cgm_report_service
+        self.sleep_report_service = sleep_report_service
+        self.meal_report_service = meal_report_service
+        self.fitness_report_service = fitness_report_service
 
     @with_postgres_session
     async def resolve(
@@ -126,22 +185,25 @@ class ProgressService:
         end_dt = datetime.combine(end + timedelta(days=1), time.min)
         pid = UUID(patient_id)
 
-        # Only the engagement coroutine touches the session (its two queries run
-        # sequentially inside it); vitals and glucose use ClickHouse/Mongo, so the
-        # three fan out concurrently.
-        vitals_rows, glucose_reports, session_bundle = await asyncio.gather(
+        # Only the session coroutine touches the AsyncSession; the report/vitals
+        # sources use ClickHouse/Mongo, so all fan out concurrently. Sleep/meal/
+        # fitness range-fetches take dates; CGM takes datetimes.
+        (
+            vitals_rows, glucose_reports, sleep_reports, meal_reports,
+            fitness_reports, session_bundle,
+        ) = await asyncio.gather(
             self.repo.vitals_daily(patient_id, start_dt, end_dt),
-            self._safe(
-                self.cgm_report_service.fetch_daily_reports,
-                patient_id, start_dt, end_dt,
-            ),
-            self._session_bundle(pid, start, end, postgres_session),
+            self._safe(self.cgm_report_service.fetch_daily_reports, patient_id, start_dt, end_dt),
+            self._safe(self.sleep_report_service.fetch_daily_reports_in_range, patient_id, start, end),
+            self._safe(self.meal_report_service.fetch_daily_reports_in_range, patient_id, start, end),
+            self._safe(self.fitness_report_service.fetch_daily_reports_in_range, patient_id, start, end),
+            self._session_bundle(pid, start_dt, end_dt, start, end, postgres_session),
         )
-        completion, (cur_streak, longest_streak), adherence = session_bundle
+        completion, (cur_streak, longest_streak), adherence, smbg = session_bundle
 
         metrics: list[MetricSeries] = []
 
-        # ── vitals & labs ────────────────────────────────────────────────────
+        # ── vitals & labs (ClickHouse daily summary) ─────────────────────────
         vitals_points: dict[str, list[tuple[date, float]]] = {}
         for row in vitals_rows or []:
             vtype = row.get("type")
@@ -158,21 +220,17 @@ class ProgressService:
             if s:
                 metrics.append(s)
 
-        # ── glucose (stored daily CGM reports) ───────────────────────────────
-        glucose_points: dict[str, list[tuple[date, float]]] = {}
-        for report in glucose_reports or []:
-            d = _report_date(report)
-            if d is None:
-                continue
-            for key, _l, _u, _dir, _t, extract in _GLUCOSE:
-                val = extract(report)
-                if val is not None:
-                    glucose_points.setdefault(key, []).append((d, val))
-        for key, label, unit, direction, target, _ex in _GLUCOSE:
-            s = self._build("Glucose", key, label, unit, direction, target,
-                            glucose_points.get(key, []), resolution)
-            if s:
-                metrics.append(s)
+        # ── report-backed categories (stored daily reports) ──────────────────
+        metrics += self._collect(glucose_reports, "Glucose", _GLUCOSE, resolution)
+        metrics += self._collect(sleep_reports, "Sleep", _SLEEP, resolution)
+        metrics += self._collect(meal_reports, "Nutrition", _MEAL, resolution)
+        metrics += self._collect(fitness_reports, "Activity", _FITNESS, resolution)
+
+        # ── SMBG (finger-stick glucose, Postgres — for non-CGM patients) ─────
+        smbg_series = self._build("SMBG", "smbg_avg", "Avg glucose (SMBG)", "mg/dL",
+                                  "down", None, smbg, resolution)
+        if smbg_series:
+            metrics.append(smbg_series)
 
         engagement = Engagement(
             current_streak=cur_streak,
@@ -192,12 +250,33 @@ class ProgressService:
 
     # ── internals ────────────────────────────────────────────────────────────
 
-    async def _session_bundle(self, pid, start, end, session):
+    async def _session_bundle(self, pid, start_dt, end_dt, start, end, session):
         # One AsyncSession can't run concurrent queries — sequential by design.
         completion = await self.repo.task_completion_daily(pid, start, end, session)
         streak = await self.repo.streak(pid, session)
         adherence = await self.repo.care_intent_adherence(pid, start, end, session)
-        return completion, streak, adherence
+        smbg = await self.repo.smbg_daily(pid, start_dt, end_dt, session)
+        return completion, streak, adherence, smbg
+
+    @staticmethod
+    def _collect(reports, category, defs, resolution) -> list[MetricSeries]:
+        """Group each metric's daily points across a report stream, then build."""
+        points: dict[str, list[tuple[date, float]]] = {}
+        for report in reports or []:
+            d = _report_date(report)
+            if d is None:
+                continue
+            for key, _l, _u, _dir, _t, extract in defs:
+                val = extract(report)
+                if val is not None:
+                    points.setdefault(key, []).append((d, val))
+        out: list[MetricSeries] = []
+        for key, label, unit, direction, target, _ex in defs:
+            s = ProgressService._build(category, key, label, unit, direction, target,
+                                       points.get(key, []), resolution)
+            if s:
+                out.append(s)
+        return out
 
     @staticmethod
     def _build(category, key, label, unit, direction, target, daily_points, resolution):
