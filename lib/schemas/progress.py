@@ -48,6 +48,21 @@ class Engagement(BaseModel):
     completion_points: list[TrendPoint] = []
 
 
+class IntentAdherence(BaseModel):
+    """One active care-provider instruction and how the patient tracked against
+    it over the range. `rate` counts only decided days (followed / missed);
+    `unclear` days are shown but excluded from the rate."""
+
+    care_intent_id: str
+    summary: str
+    author: str
+    followed: int = 0
+    missed: int = 0
+    unclear: int = 0
+    rate: float | None = None
+    last_note: str | None = None
+
+
 class ProgressView(BaseModel):
     range: RangeKey
     resolution: Resolution
@@ -56,3 +71,4 @@ class ProgressView(BaseModel):
     outcomes: list[Outcome]
     metrics: list[MetricSeries]
     engagement: Engagement
+    care_intents: list[IntentAdherence] = []
