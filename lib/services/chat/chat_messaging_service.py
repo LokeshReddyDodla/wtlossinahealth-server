@@ -371,10 +371,19 @@ class ChatMessagingService(BaseChatService):
     async def _mark_all_messages_as_read_in_chat(
         self, chat_id: str, user_id: str
     ):
-        """Mark all messages in a chat as read."""
+        """Mark all messages in a chat as read.
+
+        A read receipt records that the *other* party saw a message, so the
+        reader's own messages are excluded — a self-receipt would render an
+        outgoing message as "read" the moment it's sent.
+        """
         now = datetime.utcnow()
         await self.mongo_store.db["chat_messages"].update_many(
-            {"chat_id": chat_id, "read_receipts.reader_id": {"$ne": user_id}},
+            {
+                "chat_id": chat_id,
+                "sender_id": {"$ne": user_id},
+                "read_receipts.reader_id": {"$ne": user_id},
+            },
             {
                 "$addToSet": {
                     "read_receipts": {
