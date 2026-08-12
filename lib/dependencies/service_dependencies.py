@@ -183,6 +183,12 @@ def get_day_view_service() -> DayViewService:
     return cast(DayViewService, container.resolve(DayViewService))
 
 
+def get_progress_service():
+    from lib.services.progress.resolver import ProgressService
+
+    return cast(ProgressService, container.resolve(ProgressService))
+
+
 def get_patient_data_export_service() -> PatientDataExportService:
     return cast(
         PatientDataExportService,
