@@ -38,6 +38,36 @@ class ProgressRepository:
             logger.exception("progress vitals query failed")
             return []
 
+    async def fitness_daily(
+        self, patient_id: str, start: datetime, end: datetime
+    ) -> list[dict]:
+        """Daily step/energy/exercise totals from raw ClickHouse samples — the
+        actual sync source, not the sparsely-generated daily fitness reports."""
+        sql = (
+            "SELECT toDate(start_datetime) AS d, type, sum(value) AS total "
+            "FROM aihealth.fitness_data FINAL "
+            "WHERE patient_id = %(pid)s "
+            "AND type IN ('STEPS', 'ACTIVE_ENERGY_BURNED', 'EXERCISE_TIME') "
+            "AND start_datetime >= %(start)s AND start_datetime < %(end)s "
+            "GROUP BY d, type"
+        )
+        params = {
+            "pid": patient_id,
+            "start": start.strftime("%Y-%m-%d %H:%M:%S"),
+            "end": end.strftime("%Y-%m-%d %H:%M:%S"),
+        }
+        try:
+            rows = await asyncio.to_thread(
+                self.clickhouse_store.client.execute, sql, params
+            )
+        except Exception:
+            logger.exception("progress fitness query failed")
+            return []
+        tmap = {"STEPS": "steps", "ACTIVE_ENERGY_BURNED": "active_energy",
+                "EXERCISE_TIME": "exercise_time"}
+        return [{"date": str(d), "type": tmap[t], "value": float(v)}
+                for d, t, v in rows if t in tmap]
+
     async def task_completion_daily(
         self, pid, start: date, end: date, session: AsyncSession
     ) -> list[tuple[date, float]]:

@@ -395,7 +395,6 @@ container.register(
         cgm_report_service=cast(CGMReportService, container.resolve(CGMReportService)),
         sleep_report_service=cast(SleepReportService, container.resolve(SleepReportService)),
         meal_report_service=cast(MealReportService, container.resolve(MealReportService)),
-        fitness_report_service=cast(FitnessReportService, container.resolve(FitnessReportService)),
     ),
 )
 
