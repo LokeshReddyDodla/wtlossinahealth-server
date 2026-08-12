@@ -222,7 +222,7 @@ class ProgressService:
             delta_txt = None
             if m.delta is not None:
                 sign = "+" if m.delta > 0 else ""
-                delta_txt = f"{sign}{m.delta:g}{delta_unit}"
+                delta_txt = f"{sign}{round(m.delta, 1):g}{delta_unit}"
             out.append(Outcome(key=key, label=label, value=f"{m.current:g}{unit}",
                                delta=delta_txt, good=_improved(m.dir, m.delta)))
 
