@@ -300,16 +300,17 @@ class ProgressService:
     @staticmethod
     def _build(category, key, label, unit, direction, target, daily_points, resolution):
         pts = bucketize(daily_points, resolution)
-        # < 2 buckets can't show a trend (a lone point reads as flat, "0 vs start");
-        # an all-zero series was never synced.
-        if len(pts) < 2 or not any(v != 0 for _, v in pts):
-            return None
+        if not pts or not any(v != 0 for _, v in pts):
+            return None  # no data, or an all-zero series that was never synced
         points = [TrendPoint(t=t, value=v) for t, v in pts]
         baseline, current = points[0].value, points[-1].value
+        # A single bucket is a lone reading, not a trend — no baseline to diff, so
+        # no delta (the frontend shows the value without a misleading "vs start").
+        delta = round(current - baseline, 2) if len(points) >= 2 else None
         return MetricSeries(
             category=category, key=key, label=label, unit=unit, dir=direction,
             target=target, points=points, current=current, baseline=baseline,
-            delta=round(current - baseline, 2),
+            delta=delta,
         )
 
     @staticmethod
