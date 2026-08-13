@@ -351,6 +351,9 @@ class ChatMessagingService(BaseChatService):
         ].count_documents(
             {
                 "chat_id": chat_id,
+                # Own messages carry no self-receipt (see bulk read-mark), so they
+                # must be excluded here or they count as unread against the sender.
+                "sender_id": {"$ne": user_id},
                 "read_receipts": {
                     "$not": {"$elemMatch": {"reader_id": user_id}}
                 },
