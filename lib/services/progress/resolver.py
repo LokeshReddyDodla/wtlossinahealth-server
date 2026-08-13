@@ -34,6 +34,7 @@ from lib.services.gamification.time_utils import (
 from lib.services.progress.bucketing import bucketize, months_ago, window_for
 from lib.services.progress.repository import ProgressRepository
 from lib.services.reports.cgm.service import CGMReportService
+from lib.services.reports.fitness.service import FitnessReportService
 from lib.services.reports.meal.service import MealReportService
 from lib.services.reports.sleep.service import SleepReportService
 from lib.utils.postgres_session_decorator import with_postgres_session
@@ -77,12 +78,9 @@ def _minutes_to_hours(get):
     return wrapped
 
 
-# clickhouse fitness type → (category, label, unit, improvement direction, target)
-_FITNESS_META = {
-    "steps": ("Activity", "Steps /day", "", "up", 8000.0),
-    "active_energy": ("Activity", "Active energy", "kcal", "up", None),
-    "exercise_time": ("Activity", "Active minutes", "min", "up", 30.0),
-}
+def _workout_count(r):
+    # session_count can exceed 1 (type-aggregated rows), so sum, don't count.
+    return sum((w.get("session_count") or 1) for w in (r.get("workouts") or []))
 
 
 # key, label, unit, direction, target, extractor(report_dict)
@@ -122,6 +120,16 @@ _MEAL = [
     ("fat", "Fat", "g", "flat", None, _flat("fats")),
 ]
 
+_FITNESS = [
+    ("steps", "Steps /day", "", "up", 8000.0, _flat("steps")),
+    ("active_energy", "Active energy", "kcal", "up", None, _flat("active_energy")),
+    # exercise_time is the Apple exercise-ring minute count; active_duration sums
+    # raw session spans and over-counts, so it's not the "active minutes" a provider means.
+    ("active_minutes", "Active minutes", "min", "up", 30.0, _flat("exercise_time")),
+    ("workouts", "Workouts /period", "", "up", None, _workout_count),
+]
+
+
 # A daily report is written even for a day with no synced data; skip those so an
 # unsynced day doesn't count as a zero and tank the baseline.
 def _empty_sleep(r):
@@ -130,6 +138,10 @@ def _empty_sleep(r):
 
 def _empty_meal(r):
     return not r.get("meal_count")
+
+
+def _empty_fitness(r):
+    return ((r.get("metadata") or {}).get("days_with_data") or 0) == 0
 
 
 def _improved(direction: str, delta: float | None) -> bool | None:
@@ -164,12 +176,14 @@ class ProgressService:
         cgm_report_service: CGMReportService,
         sleep_report_service: SleepReportService,
         meal_report_service: MealReportService,
+        fitness_report_service: FitnessReportService,
     ):
         self.postgres_store = postgres_store
         self.repo = ProgressRepository(clickhouse_store)
         self.cgm_report_service = cgm_report_service
         self.sleep_report_service = sleep_report_service
         self.meal_report_service = meal_report_service
+        self.fitness_report_service = fitness_report_service
 
     @with_postgres_session
     async def resolve(
@@ -194,13 +208,13 @@ class ProgressService:
         # fitness range-fetches take dates; CGM takes datetimes.
         (
             vitals_rows, glucose_reports, sleep_reports, meal_reports,
-            fitness_rows, session_bundle,
+            fitness_reports, session_bundle,
         ) = await asyncio.gather(
             self.repo.vitals_daily(patient_id, start_dt, end_dt),
             self._safe(self.cgm_report_service.fetch_daily_reports, patient_id, start_dt, end_dt),
             self._safe(self.sleep_report_service.fetch_daily_reports_in_range, patient_id, start, end),
             self._safe(self.meal_report_service.fetch_daily_reports_in_range, patient_id, start, end),
-            self.repo.fitness_daily(patient_id, start_dt, end_dt),
+            self._safe(self.fitness_report_service.fetch_daily_reports_in_range, patient_id, start, end),
             self._session_bundle(pid, start_dt, end_dt, start, end, postgres_session),
         )
         completion, (cur_streak, longest_streak), adherence, smbg = session_bundle
@@ -228,23 +242,7 @@ class ProgressService:
         metrics += self._collect(glucose_reports, "Glucose", _GLUCOSE, resolution)
         metrics += self._collect(sleep_reports, "Sleep", _SLEEP, resolution, _empty_sleep)
         metrics += self._collect(meal_reports, "Nutrition", _MEAL, resolution, _empty_meal)
-
-        # ── activity (raw ClickHouse fitness samples, like vitals) ───────────
-        fitness_points: dict[str, list[tuple[date, float]]] = {}
-        for row in fitness_rows or []:
-            ftype = row.get("type")
-            if ftype not in _FITNESS_META:
-                continue
-            try:
-                d = date.fromisoformat(str(row["date"]))
-            except (ValueError, KeyError):
-                continue
-            fitness_points.setdefault(ftype, []).append((d, row["value"]))
-        for ftype, (cat, label, unit, direction, target) in _FITNESS_META.items():
-            s = self._build(cat, ftype, label, unit, direction, target,
-                            fitness_points.get(ftype, []), resolution)
-            if s:
-                metrics.append(s)
+        metrics += self._collect(fitness_reports, "Activity", _FITNESS, resolution, _empty_fitness)
 
         # ── SMBG (finger-stick glucose, Postgres — for non-CGM patients) ─────
         smbg_series = self._build("SMBG", "smbg_avg", "Avg glucose (SMBG)", "mg/dL",
