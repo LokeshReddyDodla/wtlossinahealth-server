@@ -120,7 +120,7 @@ class LibreViewClient:
                 "accept": "application/json",
                 "content-type": "application/json",
                 "product": "lv",
-                "newyu-lv-web-version": "3.26.0.57",
+                "newyu-lv-web-version": "3.26.1.0",
             },
         )
 
