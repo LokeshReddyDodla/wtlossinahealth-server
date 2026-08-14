@@ -46,6 +46,21 @@ async def list_patients(
     connected_apps: Optional[List[str]] = Query(
         None, description="Connected apps filter"
     ),
+    diagnosis: Optional[List[str]] = Query(
+        None, description="Diabetes type filter (T1/T2/PRE/GESTATIONAL/...)"
+    ),
+    prescription: Optional[List[str]] = Query(
+        None, description="Prescription status filter (draft/confirmed)"
+    ),
+    medication: Optional[List[str]] = Query(
+        None, description="Medication filter (on/off active meds)"
+    ),
+    pregnancy: Optional[List[str]] = Query(
+        None, description="Pregnancy filter (pregnant)"
+    ),
+    activity: Optional[List[str]] = Query(
+        None, description="Activity recency filter (active_7d/active_30d/inactive_30d/never)"
+    ),
     order_by: Optional[
         Literal[
             "first_name",
@@ -85,6 +100,11 @@ async def list_patients(
             package=package,
             connected_apps=connected_apps,
             monitoring_method=monitoring_method,
+            diagnosis=diagnosis,
+            prescription=prescription,
+            medication=medication,
+            pregnancy=pregnancy,
+            activity=activity,
             health_facility_id=hf_id,
             care_provider_id=cp_id,
             order_by=order_by,

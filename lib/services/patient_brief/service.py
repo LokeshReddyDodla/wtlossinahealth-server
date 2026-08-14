@@ -78,8 +78,10 @@ class PatientBriefService:
         result = await self._agent.run_provider_brief(patient_id=patient_id)
         doc = {
             "patient_id": patient_id,
+            "assessment": result.assessment,
+            "verdict": result.verdict,
+            "metrics": [m.model_dump() for m in result.metrics],
             "narrative": result.narrative,
-            "flags": [f.model_dump() for f in result.flags],
             "generated_at": datetime.now(timezone.utc),
         }
         await self._col.insert_one(dict(doc))  # append-only; copy so _id isn't kept

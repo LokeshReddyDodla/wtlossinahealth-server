@@ -339,22 +339,39 @@ class ProactiveNarration(BaseModel):
     )
 
 
-class BriefFlag(BaseModel):
-    """One thing the provider should notice, distilled from the brief's analysis."""
+class BriefMetric(BaseModel):
+    """One figure worth showing as a tile — surfaced from the analysis, never
+    invented. `window` names the period the figure covers so a single day is
+    never presented as a trend."""
 
-    label: str = Field(max_length=60, description="Short chip text, e.g. 'Fiber below target 3 wks'.")
-    severity: Literal["good", "watch", "urgent"] = Field(
-        description="good = reassuring, watch = keep an eye, urgent = act."
+    value: str = Field(max_length=16, description="Figure as the provider reads it, e.g. '96.7%', '114', '5.5%'.")
+    label: str = Field(max_length=24, description="Short metric name, e.g. 'Time in range', 'Avg glucose', 'HbA1c'.")
+    window: str | None = Field(
+        default=None, max_length=20,
+        description="Period the figure covers when not a full-period trend, e.g. 'Fri only', 'last 30d'. Omit if unqualified.",
     )
-    domain: Literal[
-        "glucose", "nutrition", "activity", "sleep", "vitals", "adherence", "engagement"
-    ] = Field(description="Which domain this flag belongs to — drives the deep-link.")
+    tone: Literal["good", "watch", "neutral"] = Field(
+        default="neutral", description="good = in target, watch = worth attention, neutral = context.",
+    )
 
 
 class PatientBrief(BaseModel):
-    """Provider-facing clinical synthesis. The narrative and flags are grounded
-    in the investigated data — the structuring step never adds a claim the
-    analysis didn't state."""
+    """Provider-facing clinical synthesis. Every field is grounded in the
+    investigated data — the structuring step never adds a claim, number, or
+    metric the analysis didn't state. When the record is too sparse to judge,
+    assessment is 'insufficient_data' and metrics is empty."""
 
-    narrative: str = Field(description="3-4 sentence synthesis: responding, driving, watch. English.")
-    flags: list[BriefFlag] = Field(default_factory=list, description="2-4 things worth the provider's attention.")
+    assessment: Literal["responding", "watch", "at_risk", "insufficient_data"] = Field(
+        description="Overall read — drives the status dot; insufficient_data when the record is too thin to judge.",
+    )
+    verdict: str = Field(
+        max_length=120,
+        description="One-line headline leading with the read, e.g. 'Responding well — holding steady across recent weeks'.",
+    )
+    metrics: list[BriefMetric] = Field(
+        default_factory=list,
+        description="0-4 figures actually present in the data, most important first. Empty when the record is sparse.",
+    )
+    narrative: str = Field(
+        description="One or two sentences on the driver and the single thing to watch. English, markdown bold preserved.",
+    )

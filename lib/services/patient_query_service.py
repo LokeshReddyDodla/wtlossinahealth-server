@@ -1,10 +1,10 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Optional
 
 from dateutil.relativedelta import relativedelta
 from lib.core.postgres_store import PostgresStore
 from lib.utils.postgres_session_decorator import with_postgres_session
-from sqlalchemy import asc, cast, desc, exists, func, or_, select, String
+from sqlalchemy import and_, asc, cast, desc, exists, func, or_, select, String
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.sql import Select
@@ -13,10 +13,14 @@ from lib.core.constants import ProfileTypeEnum
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.models.patient import Patient as PatientModel
 from lib.models.patient_connected_app import PatientConnectedApp
+from lib.models.patient_diabetic_history import PatientDiabeticHistory
+from lib.models.patient_medication import PatientMedication
 from lib.models.patient_package_assignment import (
     AssignmentStatus,
     PatientPackageAssignment as PatientPackageAssignmentModel,
 )
+from lib.models.patient_prescription import PatientPrescription
+from lib.models.patient_reproductive_health import PatientReproductiveHealth
 from lib.models.patient_smbg import PatientSMBG
 from lib.models.user_device import UserDevice as UserDeviceModel
 from lib.queries.patient_query import PatientQuery
@@ -89,6 +93,11 @@ class PatientQueryService:
         stmt = self._apply_monitoring_method_filter(stmt, query)
         stmt = self._apply_package_filter(stmt, query)
         stmt = self._apply_connected_apps_filter(stmt, query)
+        stmt = self._apply_diagnosis_filter(stmt, query)
+        stmt = self._apply_prescription_filter(stmt, query)
+        stmt = self._apply_medication_filter(stmt, query)
+        stmt = self._apply_pregnancy_filter(stmt, query)
+        stmt = self._apply_activity_filter(stmt, query)
         return stmt
 
     def _build_base_query(self) -> Select:
@@ -144,9 +153,14 @@ class PatientQueryService:
         )
 
     def _apply_gender_filter(self, stmt: Select, query: PatientQuery) -> Select:
-        """Apply gender filter."""
+        """Apply gender filter.
+
+        Gender is stored uppercase (GenderEnum: MALE/FEMALE/...) while the UI
+        sends lowercase, so compare case-insensitively.
+        """
         if query.gender:
-            stmt = stmt.where(PatientModel.gender.in_(query.gender))
+            values = [g.upper() for g in query.gender]
+            stmt = stmt.where(func.upper(PatientModel.gender).in_(values))
         return stmt
 
     def _apply_age_filter(self, stmt: Select, query: PatientQuery) -> Select:
@@ -241,6 +255,91 @@ class PatientQueryService:
         if conditions:
             stmt = stmt.where(or_(*conditions))
         return stmt
+
+    def _apply_diagnosis_filter(self, stmt: Select, query: PatientQuery) -> Select:
+        """Filter by diabetes type (diabetic_history.type_of_diabetes)."""
+        if not query.diagnosis:
+            return stmt
+        return stmt.where(
+            exists().where(
+                PatientDiabeticHistory.patient_id == PatientModel.patient_id,
+                PatientDiabeticHistory.type_of_diabetes.in_(query.diagnosis),
+            )
+        )
+
+    def _apply_prescription_filter(self, stmt: Select, query: PatientQuery) -> Select:
+        """Filter by whether the patient has a prescription in a given status."""
+        if not query.prescription:
+            return stmt
+        conditions = [
+            exists().where(
+                PatientPrescription.patient_id == PatientModel.patient_id,
+                PatientPrescription.status == status,
+            )
+            for status in query.prescription
+        ]
+        return stmt.where(or_(*conditions)) if conditions else stmt
+
+    def _apply_medication_filter(self, stmt: Select, query: PatientQuery) -> Select:
+        """Filter by active-medication presence (on/off)."""
+        if not query.medication:
+            return stmt
+        on_meds = exists().where(
+            PatientMedication.patient_id == PatientModel.patient_id,
+            PatientMedication.status == "active",
+        )
+        conditions = []
+        if "on" in query.medication:
+            conditions.append(on_meds)
+        if "off" in query.medication:
+            conditions.append(~on_meds)
+        return stmt.where(or_(*conditions)) if conditions else stmt
+
+    def _apply_pregnancy_filter(self, stmt: Select, query: PatientQuery) -> Select:
+        """Filter to currently-pregnant patients (reproductive_health.is_pregnant)."""
+        if not query.pregnancy or "pregnant" not in query.pregnancy:
+            return stmt
+        return stmt.where(
+            exists().where(
+                PatientReproductiveHealth.patient_id == PatientModel.patient_id,
+                PatientReproductiveHealth.is_pregnant.is_(True),
+            )
+        )
+
+    def _apply_activity_filter(self, stmt: Select, query: PatientQuery) -> Select:
+        """Filter by last-active recency from patient device activity.
+
+        Uses correlated EXISTS on user_devices (not the sort subquery) so it
+        applies identically to fetch() and count(), which don't share joins.
+        """
+        if not query.activity:
+            return stmt
+
+        now = datetime.utcnow()
+
+        def active_since(days: int):
+            return exists().where(
+                UserDeviceModel.user_id == PatientModel.patient_id,
+                UserDeviceModel.profile_type == ProfileTypeEnum.PATIENT.value,
+                UserDeviceModel.last_active_at >= now - timedelta(days=days),
+            )
+
+        has_activity = exists().where(
+            UserDeviceModel.user_id == PatientModel.patient_id,
+            UserDeviceModel.profile_type == ProfileTypeEnum.PATIENT.value,
+            UserDeviceModel.last_active_at.isnot(None),
+        )
+
+        conditions = []
+        if "active_7d" in query.activity:
+            conditions.append(active_since(7))
+        if "active_30d" in query.activity:
+            conditions.append(active_since(30))
+        if "inactive_30d" in query.activity:
+            conditions.append(and_(has_activity, ~active_since(30)))
+        if "never" in query.activity:
+            conditions.append(~has_activity)
+        return stmt.where(or_(*conditions)) if conditions else stmt
 
     def _build_last_active_subquery(self):
         """Build subquery for last_active_at aggregation."""

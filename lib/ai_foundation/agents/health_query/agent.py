@@ -380,25 +380,36 @@ class HealthQueryAgent(BaseAgent):
         )
         brief = await self._structure_brief(result.response, trace_id=trace_id)
         await _maybe_await(self.gateway.langfuse_trace_output(
-            trace_id=trace_id, output_text=brief.narrative,
-            metadata={"flags": len(brief.flags)},
+            trace_id=trace_id, output_text=brief.verdict,
+            metadata={"assessment": brief.assessment, "metrics": len(brief.metrics)},
         ))
         return brief
 
     async def _structure_brief(
         self, analysis: str, *, trace_id: str | None = None,
     ) -> PatientBrief:
-        """Structure the grounded prose into narrative + flags — a pure
-        formatting step that never introduces a fact the analysis didn't state."""
+        """Structure the grounded prose into verdict + metrics + narrative — a
+        pure formatting step that never introduces a fact the analysis didn't
+        state (including the metric figures, which must be quoted from it)."""
         messages = [
             {"role": "system", "content": (
                 "Convert the clinical analysis into a structured provider brief. "
-                "narrative: the synthesis, kept to 2-3 tight sentences, preserving "
-                "its markdown emphasis (bold **…**) verbatim. "
-                "flags: 2-4 items, each a short label + severity "
-                "(good | watch | urgent) + domain (glucose | nutrition | activity "
-                "| sleep | vitals | adherence | engagement), most important first. "
-                "Never introduce a number, claim, or word the analysis did not state."
+                "assessment: responding | watch | at_risk | insufficient_data — "
+                "use insufficient_data when the analysis says the record is too "
+                "sparse to judge. "
+                "verdict: one line (≤120 chars) leading with the read, e.g. "
+                "'Responding well — holding steady across recent weeks'. "
+                "metrics: 0-4 figures the analysis explicitly stated (e.g. time in "
+                "range, average glucose, time low, peak, HbA1c, FBS, weight), most "
+                "important first — each a value + short label + tone "
+                "(good|watch|neutral); set window when the figure covers a single "
+                "day or a named period the analysis gave (e.g. 'Fri only', "
+                "'last 30d'). Return an empty list when the analysis reports no "
+                "usable figures. "
+                "narrative: one or two sentences on the driver and the single "
+                "thing to watch, preserving markdown emphasis (bold **…**). "
+                "Never introduce a number, metric, claim, or word the analysis "
+                "did not state."
             )},
             {"role": "user", "content": analysis},
         ]
