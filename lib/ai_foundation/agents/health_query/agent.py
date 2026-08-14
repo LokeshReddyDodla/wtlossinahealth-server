@@ -381,35 +381,30 @@ class HealthQueryAgent(BaseAgent):
         brief = await self._structure_brief(result.response, trace_id=trace_id)
         await _maybe_await(self.gateway.langfuse_trace_output(
             trace_id=trace_id, output_text=brief.verdict,
-            metadata={"assessment": brief.assessment, "metrics": len(brief.metrics)},
+            metadata={"assessment": brief.assessment},
         ))
         return brief
 
     async def _structure_brief(
         self, analysis: str, *, trace_id: str | None = None,
     ) -> PatientBrief:
-        """Structure the grounded prose into verdict + metrics + narrative — a
+        """Structure the grounded prose into assessment + verdict + narrative — a
         pure formatting step that never introduces a fact the analysis didn't
-        state (including the metric figures, which must be quoted from it)."""
+        state."""
         messages = [
             {"role": "system", "content": (
                 "Convert the clinical analysis into a structured provider brief. "
                 "assessment: responding | watch | at_risk | insufficient_data — "
-                "use insufficient_data when the analysis says the record is too "
-                "sparse to judge. "
+                "use insufficient_data only when the analysis cannot judge a "
+                "response at all; if it states even a partial read, use watch. "
                 "verdict: one line (≤120 chars) leading with the read, e.g. "
                 "'Responding well — holding steady across recent weeks'. "
-                "metrics: 0-4 figures the analysis explicitly stated (e.g. time in "
-                "range, average glucose, time low, peak, HbA1c, FBS, weight), most "
-                "important first — each a value + short label + tone "
-                "(good|watch|neutral); set window when the figure covers a single "
-                "day or a named period the analysis gave (e.g. 'Fri only', "
-                "'last 30d'). Return an empty list when the analysis reports no "
-                "usable figures. "
-                "narrative: one or two sentences on the driver and the single "
-                "thing to watch, preserving markdown emphasis (bold **…**). "
-                "Never introduce a number, metric, claim, or word the analysis "
-                "did not state."
+                "narrative: 2-3 sentences — is the patient responding, what's "
+                "driving it, the one thing to watch — naming the key figures in "
+                "context within the prose, preserving markdown emphasis (bold "
+                "**…**). "
+                "Never introduce a number, claim, or word the analysis did not "
+                "state."
             )},
             {"role": "user", "content": analysis},
         ]
