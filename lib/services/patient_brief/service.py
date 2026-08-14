@@ -65,6 +65,11 @@ class PatientBriefService:
 
     # ── internals ────────────────────────────────────────────────────────────
 
+    async def ensure_indexes(self) -> None:
+        """Create the patient_id index that serves every lookup. Idempotent.
+        Called once at startup (app.main), like the other Mongo-backed services."""
+        await self._col.create_index("patient_id", name="patient_briefs_patient_idx")
+
     async def _latest(self, patient_id: str) -> dict | None:
         return await self._col.find_one(
             {"patient_id": patient_id}, {"_id": 0}, sort=[("generated_at", -1)]
