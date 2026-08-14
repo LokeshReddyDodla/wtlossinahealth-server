@@ -406,8 +406,10 @@ class HealthQueryAgent(BaseAgent):
                 "'Responding well — holding steady across recent weeks'. "
                 "narrative: 1-2 sentences — what's driving the read and the one "
                 "thing to watch — naming the key figures in context within the "
-                "prose. Bold (**…**) only the single most important phrase; leave "
-                "the other figures unbolded. "
+                "prose, with dates in short human form (e.g. '6 Aug', not "
+                "'2026-08-06'). Bold (**…**) only the single most important "
+                "phrase; you may italicise a brief caveat; leave the other "
+                "figures unbolded. "
                 "Never introduce a number, claim, or word the analysis did not "
                 "state."
             )},
