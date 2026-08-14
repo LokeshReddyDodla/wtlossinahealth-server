@@ -355,10 +355,9 @@ class PatientBrief(BaseModel):
     )
     narrative: str = Field(
         description=(
-            "The synthesis in 2-3 sentences: is the patient responding, what's "
-            "driving it, the one thing to watch. Names the key figures in context "
-            "within the prose (never as standalone tiles); honest about data gaps. "
-            "English, markdown bold on the key figures and the single most "
-            "important finding."
+            "1-2 sentences: what's driving the read and the single thing to watch, "
+            "naming the key figures in context within the prose (never as standalone "
+            "tiles); honest about data gaps. Bold (**…**) only the single most "
+            "important phrase — not every figure. English."
         ),
     )
