@@ -393,7 +393,8 @@ class HealthQueryAgent(BaseAgent):
         messages = [
             {"role": "system", "content": (
                 "Convert the clinical analysis into a structured provider brief. "
-                "narrative: the 3-4 sentence synthesis, verbatim in substance. "
+                "narrative: the synthesis, kept to 2-3 tight sentences, preserving "
+                "its markdown emphasis (bold **…**) verbatim. "
                 "flags: 2-4 items, each a short label + severity "
                 "(good | watch | urgent) + domain (glucose | nutrition | activity "
                 "| sleep | vitals | adherence | engagement), most important first. "

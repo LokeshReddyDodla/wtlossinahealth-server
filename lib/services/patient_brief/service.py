@@ -34,28 +34,34 @@ class PatientBriefService:
         self._agent = health_query_agent
         # Strong refs so background regenerations aren't GC'd mid-flight.
         self._bg_tasks: set[asyncio.Task] = set()
+        # Patients with a generation in flight — dedupes concurrent views/polls
+        # so a first-ever view being polled doesn't spawn a regen every poll.
+        self._generating: set[str] = set()
 
     async def get(self, patient_id: str) -> dict:
-        """The current brief. Generates synchronously on first-ever view; if a
-        cached brief is stale, returns it immediately and refreshes in the
-        background (stale-while-revalidate)."""
+        """Never blocks on the LLM. Returns the cached brief immediately (status
+        'ready'); on a first-ever or stale view it kicks generation in the
+        background and the caller polls. `refreshing` is true while a fresh brief
+        is being generated."""
         latest = await self._latest(patient_id)
         if latest is None:
-            brief = await self._regenerate(patient_id)
-            return {**brief, "refreshing": False}
-        stale = self._age(latest) > _TTL
-        if stale:
-            self._spawn_regen(patient_id)
-        return {**latest, "refreshing": stale}
+            self._ensure_generating(patient_id)
+            return {"status": "generating"}
+        if self._age(latest) > _TTL:
+            self._ensure_generating(patient_id)
+        return {"status": "ready", **latest, "refreshing": patient_id in self._generating}
 
     async def refresh(self, patient_id: str) -> dict:
-        """Force a fresh brief now (the provider clicked refresh). Debounced so a
-        rapid re-click returns the just-generated one instead of regenerating."""
+        """Force a fresh brief (the provider clicked refresh), debounced so a
+        rapid re-click is a no-op. Returns the current brief marked refreshing;
+        the caller polls for the new one."""
         latest = await self._latest(patient_id)
         if latest is not None and self._age(latest) < _DEBOUNCE:
-            return {**latest, "refreshing": False}
-        brief = await self._regenerate(patient_id)
-        return {**brief, "refreshing": False}
+            return {"status": "ready", **latest, "refreshing": False}
+        self._ensure_generating(patient_id)
+        if latest is None:
+            return {"status": "generating"}
+        return {"status": "ready", **latest, "refreshing": True}
 
     # ── internals ────────────────────────────────────────────────────────────
 
@@ -79,7 +85,10 @@ class PatientBriefService:
         await self._col.insert_one(dict(doc))  # append-only; copy so _id isn't kept
         return doc
 
-    def _spawn_regen(self, patient_id: str) -> None:
+    def _ensure_generating(self, patient_id: str) -> None:
+        if patient_id in self._generating:
+            return
+        self._generating.add(patient_id)
         task = asyncio.create_task(self._safe_regen(patient_id))
         self._bg_tasks.add(task)
         task.add_done_callback(self._bg_tasks.discard)
@@ -89,3 +98,5 @@ class PatientBriefService:
             await self._regenerate(patient_id)
         except Exception:
             logger.exception("background brief regen failed: %s", patient_id)
+        finally:
+            self._generating.discard(patient_id)
