@@ -105,6 +105,15 @@ async def on_startup() -> None:
         import logging
         logging.getLogger(__name__).warning(f"Failed profile_agent init: {e}")
 
+    # Patient Brief — ensure the patient_id lookup index.
+    try:
+        from lib.core.container import container
+        from lib.services.patient_brief.service import PatientBriefService
+        await container.resolve(PatientBriefService).ensure_indexes()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Failed patient_brief init: {e}")
+
 
 @app.on_event("shutdown")
 async def on_shutdown() -> None:
