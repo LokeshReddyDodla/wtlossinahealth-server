@@ -337,3 +337,24 @@ class ProactiveNarration(BaseModel):
     suggested_query: str | None = Field(
         default=None, description="One follow-up the patient could tap to open the chat."
     )
+
+
+class BriefFlag(BaseModel):
+    """One thing the provider should notice, distilled from the brief's analysis."""
+
+    label: str = Field(max_length=60, description="Short chip text, e.g. 'Fiber below target 3 wks'.")
+    severity: Literal["good", "watch", "urgent"] = Field(
+        description="good = reassuring, watch = keep an eye, urgent = act."
+    )
+    domain: Literal[
+        "glucose", "nutrition", "activity", "sleep", "vitals", "adherence", "engagement"
+    ] = Field(description="Which domain this flag belongs to — drives the deep-link.")
+
+
+class PatientBrief(BaseModel):
+    """Provider-facing clinical synthesis. The narrative and flags are grounded
+    in the investigated data — the structuring step never adds a claim the
+    analysis didn't state."""
+
+    narrative: str = Field(description="3-4 sentence synthesis: responding, driving, watch. English.")
+    flags: list[BriefFlag] = Field(default_factory=list, description="2-4 things worth the provider's attention.")

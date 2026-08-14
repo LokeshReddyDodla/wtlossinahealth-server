@@ -189,6 +189,12 @@ def get_progress_service():
     return cast(ProgressService, container.resolve(ProgressService))
 
 
+def get_patient_brief_service():
+    from lib.services.patient_brief.service import PatientBriefService
+
+    return cast(PatientBriefService, container.resolve(PatientBriefService))
+
+
 def get_patient_data_export_service() -> PatientDataExportService:
     return cast(
         PatientDataExportService,

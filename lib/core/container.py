@@ -98,6 +98,7 @@ from lib.services.patient_daily_overview_service import PatientDailyOverviewServ
 from lib.services.patient_timeline_service import PatientTimelineService
 from lib.services.day_view.resolver import DayViewService
 from lib.services.progress.resolver import ProgressService
+from lib.services.patient_brief.service import PatientBriefService
 from lib.services.patient_data_export_service import PatientDataExportService
 from lib.services.care_provider_query_service import CareProviderQueryService
 from lib.services.package_query_service import PackageQueryService
@@ -208,6 +209,13 @@ container.register(
     "meal_report_collection",
     factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
         "meal_reports"
+    ),
+    scope=Scope.singleton,
+)
+container.register(
+    "patient_briefs_collection",
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "patient_briefs"
     ),
     scope=Scope.singleton,
 )
@@ -396,6 +404,15 @@ container.register(
         sleep_report_service=cast(SleepReportService, container.resolve(SleepReportService)),
         meal_report_service=cast(MealReportService, container.resolve(MealReportService)),
         fitness_report_service=cast(FitnessReportService, container.resolve(FitnessReportService)),
+    ),
+)
+
+# 🔹 Patient Brief Service (provider AI brief — lazy, cached, manual refresh)
+container.register(
+    PatientBriefService,
+    lambda: PatientBriefService(
+        briefs_collection=container.resolve("patient_briefs_collection"),
+        health_query_agent=cast(HealthQueryAgent, container.resolve(HealthQueryAgent)),
     ),
 )
 

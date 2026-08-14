@@ -19,6 +19,7 @@ from .checkin_history import *
 from .timeline import *
 from .day import *
 from .progress import *
+from .brief import *
 from .notifications import *
 from .notification_preferences import *
 from .smbg import *
