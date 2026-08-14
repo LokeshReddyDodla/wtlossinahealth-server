@@ -414,6 +414,9 @@ container.register(
         briefs_collection=container.resolve("patient_briefs_collection"),
         health_query_agent=cast(HealthQueryAgent, container.resolve(HealthQueryAgent)),
     ),
+    # Singleton: the in-flight dedup and background-task refs are in-memory state
+    # that only holds if every request shares one instance.
+    scope=Scope.singleton,
 )
 
 # 🔹 Patient Data Export Service
