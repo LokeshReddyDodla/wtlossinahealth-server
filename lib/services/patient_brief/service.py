@@ -80,7 +80,6 @@ class PatientBriefService:
             "patient_id": patient_id,
             "assessment": result.assessment,
             "verdict": result.verdict,
-            "metrics": [m.model_dump() for m in result.metrics],
             "narrative": result.narrative,
             "generated_at": datetime.now(timezone.utc),
         }
