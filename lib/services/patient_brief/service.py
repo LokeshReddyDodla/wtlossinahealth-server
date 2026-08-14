@@ -5,7 +5,7 @@ but the patient's *state* changes slowly, so we regenerate on a slow cadence,
 not per data event. Generation happens only for patients a provider actually
 opens (or refreshes) — cost scales with usage, not census.
 
-Storage is append-only (audit trail + eval corpus); reads serve the latest.
+One brief per patient; the generation history lives in Langfuse.
 """
 
 import asyncio
@@ -83,7 +83,10 @@ class PatientBriefService:
             "narrative": result.narrative,
             "generated_at": datetime.now(timezone.utc),
         }
-        await self._col.insert_one(dict(doc))  # append-only; copy so _id isn't kept
+        # One brief per patient: drop any existing brief(s) for this patient,
+        # then insert the fresh one.
+        await self._col.delete_many({"patient_id": patient_id})
+        await self._col.insert_one(dict(doc))  # copy so the returned doc has no _id
         return doc
 
     def _ensure_generating(self, patient_id: str) -> None:
