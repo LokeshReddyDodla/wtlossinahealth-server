@@ -347,7 +347,12 @@ class PatientBrief(BaseModel):
     'insufficient_data'."""
 
     assessment: Literal["responding", "watch", "at_risk", "insufficient_data"] = Field(
-        description="Overall read — drives the status dot; insufficient_data when the record is too thin to judge.",
+        description=(
+            "Overall read, matching the verdict's lead — responding when it leads "
+            "positive (even with a watch-item in the tail), watch when genuinely "
+            "mixed, at_risk when deteriorating/high-risk, insufficient_data when a "
+            "response can't be judged at all. Drives the status spine."
+        ),
     )
     verdict: str = Field(
         max_length=120,
