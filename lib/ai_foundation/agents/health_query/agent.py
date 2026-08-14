@@ -39,7 +39,7 @@ from lib.ai_foundation.streaming.sse import (
 
 from lib.ai_foundation.models.gateway import safe_cost
 
-from .contracts import ProactiveNarration, QueryIntent, QueryResponse, expand_to_domain_types, resolve_specialist_domains
+from .contracts import PatientBrief, ProactiveNarration, QueryIntent, QueryResponse, expand_to_domain_types, resolve_specialist_domains
 from .coordinator import Coordinator
 from .reasoning_engine import ReasoningEngine, ReasoningTier
 
@@ -328,6 +328,84 @@ class HealthQueryAgent(BaseAgent):
             metadata={"notify": getattr(narration, "notify", None)},
         ))
         return narration
+
+    async def run_provider_brief(
+        self,
+        *,
+        patient_id: str,
+        tier: ReasoningTier = ReasoningTier.STANDARD,
+        trace_id: str | None = None,
+    ) -> PatientBrief:
+        """A grounded, cross-domain clinical brief for the patient's provider.
+
+        Same investigation engine as chat/proactive (specialists + evidence),
+        but the care-provider persona and a brief-shaped response. There is no
+        user to clarify with, so the brief question is fixed; the brain
+        investigates across domains and synthesises. English; the provider reads
+        it directly.
+        """
+        self._ensure_prompts()
+        trace_id = trace_id or f"trc_{uuid4().hex[:16]}"
+        question = (
+            "Write a concise clinical brief for this patient's care provider. "
+            "Assess across glucose, nutrition, activity, sleep, vitals, medication "
+            "adherence, and engagement: is the patient responding to their plan, "
+            "what is driving it, and what should the provider watch. Ground every "
+            "claim in observed data; if data is thin, say so."
+        )
+        await _maybe_await(self.gateway.set_langfuse_context(
+            session_id=f"brief:{patient_id}", user_id=patient_id,
+        ))
+        await _maybe_await(self.gateway.langfuse_trace_input(
+            trace_id=trace_id, name="provider_brief", input_text=question,
+            metadata={"mode": "provider_brief", "tier": getattr(tier, "value", str(tier))},
+        ))
+
+        agent_input = AgentInput(
+            message=question,
+            context=AgentContext(patient_id=patient_id, refs=[],
+                                 metadata={"mode": "provider_brief"}),
+        )
+        ctx = await self._load_context(agent_input)
+        result = await self.reasoning_engine.reason(
+            user_message=question,
+            system_prompt=self._get_system_prompt("care_provider"),
+            reasoning_prompt=self._render("hq_reasoning"),
+            response_prompt=self._render("hq_provider_brief_response"),
+            context=ctx,
+            patient_ids=[patient_id],
+            tier=tier,
+            user_role="care_provider",
+            trace_id=trace_id,
+        )
+        brief = await self._structure_brief(result.response, trace_id=trace_id)
+        await _maybe_await(self.gateway.langfuse_trace_output(
+            trace_id=trace_id, output_text=brief.narrative,
+            metadata={"flags": len(brief.flags)},
+        ))
+        return brief
+
+    async def _structure_brief(
+        self, analysis: str, *, trace_id: str | None = None,
+    ) -> PatientBrief:
+        """Structure the grounded prose into narrative + flags — a pure
+        formatting step that never introduces a fact the analysis didn't state."""
+        messages = [
+            {"role": "system", "content": (
+                "Convert the clinical analysis into a structured provider brief. "
+                "narrative: the 3-4 sentence synthesis, verbatim in substance. "
+                "flags: 2-4 items, each a short label + severity "
+                "(good | watch | urgent) + domain (glucose | nutrition | activity "
+                "| sleep | vitals | adherence | engagement), most important first. "
+                "Never introduce a number, claim, or word the analysis did not state."
+            )},
+            {"role": "user", "content": analysis},
+        ]
+        brief, _meta = await self.gateway.extract(
+            messages=messages, response_model=PatientBrief,
+            task=ModelTask.STRUCTURED_ANALYSIS, trace_id=trace_id,
+        )
+        return brief
 
     async def _structure_proactive(
         self, analysis: str, *, trace_id: str | None = None,

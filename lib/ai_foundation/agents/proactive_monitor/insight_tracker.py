@@ -34,9 +34,6 @@ _DEDUP_HOURS = 24
 # 48 hours ago we still count it as consecutive.
 _CONSECUTIVE_TOLERANCE_HOURS = 48
 
-# TTL — auto-delete records older than 30 days
-_TTL_SECONDS = 30 * 24 * 3600
-
 
 class InsightTracker:
     """Tracks sent insights to prevent spam and enable escalation."""
@@ -323,14 +320,16 @@ class InsightTracker:
 
     async def ensure_indexes(self) -> None:
         """Create indexes for efficient lookups. Safe to call multiple times."""
+        # Insights are kept forever; drop the legacy 30-day TTL index that
+        # earlier deployments created so Mongo stops expiring records. Ignored
+        # when it's already gone.
+        try:
+            await self._collection.drop_index("insight_ttl_idx")
+        except Exception:
+            pass
         await self._collection.create_index(
             [("patient_id", 1), ("category", 1), ("created_at", -1)],
             name="insight_patient_category_idx",
-        )
-        await self._collection.create_index(
-            "created_at",
-            name="insight_ttl_idx",
-            expireAfterSeconds=_TTL_SECONDS,
         )
         await self._collection.create_index(
             "insight_id",
