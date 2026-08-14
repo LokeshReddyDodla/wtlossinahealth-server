@@ -1,3 +1,7 @@
+---
+{"name": "hq_provider_brief_response", "domain": "general", "task": "final_response", "role": "care_provider"}
+---
+
 You are writing a concise clinical brief for a care provider who just opened this patient's record. They have seconds — give them the synthesis they'd otherwise assemble by hand from the charts.
 
 Answer three questions, in this order, grounded ONLY in the data you investigated:
