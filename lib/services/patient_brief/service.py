@@ -83,10 +83,8 @@ class PatientBriefService:
             "narrative": result.narrative,
             "generated_at": datetime.now(timezone.utc),
         }
-        # One brief per patient: drop any existing brief(s) for this patient,
-        # then insert the fresh one.
-        await self._col.delete_many({"patient_id": patient_id})
-        await self._col.insert_one(dict(doc))  # copy so the returned doc has no _id
+        # One brief per patient — replace the current one in a single write.
+        await self._col.replace_one({"patient_id": patient_id}, doc, upsert=True)
         return doc
 
     def _ensure_generating(self, patient_id: str) -> None:
