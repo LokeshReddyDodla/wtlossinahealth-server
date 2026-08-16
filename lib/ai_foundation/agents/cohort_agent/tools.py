@@ -94,7 +94,14 @@ async def list_patients(ctx: RunContextWrapper["CohortContext"], limit: int = 10
 @function_tool
 async def get_patient(ctx: RunContextWrapper["CohortContext"], patient_id: str) -> str:
     """Full profile for one patient (demographics, diabetic_history, packages, reports, ...)."""
-    return _compact(await _client(ctx).get(f"/care-providers/patients/{patient_id}"), 8000)
+    data = await _client(ctx).get(f"/care-providers/patients/{patient_id}")
+    # Strip contact PHI before it reaches the (third-party) LLM context/logs;
+    # no cohort question needs phone/email/address.
+    if isinstance(data, dict):
+        for _k in ("phone", "phone_number", "mobile", "mobile_number",
+                   "whatsapp_number", "email", "address", "emergency_contact"):
+            data.pop(_k, None)
+    return _compact(data, 8000)
 
 
 @function_tool
@@ -415,7 +422,19 @@ async def run_python(ctx: RunContextWrapper["CohortContext"], code: str) -> str:
         # (the loop must stay free — these calls loop back to THIS server).
         return asyncio.run_coroutine_threadsafe(client.get(path, params), loop).result(timeout=60)
 
+    # SECURITY: an empty/absent __builtins__ makes exec inject the FULL builtins
+    # (__import__, open, eval), i.e. arbitrary code + filesystem + os.environ in
+    # the server process. Pin a minimal, side-effect-free set instead.
+    _safe_builtins = {
+        b.__name__: b for b in (
+            len, range, min, max, sum, sorted, abs, round, any, all,
+            enumerate, zip, map, filter, str, int, float, bool, dict,
+            list, set, tuple, isinstance, repr,
+        )
+    }
+    _safe_builtins["print"] = print
     scope: dict[str, Any] = {
+        "__builtins__": _safe_builtins,
         "api_get": api_get_sync,
         "json": json, "statistics": statistics, "datetime": _dt, "collections": collections,
         "Counter": collections.Counter, "defaultdict": collections.defaultdict, "math": math,
@@ -432,7 +451,10 @@ async def run_python(ctx: RunContextWrapper["CohortContext"], code: str) -> str:
             return f"{buf.getvalue()}\nERROR: {type(e).__name__}: {e}"
         return None
 
-    early = await asyncio.to_thread(_run)
+    try:
+        early = await asyncio.wait_for(asyncio.to_thread(_run), timeout=90)
+    except asyncio.TimeoutError:
+        return "ERROR: run_python timed out after 90s (possible infinite loop)"
     if early is not None:
         return early
     out = buf.getvalue().strip()
