@@ -58,7 +58,7 @@ PANEL_RULES: tuple[PanelRule, ...] = (
             _a(
                 "hemoglobin",
                 r"(?<!glycated\s)(?<!glycosylated\s)(?<!corpuscular\s)"
-                r"\bha?emoglobin\b",
+                r"\bha?emoglobin\b(?!\s*a1c)",
             ),
             _a("hematocrit", r"\bha?ematocrit\b|\bHCT\b|\bPCV\b"),
             _a("mcv", r"\bMCV\b|mean\s+corpuscular\s+volume"),
@@ -211,8 +211,11 @@ PANEL_RULES: tuple[PanelRule, ...] = (
                 r"\bTSH\b|thyroid\s+stimulating\s+hormone",
                 2.0,
             ),
-            _a("t3", r"\bT3\b|tri-?iodothyronine"),
-            _a("t4", r"\bT4\b|\bthyroxine\b"),
+            # Weak: "T3-T4" also denotes thoracic vertebrae in spine MRI reports,
+            # so neither may fire the thyroid panel alone (min_score 2.0). TSH/FT3/
+            # FT4/anti-TPO/TFT-header still carry a genuine thyroid report.
+            _a("t3", r"\bT3\b|tri-?iodothyronine", 0.5),
+            _a("t4", r"\bT4\b|\bthyroxine\b", 0.5),
             _a("ft3", r"\bFT3\b|free\s+t3"),
             _a("ft4", r"\bFT4\b|free\s+t4"),
             _a("anti_tpo", r"anti[\s-]*TPO|thyroid\s+peroxidase"),
@@ -509,7 +512,7 @@ OTHER_DOC_PATTERNS: tuple[VocabPattern, ...] = (
     _v("clinic", r"\bclinic\b", 0.5),
     _v("tablet", r"\btab\.?\b|\btablets?\b|\bcap\.?\b|\bcapsules?\b", 0.75),
     _v("frequency", r"\b(?:od|bd|tds|qid|hs|sos)\b|\b[01]-[01]-[01]\b", 1.0),
-    _v("dosage_mg", r"\b\d+\s*mg\b", 0.5),
+    _v("dosage_mg", r"\b\d+\s*mg\b(?!\s*/)", 0.5),
     _v("clinical_advice", r"\badvi[cs]ed?\b|follow\s*-?\s*up", 0.5),
     _v("diagnosis", r"\bdiagnosis\b|chief\s+complaints?", 0.5),
 )
