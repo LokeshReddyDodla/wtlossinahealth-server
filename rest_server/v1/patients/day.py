@@ -45,9 +45,16 @@ async def get_patient_day(
     ),
     current_actor: Actor = Depends(_day_actor()),
 ):
+    try:
+        parsed_pid = UUID(patient_id) if patient_id else None
+    except (ValueError, TypeError):
+        raise_http_exception(
+            status_code=status.HTTP_404_NOT_FOUND,
+            message="Patient not found",
+        )
     target_patient_id = await resolve_patient_access(
         actor=current_actor,
-        patient_id=UUID(patient_id) if patient_id else None,
+        patient_id=parsed_pid,
         care_provider_access_service=care_provider_access_service,
     )
     if not target_patient_id:
@@ -74,9 +81,16 @@ async def get_patient_day_domain(
     ),
     current_actor: Actor = Depends(_day_actor()),
 ):
+    try:
+        parsed_pid = UUID(patient_id) if patient_id else None
+    except (ValueError, TypeError):
+        raise_http_exception(
+            status_code=status.HTTP_404_NOT_FOUND,
+            message="Patient not found",
+        )
     target_patient_id = await resolve_patient_access(
         actor=current_actor,
-        patient_id=UUID(patient_id) if patient_id else None,
+        patient_id=parsed_pid,
         care_provider_access_service=care_provider_access_service,
     )
     if not target_patient_id:

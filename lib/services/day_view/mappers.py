@@ -81,9 +81,10 @@ def cgm_spine(report: dict | None, band: tuple[float, float] = (70.0, 180.0)) ->
                                      end=round(end, 3), peak=float(e.get("peak_glucose_mgdl") or 0)))
     for e in (report.get("hypo_stats") or {}).get("hypo_events") or []:
         start, end = hour_of(e.get("start_time")), hour_of(e.get("end_time"))
-        if start is not None and end is not None:
+        nadir = e.get("lowest_glucose_mgdl")
+        if start is not None and end is not None and nadir is not None:
             events.append(SpineEvent(type="hypo", start=round(start, 3),
-                                     end=round(end, 3), peak=float(e.get("lowest_glucose_mgdl") or 0)))
+                                     end=round(end, 3), peak=float(nadir)))
 
     return Spine(source=SpineSource.cgm, unit="mg/dL", points=points, band=band, events=events)
 
@@ -289,17 +290,6 @@ def sleep_rollup(report: dict | None) -> tuple[SleepRollup, float | None, float 
     return SleepRollup(asleep_h=asleep_h, efficiency=eff), asleep_h, eff
 
 
-def _to_dt(value):
-    if isinstance(value, datetime):
-        return value
-    if isinstance(value, str):
-        try:
-            return datetime.fromisoformat(value)
-        except ValueError:
-            return None
-    return None
-
-
 def sleep_stages_from_report(
     report: dict | None, day_start: datetime
 ) -> list[StageSpan]:
@@ -488,15 +478,19 @@ def day_alerts(
               or (v.diastolic is not None and v.diastolic >= 120)]
     highs = [v for v in bp if (v.systolic is not None and v.systolic >= 140)
              or (v.diastolic is not None and v.diastolic >= 90)]
+    def _bp_label(v: VitalMarker) -> str:
+        sys_s = str(int(v.systolic)) if v.systolic is not None else "—"
+        dia_s = str(int(v.diastolic)) if v.diastolic is not None else "—"
+        return f"{sys_s}/{dia_s}"
     if crisis:
-        worst = max(crisis, key=lambda v: v.systolic or 0)
+        worst = max(crisis, key=lambda v: (v.systolic or 0, v.diastolic or 0))
         out.append(DayAlert(severity="critical", category="bp_high",
-                            label=f"Hypertensive crisis · BP {int(worst.systolic or 0)}/{int(worst.diastolic or 0)}",
+                            label=f"Hypertensive crisis · BP {_bp_label(worst)}",
                             t=worst.t))
     elif highs:
-        worst = max(highs, key=lambda v: v.systolic or 0)
+        worst = max(highs, key=lambda v: (v.systolic or 0, v.diastolic or 0))
         out.append(DayAlert(severity="attention", category="bp_high",
-                            label=f"BP {int(worst.systolic or 0)}/{int(worst.diastolic or 0)}", t=worst.t))
+                            label=f"BP {_bp_label(worst)}", t=worst.t))
 
     missed = sum(1 for d in doses if d.status == "missed")
     if missed > 0:
