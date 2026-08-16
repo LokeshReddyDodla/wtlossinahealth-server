@@ -338,20 +338,22 @@ class HealthQueryAgent(BaseAgent):
     ) -> PatientBrief:
         """A grounded, cross-domain clinical brief for the patient's provider.
 
-        Same investigation engine as chat/proactive (specialists + evidence),
-        but the care-provider persona and a brief-shaped response. There is no
-        user to clarify with, so the brief question is fixed; the brain
-        investigates across domains and synthesises. English; the provider reads
-        it directly.
+        Same investigation path as chat (intent extraction + reasoning engine),
+        but with the care-provider persona and a brief-shaped response and a
+        fixed opening question. The brain investigates the domains its intent
+        extraction surfaces from that question and synthesises. English; the
+        provider reads it directly.
         """
         self._ensure_prompts()
         trace_id = trace_id or f"trc_{uuid4().hex[:16]}"
         question = (
             "Write a concise clinical brief for this patient's care provider. "
-            "Assess across glucose, nutrition, activity, sleep, vitals, medication "
-            "adherence, and engagement: is the patient responding to their plan, "
-            "what is driving it, and what should the provider watch. Ground every "
-            "claim in observed data; if data is thin, say so."
+            "Assess the patient's response to their care plan — what is working, "
+            "what is driving it, and what the provider should watch — grounded "
+            "only in the data this patient actually has. Do not assess or report "
+            "on data types the patient does not have; treat an absent domain as "
+            "out of scope, not a finding. Only call out missing data when there "
+            "is essentially nothing to assess."
         )
         await _maybe_await(self.gateway.set_langfuse_context(
             session_id=f"brief:{patient_id}", user_id=patient_id,
@@ -367,6 +369,9 @@ class HealthQueryAgent(BaseAgent):
                                  metadata={"mode": "provider_brief"}),
         )
         ctx = await self._load_context(agent_input)
+        # Seed the base fetch from extracted intent, as chat does; without a seed
+        # the reasoning engine under-fetches a multi-domain question.
+        intent, _ = await self._extract_intent(agent_input, ctx, trace_id=trace_id)
         result = await self.reasoning_engine.reason(
             user_message=question,
             system_prompt=self._get_system_prompt("care_provider"),
@@ -376,6 +381,7 @@ class HealthQueryAgent(BaseAgent):
             patient_ids=[patient_id],
             tier=tier,
             user_role="care_provider",
+            intent_data_types=[dt.value for dt in expand_to_domain_types(intent.data_types)],
             trace_id=trace_id,
         )
         brief = await self._structure_brief(result.response, trace_id=trace_id)
