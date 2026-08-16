@@ -462,9 +462,9 @@ async def test_cp_routes_smoke(app, client):
 
     cp_svc = MagicMock()
     cp_svc.get_overview = AsyncMock(return_value={
-        "total_patients": 0, "active_patients": 0, "at_risk_patients": 0, "patients": [],
+        "total_patients": 0, "active_patients": 0, "disengaged_patients": 0, "patients": [],
     })
-    cp_svc.get_at_risk_patients = AsyncMock(return_value=[])
+    cp_svc.get_disengaged_patients = AsyncMock(return_value=[])
     cp_svc.get_groups = AsyncMock(return_value=[])
     cp_svc.get_facility_challenges = AsyncMock(return_value=[])
     cp_svc.star_achievement = AsyncMock()
@@ -472,7 +472,7 @@ async def test_cp_routes_smoke(app, client):
 
     routes = [
         ("GET", f"/gamification/care-providers/{CP_ID}/overview"),
-        ("GET", f"/gamification/care-providers/{CP_ID}/at-risk"),
+        ("GET", f"/gamification/care-providers/{CP_ID}/disengaged"),
         ("GET", f"/gamification/care-providers/{CP_ID}/groups"),
         ("GET", f"/gamification/care-providers/{CP_ID}/challenges"),
         ("POST", f"/gamification/care-providers/{CP_ID}/achievements/{ACHIEVEMENT_ID}/star"),

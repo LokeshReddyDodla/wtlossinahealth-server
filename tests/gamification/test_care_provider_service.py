@@ -67,7 +67,7 @@ class TestCPGamificationService:
 
         assert overview.total_patients == 2
         assert overview.active_patients == 1
-        assert overview.at_risk_patients == 1
+        assert overview.disengaged_patients == 1
         assert [patient.patient_name for patient in overview.patients] == [
             "Risky",
             "Active",
