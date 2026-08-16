@@ -60,6 +60,7 @@ class TestCPGamificationService:
                         SimpleNamespace(patient_id=patient_risk, cnt=1),
                     ]
                 ),
+                FakeScalarResult(scalar=10),  # total tasks this week (completed 5 / 10)
             ]
         )
 
@@ -68,6 +69,8 @@ class TestCPGamificationService:
         assert overview.total_patients == 2
         assert overview.active_patients == 1
         assert overview.disengaged_patients == 1
+        assert overview.avg_streak == 2.5
+        assert overview.task_completion_pct == 50.0
         assert [patient.patient_name for patient in overview.patients] == [
             "Risky",
             "Active",
