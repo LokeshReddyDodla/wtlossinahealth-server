@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -576,7 +576,26 @@ class CPGamificationOverview(BaseModel):
     disengaged_patients: int
     avg_streak: float = 0.0
     task_completion_pct: Optional[float] = None  # None when no tasks this week
-    patients: List[PatientEngagementSummary]
+    disengaged: List[PatientEngagementSummary] = []   # preview list, not the full count
+    top_movers: List[PatientEngagementSummary] = []
+
+
+LeaderboardMetric = Literal["streak", "xp"]
+
+
+class CPLeaderboardEntry(BaseModel):
+    rank: int
+    patient_id: str
+    patient_name: Optional[str] = None
+    level: int
+    title: str
+    value: float
+
+
+class CPLeaderboardResponse(BaseModel):
+    metric: LeaderboardMetric
+    total: int
+    entries: List[CPLeaderboardEntry]
 
 
 # ── XP History ───────────────────────────────────────────────────────────────
