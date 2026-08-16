@@ -1,4 +1,4 @@
-"""Care provider gamification views — engagement dashboard, at-risk detection, achievements starring."""
+"""Care provider gamification views — engagement dashboard, disengagement detection, achievements starring."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ from lib.schemas.gamification import (
 )
 from lib.utils.postgres_session_decorator import with_postgres_session
 
-AT_RISK_INACTIVE_DAYS = 3
+DISENGAGED_INACTIVE_DAYS = 3
 
 
 class CPGamificationService:
@@ -58,13 +58,13 @@ class CPGamificationService:
             return CPGamificationOverview(
                 total_patients=0,
                 active_patients=0,
-                at_risk_patients=0,
+                disengaged_patients=0,
                 patients=[],
             )
 
         today = date.today()
         week_start = today - timedelta(days=today.weekday())
-        at_risk_cutoff = today - timedelta(days=AT_RISK_INACTIVE_DAYS)
+        inactive_cutoff = today - timedelta(days=DISENGAGED_INACTIVE_DAYS)
 
         # Batch: all profiles for these patients
         profiles_result = await postgres_session.execute(
@@ -101,7 +101,7 @@ class CPGamificationService:
 
         summaries: List[PatientEngagementSummary] = []
         active_count = 0
-        at_risk_count = 0
+        disengaged_count = 0
 
         for pid in patient_ids:
             profile = profiles_by_id.get(pid)
@@ -113,15 +113,15 @@ class CPGamificationService:
             xp = profile.total_xp if profile else 0
             last_active = profile.last_active_date if profile else None
 
-            is_at_risk = (
-                last_active is None or last_active < at_risk_cutoff
+            is_disengaged = (
+                last_active is None or last_active < inactive_cutoff
             )
-            is_active = last_active is not None and last_active >= at_risk_cutoff
+            is_active = last_active is not None and last_active >= inactive_cutoff
 
             if is_active:
                 active_count += 1
-            if is_at_risk:
-                at_risk_count += 1
+            if is_disengaged:
+                disengaged_count += 1
 
             summaries.append(
                 PatientEngagementSummary(
@@ -133,14 +133,14 @@ class CPGamificationService:
                     current_streak=streak,
                     last_active_date=last_active,
                     tasks_completed_this_week=tasks_this_week,
-                    is_at_risk=is_at_risk,
+                    is_disengaged=is_disengaged,
                 )
             )
 
-        # Sort: at-risk first, then by last active ascending
+        # Sort: disengaged first, then by last active ascending
         summaries.sort(
             key=lambda s: (
-                not s.is_at_risk,
+                not s.is_disengaged,
                 s.last_active_date or date.min,
             )
         )
@@ -148,12 +148,12 @@ class CPGamificationService:
         return CPGamificationOverview(
             total_patients=len(patient_ids),
             active_patients=active_count,
-            at_risk_patients=at_risk_count,
+            disengaged_patients=disengaged_count,
             patients=summaries,
         )
 
     @with_postgres_session
-    async def get_at_risk_patients(
+    async def get_disengaged_patients(
         self,
         care_provider_id: UUID,
         *,
@@ -162,7 +162,7 @@ class CPGamificationService:
         overview = await self.get_overview(
             care_provider_id, postgres_session=postgres_session
         )
-        return [p for p in overview.patients if p.is_at_risk]
+        return [p for p in overview.patients if p.is_disengaged]
 
     @with_postgres_session
     async def star_achievement(

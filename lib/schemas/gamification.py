@@ -567,13 +567,13 @@ class PatientEngagementSummary(BaseModel):
     current_streak: int
     last_active_date: Optional[date] = None
     tasks_completed_this_week: int = 0
-    is_at_risk: bool = False
+    is_disengaged: bool = False
 
 
 class CPGamificationOverview(BaseModel):
     total_patients: int
     active_patients: int
-    at_risk_patients: int
+    disengaged_patients: int
     patients: List[PatientEngagementSummary]
 
 
