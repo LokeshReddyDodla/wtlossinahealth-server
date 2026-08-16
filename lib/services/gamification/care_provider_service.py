@@ -18,6 +18,7 @@ from lib.models.gamification import (
     GroupMember,
     PatientAchievement,
     PlayerProfile,
+    XPLedgerEntry,
 )
 from lib.models.patient import Patient
 from lib.models.associations import patient_care_provider_association
@@ -32,6 +33,7 @@ from lib.schemas.gamification import (
     LeaderboardMetric,
     PatientEngagementSummary,
     TaskStatus,
+    TaskType,
     title_for_level,
 )
 from lib.utils.postgres_session_decorator import with_postgres_session
@@ -66,6 +68,48 @@ class CPGamificationService:
 
     async def _scalar(self, session: AsyncSession, stmt) -> int:
         return (await session.execute(stmt)).scalar() or 0
+
+    def _metric_value(self, metric: LeaderboardMetric):
+        """The ranked column for `metric`, as a per-patient SQL expression.
+
+        Period sums correlate on Patient.patient_id, so they inherit the outer
+        query's panel scope. Boundaries mirror the mobile boards (ISO week
+        Monday-start, month first) so dashboard and app agree on the numbers.
+        """
+        if metric == "streak":
+            return func.coalesce(PlayerProfile.current_streak, 0)
+        if metric == "xp":
+            return func.coalesce(PlayerProfile.total_xp, 0)
+
+        today = datetime.utcnow().date()
+        if metric == "weekly_steps":
+            week_start = today - timedelta(days=today.weekday())
+            return (
+                select(func.coalesce(func.sum(DailyTask.current_value), 0))
+                .where(
+                    DailyTask.patient_id == Patient.patient_id,
+                    DailyTask.task_type == TaskType.HIT_STEP_GOAL.value,
+                    DailyTask.task_date >= week_start,
+                )
+                .correlate(Patient)
+                .scalar_subquery()
+            )
+
+        since = (
+            today - timedelta(days=today.weekday())
+            if metric == "weekly_xp"
+            else today.replace(day=1)
+        )
+        return (
+            select(func.coalesce(func.sum(XPLedgerEntry.xp_amount), 0))
+            .where(
+                XPLedgerEntry.patient_id == Patient.patient_id,
+                XPLedgerEntry.xp_amount > 0,
+                XPLedgerEntry.created_at >= datetime.combine(since, datetime.min.time()),
+            )
+            .correlate(Patient)
+            .scalar_subquery()
+        )
 
     def _summary(self, row, *, is_disengaged: bool, tasks: int = 0) -> PatientEngagementSummary:
         level = row.level or 1
@@ -226,10 +270,7 @@ class CPGamificationService:
         """Ranked, paginated, searchable panel leaderboard — ordering and paging
         happen in SQL so the whole panel never loads into memory."""
         panel = self._panel_ids(care_provider_id, health_facility_id, is_admin)
-        order_col = (
-            PlayerProfile.total_xp if metric == "xp" else PlayerProfile.current_streak
-        )
-        value = func.coalesce(order_col, 0)
+        value = self._metric_value(metric)
 
         conditions = [Patient.patient_id.in_(panel)]
         if search and search.strip():
@@ -246,8 +287,7 @@ class CPGamificationService:
                     Patient.patient_id,
                     Patient.first_name,
                     func.coalesce(PlayerProfile.level, 1).label("level"),
-                    func.coalesce(PlayerProfile.total_xp, 0).label("xp"),
-                    func.coalesce(PlayerProfile.current_streak, 0).label("streak"),
+                    value.label("value"),
                 )
                 .outerjoin(PlayerProfile, PlayerProfile.patient_id == Patient.patient_id)
                 .where(*conditions)
@@ -264,7 +304,7 @@ class CPGamificationService:
                 patient_name=r.first_name,
                 level=r.level,
                 title=title_for_level(r.level),
-                value=float(r.xp if metric == "xp" else r.streak),
+                value=float(r.value or 0),
             )
             for i, r in enumerate(rows)
         ]

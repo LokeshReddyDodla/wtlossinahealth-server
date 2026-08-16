@@ -89,8 +89,8 @@ class TestCPGamificationService:
                 FakeScalarResult(scalar=57),  # total matching
                 FakeScalarResult(             # this page's rows (already ordered)
                     values=[
-                        SimpleNamespace(patient_id=p1, first_name="Harish", level=16, xp=9000, streak=134),
-                        SimpleNamespace(patient_id=p2, first_name="Sudhir", level=17, xp=9500, streak=120),
+                        SimpleNamespace(patient_id=p1, first_name="Harish", level=16, value=134),
+                        SimpleNamespace(patient_id=p2, first_name="Sudhir", level=17, value=120),
                     ]
                 ),
             ]
