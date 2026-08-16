@@ -539,7 +539,12 @@ class GroupService:
         raise RuntimeError("Failed to generate unique invite code")
 
     @staticmethod
-    def to_response(group: Group, member_count: int) -> GroupResponse:
+    def to_response(
+        group: Group,
+        member_count: int,
+        top_members=None,
+        active_challenges: int = 0,
+    ) -> GroupResponse:
         return GroupResponse(
             group_id=str(group.group_id),
             name=group.name,
@@ -554,4 +559,6 @@ class GroupService:
             max_members=group.max_members,
             is_active=group.is_active,
             created_at=group.created_at,
+            top_members=top_members or [],
+            active_challenges=active_challenges,
         )

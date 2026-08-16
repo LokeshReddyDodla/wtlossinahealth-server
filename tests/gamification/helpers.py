@@ -182,6 +182,7 @@ def base_stubs() -> dict[str, types.ModuleType]:
         func=SimpleNamespace(
             count=lambda *a, **k: ExprStub(),
             sum=lambda *a, **k: ExprStub(),
+            avg=lambda *a, **k: ExprStub(),
             coalesce=lambda *a, **k: ExprStub(),
             max=lambda *a, **k: ExprStub(),
             date=lambda *a, **k: ExprStub(),
@@ -241,6 +242,7 @@ def base_stubs() -> dict[str, types.ModuleType]:
             "rank",
             "xp_earned",
             "completed_at",
+            "joined_at",
             "id",
         ),
         Group=model_class(
@@ -412,6 +414,11 @@ def base_stubs() -> dict[str, types.ModuleType]:
         ),
         ChallengeResponse=type(
             "ChallengeResponse",
+            (),
+            {"__init__": lambda self, **kw: self.__dict__.update(kw)},
+        ),
+        AvatarPreview=type(
+            "AvatarPreview",
             (),
             {"__init__": lambda self, **kw: self.__dict__.update(kw)},
         ),
@@ -678,6 +685,7 @@ def base_stubs() -> dict[str, types.ModuleType]:
                 "locale",
                 "timezone",
                 "first_name",
+                "profile_picture",
                 "health_facility_id",
             ),
         ),

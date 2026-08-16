@@ -22,6 +22,7 @@ from lib.models.gamification import (
 from lib.models.patient import Patient
 from lib.models.associations import patient_care_provider_association
 from lib.schemas.gamification import (
+    AvatarPreview,
     ChallengeResponse,
     CPGamificationOverview,
     CPLeaderboardEntry,
@@ -330,14 +331,54 @@ class CPGamificationService:
 
         responses: List[GroupResponse] = []
         for group in groups:
-            count_result = await postgres_session.execute(
+            member_count = await self._scalar(
+                postgres_session,
                 select(func.count()).select_from(GroupMember).where(
                     GroupMember.group_id == group.group_id,
                     GroupMember.is_active == True,
+                ),
+            )
+            member_rows = (
+                await postgres_session.execute(
+                    select(
+                        Patient.patient_id,
+                        Patient.first_name,
+                        Patient.profile_picture,
+                    )
+                    .join(GroupMember, GroupMember.patient_id == Patient.patient_id)
+                    .where(
+                        GroupMember.group_id == group.group_id,
+                        GroupMember.is_active == True,
+                    )
+                    .order_by(GroupMember.joined_at.asc())
+                    .limit(4)
                 )
+            ).all()
+            top_members = [
+                AvatarPreview(
+                    patient_id=str(r.patient_id),
+                    name=r.first_name,
+                    profile_picture=r.profile_picture,
+                )
+                for r in member_rows
+            ]
+            active_challenges = await self._scalar(
+                postgres_session,
+                select(func.count(func.distinct(ChallengeParticipant.challenge_id)))
+                .join(
+                    Challenge,
+                    Challenge.challenge_id == ChallengeParticipant.challenge_id,
+                )
+                .where(
+                    ChallengeParticipant.participant_type == "group",
+                    ChallengeParticipant.participant_id == group.group_id,
+                    Challenge.is_active == True,
+                ),
             )
             responses.append(
-                GroupService.to_response(group, count_result.scalar() or 0)
+                GroupService.to_response(
+                    group, member_count, top_members, active_challenges
+                )
             )
         return responses
 
@@ -362,13 +403,53 @@ class CPGamificationService:
 
         responses: List[ChallengeResponse] = []
         for challenge in challenges:
-            count_result = await postgres_session.execute(
+            active = ChallengeParticipant.status.in_(["active", "completed"])
+            count = await self._scalar(
+                postgres_session,
                 select(func.count()).select_from(ChallengeParticipant).where(
                     ChallengeParticipant.challenge_id == challenge.challenge_id,
-                    ChallengeParticipant.status.in_(["active", "completed"]),
-                )
+                    active,
+                ),
             )
+            avg_progress = (
+                await postgres_session.execute(
+                    select(func.coalesce(func.avg(ChallengeParticipant.current_value), 0.0)).where(
+                        ChallengeParticipant.challenge_id == challenge.challenge_id,
+                        active,
+                    )
+                )
+            ).scalar() or 0.0
+            part_rows = (
+                await postgres_session.execute(
+                    select(
+                        Patient.patient_id,
+                        Patient.first_name,
+                        Patient.profile_picture,
+                    )
+                    .join(
+                        ChallengeParticipant,
+                        ChallengeParticipant.participant_id == Patient.patient_id,
+                    )
+                    .where(
+                        ChallengeParticipant.challenge_id == challenge.challenge_id,
+                        ChallengeParticipant.participant_type == "patient",
+                        active,
+                    )
+                    .order_by(ChallengeParticipant.joined_at.asc())
+                    .limit(4)
+                )
+            ).all()
+            top_participants = [
+                AvatarPreview(
+                    patient_id=str(r.patient_id),
+                    name=r.first_name,
+                    profile_picture=r.profile_picture,
+                )
+                for r in part_rows
+            ]
             responses.append(
-                ChallengeService._to_response(challenge, count_result.scalar() or 0)
+                ChallengeService._to_response(
+                    challenge, count, float(avg_progress), top_participants
+                )
             )
         return responses

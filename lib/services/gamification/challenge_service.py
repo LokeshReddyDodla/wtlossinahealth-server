@@ -856,7 +856,10 @@ class ChallengeService:
 
     @staticmethod
     def _to_response(
-        c: Challenge, participant_count: int
+        c: Challenge,
+        participant_count: int,
+        avg_progress: float = 0.0,
+        top_participants=None,
     ) -> ChallengeResponse:
         return ChallengeResponse(
             challenge_id=str(c.challenge_id),
@@ -877,4 +880,6 @@ class ChallengeService:
             is_active=c.is_active,
             participant_count=participant_count,
             created_at=c.created_at,
+            avg_progress=round(avg_progress or 0.0, 1),
+            top_participants=top_participants or [],
         )
