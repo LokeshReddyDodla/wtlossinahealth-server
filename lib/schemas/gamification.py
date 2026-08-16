@@ -574,6 +574,8 @@ class CPGamificationOverview(BaseModel):
     total_patients: int
     active_patients: int
     disengaged_patients: int
+    avg_streak: float = 0.0
+    task_completion_pct: Optional[float] = None  # None when no tasks this week
     patients: List[PatientEngagementSummary]
 
 
