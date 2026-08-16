@@ -59,7 +59,7 @@ def test_router_exposes_planned_gamification_contract():
         "/feed/{feed_event_id}/cheer",
         # CP scope
         "/care-providers/{cp_id}/overview",
-        "/care-providers/{cp_id}/at-risk",
+        "/care-providers/{cp_id}/disengaged",
         "/care-providers/{cp_id}/groups",
         "/care-providers/{cp_id}/challenges",
         "/care-providers/{cp_id}/achievements/{achievement_id}/star",

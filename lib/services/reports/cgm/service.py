@@ -44,6 +44,34 @@ class CGMReportService:
         except Exception as e:
             logging.warning(f"Failed to mark summaries as stale for {patient_id}: {e}")
 
+    async def latest_daily_report_ends(
+        self, patient_ids: list[str]
+    ) -> dict[str, datetime]:
+        """Newest daily-report end per patient, in one aggregation.
+
+        Used by the reconciler to find the gap between a patient's newest
+        reading and their newest daily report. date_range.end is stored as an
+        ISO string, so $max sorts it lexicographically (valid for ISO).
+        """
+        if not patient_ids:
+            return {}
+        pipeline = [
+            {
+                "$match": {
+                    "patient_id": {"$in": patient_ids},
+                    "metadata.report_type": CGMReportType.DAILY,
+                }
+            },
+            {"$group": {"_id": "$patient_id", "end": {"$max": "$metadata.date_range.end"}}},
+        ]
+        out: dict[str, datetime] = {}
+        async for row in self.cgm_report_collection.aggregate(pipeline):
+            end = row.get("end")
+            parsed = parse_datetime(end) if isinstance(end, str) else end
+            if parsed:
+                out[row["_id"]] = parsed
+        return out
+
     async def fetch_reports(self, patient_id: str):
         try:
             reports_cursor = self.cgm_report_collection.find(
