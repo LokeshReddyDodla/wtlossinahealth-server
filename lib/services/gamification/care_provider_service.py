@@ -44,15 +44,24 @@ class CPGamificationService:
         self,
         care_provider_id: UUID,
         *,
+        health_facility_id: Optional[UUID] = None,
+        is_admin: bool = False,
         postgres_session: AsyncSession,
     ) -> CPGamificationOverview:
-        # Get all patients for this care provider
-        result = await postgres_session.execute(
-            select(patient_care_provider_association.c.patient_id).where(
+        # Must mirror the patient-list scope, or gamification and the roster
+        # disagree on who's in the panel.
+        if is_admin and health_facility_id:
+            stmt = select(Patient.patient_id).where(
+                Patient.health_facility_id == health_facility_id
+            )
+        elif is_admin:
+            stmt = select(Patient.patient_id)
+        else:
+            stmt = select(patient_care_provider_association.c.patient_id).where(
                 patient_care_provider_association.c.care_provider_id
                 == care_provider_id
             )
-        )
+        result = await postgres_session.execute(stmt)
         patient_ids = list(result.scalars().all())
         if not patient_ids:
             return CPGamificationOverview(
@@ -98,6 +107,17 @@ class CPGamificationService:
             .group_by(DailyTask.patient_id)
         )
         tasks_by_id = {row.patient_id: row.cnt for row in tasks_result.all()}
+
+        # Panel task-completion this week = completed / total (all statuses).
+        total_tasks_week = (
+            await postgres_session.execute(
+                select(func.count(DailyTask.task_id)).where(
+                    DailyTask.patient_id.in_(patient_ids),
+                    DailyTask.task_date >= week_start,
+                )
+            )
+        ).scalar() or 0
+        completed_tasks_week = sum(tasks_by_id.values())
 
         summaries: List[PatientEngagementSummary] = []
         active_count = 0
@@ -145,10 +165,21 @@ class CPGamificationService:
             )
         )
 
+        avg_streak = round(
+            sum(s.current_streak for s in summaries) / len(summaries), 1
+        )
+        completion_pct = (
+            round(completed_tasks_week / total_tasks_week * 100, 1)
+            if total_tasks_week
+            else None
+        )
+
         return CPGamificationOverview(
             total_patients=len(patient_ids),
             active_patients=active_count,
             disengaged_patients=disengaged_count,
+            avg_streak=avg_streak,
+            task_completion_pct=completion_pct,
             patients=summaries,
         )
 
@@ -157,10 +188,15 @@ class CPGamificationService:
         self,
         care_provider_id: UUID,
         *,
+        health_facility_id: Optional[UUID] = None,
+        is_admin: bool = False,
         postgres_session: AsyncSession,
     ) -> List[PatientEngagementSummary]:
         overview = await self.get_overview(
-            care_provider_id, postgres_session=postgres_session
+            care_provider_id,
+            health_facility_id=health_facility_id,
+            is_admin=is_admin,
+            postgres_session=postgres_session,
         )
         return [p for p in overview.patients if p.is_disengaged]
 

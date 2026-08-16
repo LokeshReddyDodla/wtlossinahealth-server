@@ -1345,7 +1345,11 @@ async def get_cp_overview(
     current_cp: CareProvider = Depends(_cp_read()),
 ):
     _check_cp(cp_id, current_cp)
-    overview = await service.get_overview(current_cp.care_provider_id)
+    overview = await service.get_overview(
+        current_cp.care_provider_id,
+        health_facility_id=current_cp.health_facility_id,
+        is_admin=current_cp.is_admin,
+    )
     return SuccessResponse(message="Gamification overview", data=overview)
 
 
@@ -1359,7 +1363,11 @@ async def get_disengaged_patients(
     current_cp: CareProvider = Depends(_cp_read()),
 ):
     _check_cp(cp_id, current_cp)
-    patients = await service.get_disengaged_patients(current_cp.care_provider_id)
+    patients = await service.get_disengaged_patients(
+        current_cp.care_provider_id,
+        health_facility_id=current_cp.health_facility_id,
+        is_admin=current_cp.is_admin,
+    )
     return SuccessResponse(message="Disengaged patients", data=patients)
 
 
