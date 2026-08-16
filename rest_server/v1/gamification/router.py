@@ -1350,17 +1350,17 @@ async def get_cp_overview(
 
 
 @router.get(
-    "/care-providers/{cp_id}/at-risk",
+    "/care-providers/{cp_id}/disengaged",
     response_model=SuccessResponse[List[PatientEngagementSummary]],
 )
-async def get_at_risk_patients(
+async def get_disengaged_patients(
     cp_id: UUID,
     service: CPGamificationService = Depends(get_cp_gamification_service),
     current_cp: CareProvider = Depends(_cp_read()),
 ):
     _check_cp(cp_id, current_cp)
-    patients = await service.get_at_risk_patients(current_cp.care_provider_id)
-    return SuccessResponse(message="At-risk patients", data=patients)
+    patients = await service.get_disengaged_patients(current_cp.care_provider_id)
+    return SuccessResponse(message="Disengaged patients", data=patients)
 
 
 @router.get(
