@@ -232,7 +232,8 @@ class CPGamificationService:
 
         conditions = [Patient.patient_id.in_(panel)]
         if search and search.strip():
-            conditions.append(Patient.first_name.ilike(f"%{search.strip()}%"))
+            full_name = func.concat(Patient.first_name, " ", Patient.last_name)
+            conditions += [full_name.ilike(f"%{term}%") for term in search.split()]
 
         total = await self._scalar(
             postgres_session,

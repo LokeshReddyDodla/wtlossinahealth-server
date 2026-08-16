@@ -24,6 +24,7 @@ from lib.models.patient_reproductive_health import PatientReproductiveHealth
 from lib.models.patient_smbg import PatientSMBG
 from lib.models.user_device import UserDevice as UserDeviceModel
 from lib.queries.patient_query import PatientQuery
+from lib.utils.token_search import apply_token_search
 
 
 class PatientQueryService:
@@ -137,19 +138,20 @@ class PatientQueryService:
         return stmt
 
     def _apply_search_filter(self, stmt: Select, query: PatientQuery) -> Select:
-        """Apply search filter across name, email, phone, and patient_id."""
-        if not query.search:
-            return stmt
-
-        search_pattern = f"%{query.search}%"
-        return stmt.where(
-            or_(
-                PatientModel.first_name.ilike(search_pattern),
-                PatientModel.last_name.ilike(search_pattern),
-                PatientModel.email.ilike(search_pattern),
-                PatientModel.phone_number.ilike(search_pattern),
-                cast(PatientModel.patient_id, String).ilike(search_pattern),
-            )
+        """Search across name, email, phone, and patient_id."""
+        # func.concat treats NULL as '' (unlike ||), so a null last_name is fine.
+        full_name = func.concat(
+            PatientModel.first_name, " ", PatientModel.last_name
+        )
+        return apply_token_search(
+            stmt,
+            query.search,
+            [
+                full_name,
+                PatientModel.email,
+                PatientModel.phone_number,
+                cast(PatientModel.patient_id, String),
+            ],
         )
 
     def _apply_gender_filter(self, stmt: Select, query: PatientQuery) -> Select:
