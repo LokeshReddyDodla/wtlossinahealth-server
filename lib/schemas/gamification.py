@@ -591,7 +591,7 @@ class CPGamificationOverview(BaseModel):
     top_movers: List[PatientEngagementSummary] = []
 
 
-LeaderboardMetric = Literal["streak", "xp"]
+LeaderboardMetric = Literal["streak", "xp", "weekly_xp", "monthly_xp", "weekly_steps"]
 
 
 class CPLeaderboardEntry(BaseModel):
