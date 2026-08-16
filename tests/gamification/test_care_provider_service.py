@@ -154,6 +154,8 @@ class TestCPGamificationService:
             results=[
                 FakeScalarResult(values=[group]),
                 FakeScalarResult(scalar=7),
+                FakeScalarResult(values=[]),
+                FakeScalarResult(scalar=2),
             ]
         )
 
@@ -162,6 +164,8 @@ class TestCPGamificationService:
         assert len(groups) == 1
         assert groups[0].name == "Dr. A Team"
         assert groups[0].member_count == 7
+        assert groups[0].active_challenges == 2
+        assert groups[0].top_members == []
 
     @pytest.mark.asyncio
     async def test_get_facility_challenges_returns_facility_challenges(self, monkeypatch):
@@ -214,7 +218,11 @@ class TestCPGamificationService:
             results=[
                 FakeScalarResult(values=[challenge_1, challenge_2]),
                 FakeScalarResult(scalar=5),
+                FakeScalarResult(scalar=8000.0),
+                FakeScalarResult(values=[]),
                 FakeScalarResult(scalar=3),
+                FakeScalarResult(scalar=12000.0),
+                FakeScalarResult(values=[]),
             ]
         )
 
@@ -224,5 +232,7 @@ class TestCPGamificationService:
         assert len(challenges) == 2
         assert challenges[0].title == "April Sprint"
         assert challenges[0].participant_count == 5
+        assert challenges[0].avg_progress == 8000.0
         assert challenges[1].title == "May Sprint"
         assert challenges[1].participant_count == 3
+        assert challenges[1].avg_progress == 12000.0

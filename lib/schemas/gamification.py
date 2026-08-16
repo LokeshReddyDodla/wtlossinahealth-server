@@ -385,6 +385,13 @@ class GroupCreateInput(BaseModel):
     max_members: int = Field(50, ge=2, le=200)
 
 
+class AvatarPreview(BaseModel):
+    """A person's avatar bits for stacked previews on cards."""
+    patient_id: str
+    name: Optional[str] = None
+    profile_picture: Optional[str] = None
+
+
 class GroupResponse(BaseModel):
     group_id: str
     name: str
@@ -399,6 +406,8 @@ class GroupResponse(BaseModel):
     max_members: int
     is_active: bool
     created_at: datetime
+    top_members: List[AvatarPreview] = []
+    active_challenges: int = 0
 
 
 class GroupMemberPreview(BaseModel):
@@ -481,6 +490,8 @@ class ChallengeResponse(BaseModel):
     is_active: bool
     participant_count: int = 0
     created_at: datetime
+    avg_progress: float = 0.0  # mean current_value across active participants
+    top_participants: List[AvatarPreview] = []
 
 
 class ChallengeParticipantResponse(BaseModel):
