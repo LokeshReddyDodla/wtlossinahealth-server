@@ -11,6 +11,7 @@ from sqlalchemy.sql import Select
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.models.user_device import UserDevice as UserDeviceModel
 from lib.queries.care_provider_query import CareProviderQuery
+from lib.utils.token_search import apply_token_search
 
 
 class CareProviderQueryService:
@@ -90,20 +91,19 @@ class CareProviderQueryService:
 
     def _apply_search_filter(self, stmt: Select, query: CareProviderQuery) -> Select:
         """Apply search filter across name, email, phone, and identifiers."""
-        if not query.search:
-            return stmt
-
-        search_pattern = f"%{query.search}%"
-
-        return stmt.where(
-            or_(
-                CareProviderModel.first_name.ilike(search_pattern),
-                CareProviderModel.last_name.ilike(search_pattern),
-                CareProviderModel.email.ilike(search_pattern),
-                CareProviderModel.phone_number.ilike(search_pattern),
-                CareProviderModel.code.ilike(search_pattern),
-                cast(CareProviderModel.care_provider_id, String).ilike(search_pattern),
-            )
+        full_name = func.concat(
+            CareProviderModel.first_name, " ", CareProviderModel.last_name
+        )
+        return apply_token_search(
+            stmt,
+            query.search,
+            [
+                full_name,
+                CareProviderModel.email,
+                CareProviderModel.phone_number,
+                CareProviderModel.code,
+                cast(CareProviderModel.care_provider_id, String),
+            ],
         )
 
    

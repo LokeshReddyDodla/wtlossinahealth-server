@@ -12,6 +12,8 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import flag_modified
 
+from lib.utils.token_search import apply_token_search
+
 from lib.core.constants import EmitMessageKeyEnum
 from lib.core.postgres_store import PostgresStore
 from lib.models.care_provider import CareProvider as CareProviderModel
@@ -157,14 +159,17 @@ class CareProviderProfileService:
 
             # Search filter
             if search:
-                search_pattern = f"%{search}%"
-                stmt = stmt.where(
-                    or_(
-                        PatientModel.first_name.ilike(search_pattern),
-                        PatientModel.last_name.ilike(search_pattern),
-                        PatientModel.email.ilike(search_pattern),
-                        PatientModel.phone_number.ilike(search_pattern),
-                    )
+                full_name = func.concat(
+                    PatientModel.first_name, " ", PatientModel.last_name
+                )
+                stmt = apply_token_search(
+                    stmt,
+                    search,
+                    [
+                        full_name,
+                        PatientModel.email,
+                        PatientModel.phone_number,
+                    ],
                 )
 
             # gender filter
