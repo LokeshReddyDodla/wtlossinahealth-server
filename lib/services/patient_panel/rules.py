@@ -16,9 +16,9 @@ from lib.schemas.patient_panel_signal import (
 )
 from lib.services.patient_panel.thresholds import for_patient
 
-# Priority bands (ascending — lower surfaces first in a triage sort).
+# Priority bands (ascending — lower surfaces first in a triage sort). A patient
+# you can see trending badly (watch) outranks one you can't assess (data gap).
 _P_AT_RISK = 0
-_P_SYNC_GAP = 10
 _P_WATCH = 20
 _P_DATA_GAP = 30
 _P_NOT_STARTED = 40
@@ -45,15 +45,16 @@ def classify(inp: PanelInputs) -> Triage:
             priority=_P_NOT_STARTED,
         )
 
-    # 2) Sensor connected but no data arriving — urgent because it's a fixable
-    #    device failure masquerading as "no data".
+    # 2) CGM connected but its readings are stale — no recent glucose to assess.
+    #    This is about missing data (a spent/removed sensor), not a broken sync:
+    #    last_cgm_reading_at is the last reading, not the last sync.
     if inp.glucose_sync_stale:
-        tail = f" · {inp.glucose_sync_stale_days}d no data" if inp.glucose_sync_stale_days else ""
+        tail = f" · {inp.glucose_sync_stale_days}d" if inp.glucose_sync_stale_days else ""
         return Triage(
             assessment=PanelAssessment.DATA_GAP,
-            reason=f"CGM not syncing{tail}",
-            severity=ReasonSeverity.URGENT,
-            priority=_P_SYNC_GAP,
+            reason=f"No recent CGM{tail}",
+            severity=ReasonSeverity.WATCH,
+            priority=_P_DATA_GAP,
         )
 
     # 3) Hypoglycemia danger.

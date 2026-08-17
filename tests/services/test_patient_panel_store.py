@@ -24,10 +24,14 @@ class _Cursor:
     def __init__(self, rows):
         self._rows = rows
 
-    def sort(self, key, order):
-        self._rows = sorted(
-            self._rows, key=lambda d: (d.get(key) is None, d.get(key)), reverse=order < 0
-        )
+    def sort(self, spec):
+        # spec: list of (key, direction); apply last→first for a stable multi-key sort.
+        for key, direction in reversed(spec):
+            self._rows = sorted(
+                self._rows,
+                key=lambda d, k=key: (d.get(k) is None, d.get(k)),
+                reverse=direction < 0,
+            )
         return self
 
     def skip(self, n):

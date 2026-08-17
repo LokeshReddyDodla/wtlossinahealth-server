@@ -11,7 +11,6 @@ from lib.schemas.patient_panel_signal import (
     Modality,
     PanelAssessment,
     PanelInputs,
-    ReasonSeverity,
 )
 from lib.services.patient_panel.compute import build_signal
 from lib.services.patient_panel.rules import classify
@@ -29,13 +28,13 @@ def test_never_any_data_is_not_started():
     assert r.priority == 40
 
 
-# ── sync gap (urgent, fixable device failure) ──────────────────────────────
-def test_sync_stale_is_urgent_data_gap():
+# ── stale CGM readings → data gap (honest: missing data, not a broken sync) ──
+def test_stale_cgm_is_data_gap_not_a_sync_claim():
     r = classify(mk(glucose_sync_stale=True, glucose_sync_stale_days=8))
     assert r.assessment is PanelAssessment.DATA_GAP
-    assert r.severity is ReasonSeverity.URGENT
-    assert "not syncing" in r.reason and "8d" in r.reason
-    assert r.priority == 10  # ranks above ordinary data gaps
+    assert "No recent CGM" in r.reason and "8d" in r.reason
+    assert "syncing" not in r.reason
+    assert r.priority == 30  # below watch, not above it
 
 
 # ── at risk ────────────────────────────────────────────────────────────────

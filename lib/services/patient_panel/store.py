@@ -72,10 +72,16 @@ class PatientPanelStore:
             q["name"] = {"$regex": search, "$options": "i"}
 
         sort_key = sort if sort in _SORTABLE else "priority"
+        direction = 1 if order >= 0 else -1
+        # patient_id as a stable tiebreaker so rows within one sort value keep a
+        # deterministic order across pages and refetches.
+        sort_spec = [(sort_key, direction)]
+        if sort_key != "patient_id":
+            sort_spec.append(("patient_id", 1))
         total = await self._col.count_documents(q)
         cursor = (
             self._col.find(q, {"_id": 0})
-            .sort(sort_key, 1 if order >= 0 else -1)
+            .sort(sort_spec)
             .skip(max(0, skip))
             .limit(limit)
         )
