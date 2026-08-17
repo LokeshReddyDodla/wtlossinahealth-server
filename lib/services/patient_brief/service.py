@@ -20,11 +20,8 @@ logger = logging.getLogger(__name__)
 # within the debounce window is a no-op (nothing meaningful changed that fast).
 _TTL = timedelta(hours=18)
 _DEBOUNCE = timedelta(seconds=120)
-# After a failed generation, don't retry until this cooldown elapses. Without
-# it a first-ever brief that keeps failing would re-run the LLM on every 2.5s
-# poll forever; the cooldown turns that into a terminal 'error' the caller sees.
-# ponytail: in-memory, so the cooldown is per-worker — bounds retries to
-# (workers × 1 per cooldown), not zero. Persist to Mongo if that's not enough.
+# A failed generation is stamped on the doc; retries wait out this cooldown
+# instead of re-running the LLM on every poll, and get() reports 'error'.
 _FAIL_COOLDOWN = timedelta(seconds=60)
 
 
@@ -43,38 +40,33 @@ class PatientBriefService:
         # Patients with a generation in flight — dedupes concurrent views/polls
         # so a first-ever view being polled doesn't spawn a regen every poll.
         self._generating: set[str] = set()
-        # When the last generation for a patient failed — gates retries so a
-        # persistent failure can't re-run the LLM on every poll.
-        self._failed_at: dict[str, datetime] = {}
 
     async def get(self, patient_id: str) -> dict:
         """Never blocks on the LLM. Returns the cached brief immediately (status
         'ready'); on a first-ever or stale view it kicks generation in the
-        background and the caller polls. `refreshing` is true while a fresh brief
-        is being generated."""
-        latest = await self._latest(patient_id)
-        if latest is None:
+        background and the caller polls."""
+        doc = await self._latest(patient_id)
+        if not self._has_brief(doc):
             if patient_id in self._generating:
                 return {"status": "generating"}
-            if self._in_fail_cooldown(patient_id):
+            if self._in_cooldown(doc):
                 return {"status": "error"}
             self._ensure_generating(patient_id)
             return {"status": "generating"}
-        if self._age(latest) > _TTL and not self._in_fail_cooldown(patient_id):
+        if self._age(doc) > _TTL and not self._in_cooldown(doc):
             self._ensure_generating(patient_id)
-        return {"status": "ready", **latest, "refreshing": patient_id in self._generating}
+        return {"status": "ready", **self._view(doc), "refreshing": patient_id in self._generating}
 
     async def refresh(self, patient_id: str) -> dict:
         """Force a fresh brief (the provider clicked refresh), debounced so a
-        rapid re-click is a no-op. Returns the current brief marked refreshing;
-        the caller polls for the new one."""
-        latest = await self._latest(patient_id)
-        if latest is not None and self._age(latest) < _DEBOUNCE:
-            return {"status": "ready", **latest, "refreshing": False}
+        rapid re-click is a no-op."""
+        doc = await self._latest(patient_id)
+        if self._has_brief(doc) and self._age(doc) < _DEBOUNCE:
+            return {"status": "ready", **self._view(doc), "refreshing": False}
         self._ensure_generating(patient_id)
-        if latest is None:
+        if not self._has_brief(doc):
             return {"status": "generating"}
-        return {"status": "ready", **latest, "refreshing": True}
+        return {"status": "ready", **self._view(doc), "refreshing": True}
 
     # ── internals ────────────────────────────────────────────────────────────
 
@@ -88,12 +80,18 @@ class PatientBriefService:
             {"patient_id": patient_id}, {"_id": 0}, sort=[("generated_at", -1)]
         )
 
+    def _has_brief(self, doc: dict | None) -> bool:
+        return bool(doc and doc.get("generated_at"))
+
+    def _view(self, doc: dict) -> dict:
+        return {k: v for k, v in doc.items() if k != "failed_at"}
+
     def _age(self, doc: dict) -> timedelta:
         gen = _as_utc(doc.get("generated_at")) or datetime.now(timezone.utc)
         return datetime.now(timezone.utc) - gen
 
-    def _in_fail_cooldown(self, patient_id: str) -> bool:
-        failed = self._failed_at.get(patient_id)
+    def _in_cooldown(self, doc: dict | None) -> bool:
+        failed = _as_utc(doc.get("failed_at")) if doc else None
         return failed is not None and datetime.now(timezone.utc) - failed < _FAIL_COOLDOWN
 
     async def _regenerate(self, patient_id: str) -> dict:
@@ -120,9 +118,12 @@ class PatientBriefService:
     async def _safe_regen(self, patient_id: str) -> None:
         try:
             await self._regenerate(patient_id)
-            self._failed_at.pop(patient_id, None)
         except Exception:
             logger.exception("background brief regen failed: %s", patient_id)
-            self._failed_at[patient_id] = datetime.now(timezone.utc)
+            await self._col.update_one(
+                {"patient_id": patient_id},
+                {"$set": {"failed_at": datetime.now(timezone.utc)}},
+                upsert=True,
+            )
         finally:
             self._generating.discard(patient_id)
