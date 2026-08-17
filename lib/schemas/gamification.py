@@ -386,7 +386,6 @@ class GroupCreateInput(BaseModel):
 
 
 class AvatarPreview(BaseModel):
-    """A person's avatar bits for stacked previews on cards."""
     patient_id: str
     name: Optional[str] = None
     profile_picture: Optional[str] = None
@@ -490,7 +489,7 @@ class ChallengeResponse(BaseModel):
     is_active: bool
     participant_count: int = 0
     created_at: datetime
-    avg_progress: float = 0.0  # mean current_value across active participants
+    avg_progress: float = 0.0
     top_participants: List[AvatarPreview] = []
 
 

@@ -20,8 +20,6 @@ logger = logging.getLogger(__name__)
 # within the debounce window is a no-op (nothing meaningful changed that fast).
 _TTL = timedelta(hours=18)
 _DEBOUNCE = timedelta(seconds=120)
-# A failed generation is stamped on the doc; retries wait out this cooldown
-# instead of re-running the LLM on every poll, and get() reports 'error'.
 _FAIL_COOLDOWN = timedelta(seconds=60)
 
 
