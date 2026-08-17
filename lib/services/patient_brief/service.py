@@ -20,6 +20,9 @@ logger = logging.getLogger(__name__)
 # within the debounce window is a no-op (nothing meaningful changed that fast).
 _TTL = timedelta(hours=18)
 _DEBOUNCE = timedelta(seconds=120)
+# A failed generation is stamped on the doc; retries wait out this cooldown
+# instead of re-running the LLM on every poll, and get() reports 'error'.
+_FAIL_COOLDOWN = timedelta(seconds=60)
 
 
 def _as_utc(dt: datetime | None) -> datetime | None:
@@ -41,27 +44,29 @@ class PatientBriefService:
     async def get(self, patient_id: str) -> dict:
         """Never blocks on the LLM. Returns the cached brief immediately (status
         'ready'); on a first-ever or stale view it kicks generation in the
-        background and the caller polls. `refreshing` is true while a fresh brief
-        is being generated."""
-        latest = await self._latest(patient_id)
-        if latest is None:
+        background and the caller polls."""
+        doc = await self._latest(patient_id)
+        if not self._has_brief(doc):
+            if patient_id in self._generating:
+                return {"status": "generating"}
+            if self._in_cooldown(doc):
+                return {"status": "error"}
             self._ensure_generating(patient_id)
             return {"status": "generating"}
-        if self._age(latest) > _TTL:
+        if self._age(doc) > _TTL and not self._in_cooldown(doc):
             self._ensure_generating(patient_id)
-        return {"status": "ready", **latest, "refreshing": patient_id in self._generating}
+        return {"status": "ready", **self._view(doc), "refreshing": patient_id in self._generating}
 
     async def refresh(self, patient_id: str) -> dict:
         """Force a fresh brief (the provider clicked refresh), debounced so a
-        rapid re-click is a no-op. Returns the current brief marked refreshing;
-        the caller polls for the new one."""
-        latest = await self._latest(patient_id)
-        if latest is not None and self._age(latest) < _DEBOUNCE:
-            return {"status": "ready", **latest, "refreshing": False}
+        rapid re-click is a no-op."""
+        doc = await self._latest(patient_id)
+        if self._has_brief(doc) and self._age(doc) < _DEBOUNCE:
+            return {"status": "ready", **self._view(doc), "refreshing": False}
         self._ensure_generating(patient_id)
-        if latest is None:
+        if not self._has_brief(doc):
             return {"status": "generating"}
-        return {"status": "ready", **latest, "refreshing": True}
+        return {"status": "ready", **self._view(doc), "refreshing": True}
 
     # ── internals ────────────────────────────────────────────────────────────
 
@@ -75,9 +80,19 @@ class PatientBriefService:
             {"patient_id": patient_id}, {"_id": 0}, sort=[("generated_at", -1)]
         )
 
+    def _has_brief(self, doc: dict | None) -> bool:
+        return bool(doc and doc.get("generated_at"))
+
+    def _view(self, doc: dict) -> dict:
+        return {k: v for k, v in doc.items() if k != "failed_at"}
+
     def _age(self, doc: dict) -> timedelta:
         gen = _as_utc(doc.get("generated_at")) or datetime.now(timezone.utc)
         return datetime.now(timezone.utc) - gen
+
+    def _in_cooldown(self, doc: dict | None) -> bool:
+        failed = _as_utc(doc.get("failed_at")) if doc else None
+        return failed is not None and datetime.now(timezone.utc) - failed < _FAIL_COOLDOWN
 
     async def _regenerate(self, patient_id: str) -> dict:
         result = await self._agent.run_provider_brief(patient_id=patient_id)
@@ -105,5 +120,10 @@ class PatientBriefService:
             await self._regenerate(patient_id)
         except Exception:
             logger.exception("background brief regen failed: %s", patient_id)
+            await self._col.update_one(
+                {"patient_id": patient_id},
+                {"$set": {"failed_at": datetime.now(timezone.utc)}},
+                upsert=True,
+            )
         finally:
             self._generating.discard(patient_id)
