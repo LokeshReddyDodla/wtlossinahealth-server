@@ -123,8 +123,6 @@ class FeedService:
         enforce_membership: bool = True,
         postgres_session: AsyncSession,
     ) -> List[FeedEventResponse]:
-        # Membership is the only access guard for patient callers; owners (CP)
-        # are authorized upstream and pass enforce_membership=False.
         if enforce_membership:
             member_check = await postgres_session.execute(
                 select(GroupMember).where(

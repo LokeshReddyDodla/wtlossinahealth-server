@@ -70,12 +70,6 @@ class CPGamificationService:
         return (await session.execute(stmt)).scalar() or 0
 
     def _metric_value(self, metric: LeaderboardMetric):
-        """The ranked column for `metric`, as a per-patient SQL expression.
-
-        Period sums correlate on Patient.patient_id, so they inherit the outer
-        query's panel scope. Boundaries mirror the mobile boards (ISO week
-        Monday-start, month first) so dashboard and app agree on the numbers.
-        """
         if metric == "streak":
             return func.coalesce(PlayerProfile.current_streak, 0)
         if metric == "xp":
