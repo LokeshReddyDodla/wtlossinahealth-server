@@ -1103,11 +1103,15 @@ async def get_group_feed(
 ):
     if actor.role == ProfileTypeEnum.PATIENT:
         pid = UUID(actor.id)
+        enforce_membership = True
     else:
         await _ensure_group_owner(group_service, group_id, actor)
         pid = UUID(actor.id)
+        enforce_membership = False
     try:
-        feed = await service.get_group_feed(group_id, pid)
+        feed = await service.get_group_feed(
+            group_id, pid, enforce_membership=enforce_membership
+        )
         return SuccessResponse(message="Group feed", data=feed)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
