@@ -20,6 +20,12 @@ logger = logging.getLogger(__name__)
 # within the debounce window is a no-op (nothing meaningful changed that fast).
 _TTL = timedelta(hours=18)
 _DEBOUNCE = timedelta(seconds=120)
+# After a failed generation, don't retry until this cooldown elapses. Without
+# it a first-ever brief that keeps failing would re-run the LLM on every 2.5s
+# poll forever; the cooldown turns that into a terminal 'error' the caller sees.
+# ponytail: in-memory, so the cooldown is per-worker — bounds retries to
+# (workers × 1 per cooldown), not zero. Persist to Mongo if that's not enough.
+_FAIL_COOLDOWN = timedelta(seconds=60)
 
 
 def _as_utc(dt: datetime | None) -> datetime | None:
@@ -37,6 +43,9 @@ class PatientBriefService:
         # Patients with a generation in flight — dedupes concurrent views/polls
         # so a first-ever view being polled doesn't spawn a regen every poll.
         self._generating: set[str] = set()
+        # When the last generation for a patient failed — gates retries so a
+        # persistent failure can't re-run the LLM on every poll.
+        self._failed_at: dict[str, datetime] = {}
 
     async def get(self, patient_id: str) -> dict:
         """Never blocks on the LLM. Returns the cached brief immediately (status
@@ -45,9 +54,13 @@ class PatientBriefService:
         is being generated."""
         latest = await self._latest(patient_id)
         if latest is None:
+            if patient_id in self._generating:
+                return {"status": "generating"}
+            if self._in_fail_cooldown(patient_id):
+                return {"status": "error"}
             self._ensure_generating(patient_id)
             return {"status": "generating"}
-        if self._age(latest) > _TTL:
+        if self._age(latest) > _TTL and not self._in_fail_cooldown(patient_id):
             self._ensure_generating(patient_id)
         return {"status": "ready", **latest, "refreshing": patient_id in self._generating}
 
@@ -79,6 +92,10 @@ class PatientBriefService:
         gen = _as_utc(doc.get("generated_at")) or datetime.now(timezone.utc)
         return datetime.now(timezone.utc) - gen
 
+    def _in_fail_cooldown(self, patient_id: str) -> bool:
+        failed = self._failed_at.get(patient_id)
+        return failed is not None and datetime.now(timezone.utc) - failed < _FAIL_COOLDOWN
+
     async def _regenerate(self, patient_id: str) -> dict:
         result = await self._agent.run_provider_brief(patient_id=patient_id)
         doc = {
@@ -103,7 +120,9 @@ class PatientBriefService:
     async def _safe_regen(self, patient_id: str) -> None:
         try:
             await self._regenerate(patient_id)
+            self._failed_at.pop(patient_id, None)
         except Exception:
             logger.exception("background brief regen failed: %s", patient_id)
+            self._failed_at[patient_id] = datetime.now(timezone.utc)
         finally:
             self._generating.discard(patient_id)
