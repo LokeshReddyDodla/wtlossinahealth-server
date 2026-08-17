@@ -195,6 +195,12 @@ def get_patient_brief_service():
     return cast(PatientBriefService, container.resolve(PatientBriefService))
 
 
+def get_patient_panel_service():
+    from lib.services.patient_panel.service import PatientPanelService
+
+    return cast(PatientPanelService, container.resolve(PatientPanelService))
+
+
 def get_patient_data_export_service() -> PatientDataExportService:
     return cast(
         PatientDataExportService,

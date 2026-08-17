@@ -1,0 +1,175 @@
+"""Store (upsert/scoped-paginated list) and pure extractor tests.
+
+The store runs against an in-memory fake collection; the extractors run against
+real document shapes (CGM report model_dump, ClickHouse vitals rows).
+"""
+
+import pytest
+
+from lib.schemas.patient_panel_signal import (
+    Modality,
+    PanelInputs,
+)
+from lib.services.patient_panel.compute import build_signal
+from lib.services.patient_panel.extract import (
+    cgm_inputs,
+    smbg_inputs,
+    vitals_inputs,
+)
+from lib.services.patient_panel.store import PatientPanelStore
+
+
+# ── fake async Mongo collection ────────────────────────────────────────────
+class _Cursor:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def sort(self, key, order):
+        self._rows = sorted(
+            self._rows, key=lambda d: (d.get(key) is None, d.get(key)), reverse=order < 0
+        )
+        return self
+
+    def skip(self, n):
+        self._rows = self._rows[n:]
+        return self
+
+    def limit(self, n):
+        self._rows = self._rows[:n]
+        return self
+
+    async def to_list(self, length=None):
+        return self._rows
+
+
+class FakeCollection:
+    def __init__(self):
+        self.docs: dict[str, dict] = {}
+
+    async def create_index(self, *a, **k):
+        return "idx"
+
+    async def replace_one(self, flt, doc, upsert=False):
+        self.docs[flt["patient_id"]] = doc
+
+    def _match(self, d, q):
+        for k, v in q.items():
+            if isinstance(v, dict) and "$regex" in v:
+                import re
+                if not re.search(v["$regex"], str(d.get(k, "")), re.I):
+                    return False
+            elif k == "care_provider_ids":
+                if v not in (d.get(k) or []):
+                    return False
+            elif d.get(k) != v:
+                return False
+        return True
+
+    async def count_documents(self, q):
+        return sum(1 for d in self.docs.values() if self._match(d, q))
+
+    def find(self, q, projection=None):
+        rows = [dict(d) for d in self.docs.values() if self._match(d, q)]
+        for r in rows:
+            r.pop("_id", None)
+        return _Cursor(rows)
+
+
+def _sig(pid, name, assessment_inputs, **row):
+    return build_signal(
+        patient_id=pid, name=name, modality=row.pop("modality", Modality.CGM),
+        inputs=assessment_inputs, **row,
+    )
+
+
+@pytest.mark.asyncio
+async def test_upsert_is_one_row_per_patient():
+    store = PatientPanelStore(FakeCollection())
+    s = _sig("p1", "A", PanelInputs(has_any_data=True, tir_pct=96))
+    await store.upsert(s)
+    await store.upsert(s)  # again
+    rows, total = await store.list(facility_id=None)
+    assert total == 1
+
+
+@pytest.mark.asyncio
+async def test_list_filters_by_status_and_scope():
+    store = PatientPanelStore(FakeCollection())
+    await store.upsert(_sig("p1", "Sunita", PanelInputs(has_any_data=True, nocturnal_below_70_pct=41),
+                            facility_id="f1", care_provider_ids=["cpA"]))
+    await store.upsert(_sig("p2", "Raj", PanelInputs(has_any_data=True, tir_pct=96),
+                            facility_id="f1", care_provider_ids=["cpB"]))
+    # facility-wide, filter at_risk
+    rows, total = await store.list(facility_id="f1", status="at_risk")
+    assert total == 1 and rows[0]["name"] == "Sunita"
+    # a provider sees only their own patients
+    rows, total = await store.list(facility_id="f1", care_provider_id="cpB", is_facility_admin=False)
+    assert total == 1 and rows[0]["name"] == "Raj"
+
+
+@pytest.mark.asyncio
+async def test_list_sorts_and_paginates():
+    store = PatientPanelStore(FakeCollection())
+    for i, tir in enumerate([96, 55, 72, 40, 88]):
+        await store.upsert(_sig(f"p{i}", f"P{i}", PanelInputs(has_any_data=True, tir_pct=tir),
+                                facility_id="f1"))
+    rows, total = await store.list(facility_id="f1", sort="priority", order=1, limit=2)
+    assert total == 5 and len(rows) == 2
+    # priority ascending → the at-risk (tir 40) surfaces first
+    assert rows[0]["assessment"] == "at_risk"
+
+
+@pytest.mark.asyncio
+async def test_list_search_by_name():
+    store = PatientPanelStore(FakeCollection())
+    await store.upsert(_sig("p1", "Sunita Menon", PanelInputs(has_any_data=True, tir_pct=96), facility_id="f1"))
+    await store.upsert(_sig("p2", "Raj Ramanand", PanelInputs(has_any_data=True, tir_pct=96), facility_id="f1"))
+    rows, total = await store.list(facility_id="f1", search="raj")
+    assert total == 1 and rows[0]["name"] == "Raj Ramanand"
+
+
+# ── extractors ─────────────────────────────────────────────────────────────
+def test_cgm_inputs_from_report():
+    report = {
+        "cgm_summary_stats": {
+            "average_glucose_mgdl": 158, "coefficient_of_variation_percent": 34,
+            "gmi": 7.0, "nocturnal_time_below_70_percent": 41,
+        },
+        "cgm_range_stats": {
+            "in_target_70_180_percent": 78, "below_54_percent": 2,
+            "below_70_above_54_percent": 6, "above_180_below_250_percent": 12,
+            "above_250_percent": 2,
+        },
+        "trend": {"delta_time_in_range_percent": -6},
+        "hypo_events": [{"x": 1}, {"x": 2}],
+    }
+    out = cgm_inputs(report)
+    assert out["tir_pct"] == 78 and out["avg_glucose"] == 158 and out["gmi"] == 7.0
+    assert out["below_54_pct"] == 2 and out["below_70_pct"] == 8      # 6 + 2
+    assert out["above_180_pct"] == 14                                 # 12 + 2
+    assert out["nocturnal_below_70_pct"] == 41 and out["tir_delta"] == -6
+    assert out["hypo_events"] == 2
+
+
+def test_cgm_inputs_pregnancy_range_fallback():
+    report = {"cgm_range_stats": {"in_target_63_140_percent": 88}, "cgm_summary_stats": {}, "trend": {}}
+    assert cgm_inputs(report)["tir_pct"] == 88
+
+
+def test_cgm_inputs_empty():
+    assert cgm_inputs(None) == {}
+
+
+def test_vitals_inputs_picks_a1c():
+    rows = [
+        {"type": "a1c", "value": 10.5, "time": 0, "source_name": "lab"},
+        {"type": "weight", "value": 85.6, "time": 0, "source_name": "app"},
+        {"type": "fbs", "value": 221, "time": 0, "source_name": "lab"},
+    ]
+    out = vitals_inputs(rows)
+    assert out["a1c"] == 10.5 and out["fasting_glucose"] == 221
+
+
+def test_smbg_inputs_averages():
+    assert smbg_inputs([{"value": 110}, {"value": 130}, {"value": 120}])["smbg_avg"] == 120
+    assert smbg_inputs([]) == {}

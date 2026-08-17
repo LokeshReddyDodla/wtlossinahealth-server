@@ -220,6 +220,13 @@ container.register(
     scope=Scope.singleton,
 )
 container.register(
+    "patient_panel_signals_collection",
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "patient_panel_signals"
+    ),
+    scope=Scope.singleton,
+)
+container.register(
     "patient_summary_collection",
     factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
         "patient_summaries"
@@ -416,6 +423,28 @@ container.register(
     ),
     # Singleton: the in-flight dedup and background-task refs are in-memory state
     # that only holds if every request shares one instance.
+    scope=Scope.singleton,
+)
+
+# 🔹 Patient Panel Signal (materialized read model — the enriched roster + Panel)
+from lib.services.patient_panel.context import panel_context
+from lib.services.patient_panel.service import PatientPanelService
+from lib.services.patient_panel.store import PatientPanelStore
+
+container.register(
+    PatientPanelStore,
+    lambda: PatientPanelStore(container.resolve("patient_panel_signals_collection")),
+    scope=Scope.singleton,
+)
+container.register(
+    PatientPanelService,
+    lambda: PatientPanelService(
+        store=cast(PatientPanelStore, container.resolve(PatientPanelStore)),
+        context_provider=panel_context,
+        cgm_report_service=cast(CGMReportService, container.resolve(CGMReportService)),
+        vital_service=cast(PatientVitalService, container.resolve(PatientVitalService)),
+        smbg_service=cast(PatientSmbgService, container.resolve(PatientSmbgService)),
+    ),
     scope=Scope.singleton,
 )
 

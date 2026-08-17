@@ -5,3 +5,4 @@ router = APIRouter(
 )
 
 from .read import *
+from .panel import *

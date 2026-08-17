@@ -9,6 +9,7 @@ def get_all_tasks() -> List[Callable]:
     tasks = []
     
     from lib.workers.tasks.cgm import get_tasks as get_cgm_tasks
+    from lib.workers.tasks.patient_panel import get_tasks as get_panel_tasks
     from lib.workers.tasks.device import get_tasks as get_device_tasks
     from lib.workers.tasks.fcm import get_tasks as get_fcm_tasks
     from lib.workers.tasks.fitness import get_tasks as get_fitness_tasks
@@ -36,6 +37,7 @@ def get_all_tasks() -> List[Callable]:
     )
 
     tasks.extend(get_cgm_tasks())
+    tasks.extend(get_panel_tasks())
     tasks.extend(get_device_tasks())
     tasks.extend(get_fcm_tasks())
     tasks.extend(get_fitness_tasks())

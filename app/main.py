@@ -114,6 +114,15 @@ async def on_startup() -> None:
         import logging
         logging.getLogger(__name__).warning(f"Failed patient_brief init: {e}")
 
+    # Patient Panel — ensure the scope/sort indexes on the signal read model.
+    try:
+        from lib.core.container import container
+        from lib.services.patient_panel.service import PatientPanelService
+        await container.resolve(PatientPanelService).ensure_indexes()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Failed patient_panel init: {e}")
+
 
 @app.on_event("shutdown")
 async def on_shutdown() -> None:
