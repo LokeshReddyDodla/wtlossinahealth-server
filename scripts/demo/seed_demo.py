@@ -213,13 +213,25 @@ async def cmd_setup(args):
                     "pwd": pwd_ctx.hash(DEMO_PROVIDER_PASSWORD),
                     "mcn": f"DEMO-{code}",
                     "fid": facility_id,
+                    # Shape must match has_care_provider_permission:
+                    # {feature: {action: bool}} with "read", not "view".
                     "perms": json.dumps({
-                        "meals": ["view", "create", "update", "delete"],
-                        "reports": ["view", "create", "update", "delete"],
-                        "patients": ["view", "create", "update"],
-                        "prescriptions": ["view", "create", "update", "delete"],
-                        "fitness_plans": ["view", "create", "update", "delete"],
-                        "diet_plans": ["view", "create", "update", "delete"],
+                        feature: {
+                            "read": True,
+                            "create": True,
+                            "update": True,
+                            "delete": True,
+                        }
+                        for feature in [
+                            "patients",
+                            "reports",
+                            "meals",
+                            "prescriptions",
+                            "fitness_plans",
+                            "diet_plans",
+                            "cgms",
+                            "fitness",
+                        ]
                     }),
                 },
             )
@@ -260,7 +272,7 @@ async def cmd_setup(args):
                     "last": "Patient A",
                     "email": "demo-patient-a@ahealth.in",
                     "phone": "+910000000002",
-                    "dob": "1990-06-15",
+                    "dob": date(1990, 6, 15),
                     "gender": "MALE",
                     "height": 175.0,
                     "weight": 78.0,
