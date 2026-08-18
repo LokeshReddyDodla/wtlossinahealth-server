@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from lib.schemas.patient_panel_signal import (
+    DataConfidence,
     GlucoseSource,
     Modality,
     PanelInputs,
@@ -27,6 +28,9 @@ def build_signal(
     last_glucose_at: datetime | None = None,
     last_glucose_source: GlucoseSource = GlucoseSource.NONE,
     last_active_at: datetime | None = None,
+    days_of_data: int | None = None,
+    sensor_active_pct: float | None = None,
+    data_confidence: DataConfidence | None = None,
     sources_fresh_as_of: dict[str, datetime] | None = None,
     now: datetime | None = None,
 ) -> PatientPanelSignal:
@@ -63,6 +67,9 @@ def build_signal(
         glucose_sync_stale=inputs.glucose_sync_stale,
         last_active_at=last_active_at,
         adherence_pct=inputs.adherence_pct,
+        days_of_data=days_of_data,
+        sensor_active_pct=sensor_active_pct,
+        data_confidence=data_confidence,
         computed_at=now or datetime.now(timezone.utc),
         sources_fresh_as_of=sources_fresh_as_of or {},
     )

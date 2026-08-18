@@ -22,6 +22,12 @@ class ReasonSeverity(str, Enum):
     INFO = "info"
 
 
+class DataConfidence(str, Enum):
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+
 class GlucoseSource(str, Enum):
     CGM = "cgm"
     SMBG = "smbg"
@@ -112,6 +118,10 @@ class PatientPanelSignal(BaseModel):
     glucose_sync_stale: bool = False
     last_active_at: datetime | None = None
     adherence_pct: float | None = None
+
+    days_of_data: int | None = None
+    sensor_active_pct: float | None = None
+    data_confidence: DataConfidence | None = None
 
     computed_at: datetime
     sources_fresh_as_of: dict[str, datetime] = Field(default_factory=dict)

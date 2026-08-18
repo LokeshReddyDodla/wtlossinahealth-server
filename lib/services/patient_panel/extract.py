@@ -67,11 +67,18 @@ def aggregate_daily_cgm(reports: list[dict[str, Any]] | None) -> dict[str, Any]:
     """Reading-weighted mean of daily CGM reports into one window summary,
     plus a week-over-week TIR direction (newer half vs older half)."""
     rows = []
+    sensor_sum = 0.0
+    sensor_w = 0
     for r in reports or []:
-        weight = ((r.get("metadata") or {}).get("total_readings")) or 0
+        md = r.get("metadata") or {}
+        weight = md.get("total_readings") or 0
         if weight > 0:
-            date = ((r.get("metadata") or {}).get("date_range") or {}).get("start") or ""
+            date = (md.get("date_range") or {}).get("start") or ""
             rows.append((weight, cgm_inputs(r), date))
+            sa = md.get("sensor_active_percent")
+            if sa is not None:
+                sensor_sum += weight * sa
+                sensor_w += weight
     if not rows:
         return {}
 
@@ -81,6 +88,8 @@ def aggregate_daily_cgm(reports: list[dict[str, Any]] | None) -> dict[str, Any]:
         out["gmi"] = round(3.31 + 0.02392 * out["avg_glucose"], 1)
     out["tir_delta"] = _tir_direction(rows)
     out["reading_count"] = sum(w for w, _, _ in rows)
+    out["days_of_data"] = len(rows)
+    out["sensor_active_pct"] = round(sensor_sum / sensor_w, 1) if sensor_w else None
     return out
 
 

@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from lib.schemas.patient_panel_signal import (
+    DataConfidence,
     GlucoseSource,
     Modality,
     PanelInputs,
@@ -26,6 +27,16 @@ logger = logging.getLogger(__name__)
 ContextProvider = Callable[[str], Awaitable[dict[str, Any]]]
 
 _CGM_WINDOW_DAYS = 14
+
+
+def _confidence(days: int, sensor_active: float | None) -> DataConfidence | None:
+    if not days:
+        return None
+    if days >= 10 and (sensor_active is None or sensor_active >= 70):
+        return DataConfidence.HIGH
+    if days >= 4 and (sensor_active is None or sensor_active >= 40):
+        return DataConfidence.MEDIUM
+    return DataConfidence.LOW
 
 
 class PatientPanelService:
@@ -50,7 +61,7 @@ class PatientPanelService:
             return None
 
         merged: dict[str, Any] = {}
-        cgm, cgm_reading_count = await self._cgm_window(patient_id)
+        cgm, cgm_meta = await self._cgm_window(patient_id)
         merged.update(cgm)
         merged.update(vitals_inputs(await self._safe(self._vitals.get_latest_vitals(patient_id), [])))
         if merged.get("tir_pct") is None:
@@ -62,7 +73,7 @@ class PatientPanelService:
             glucose_expected=ctx.get("glucose_expected", True),
             enrolled_days=ctx.get("enrolled_days"),
             last_glucose_days_ago=ctx.get("last_glucose_days_ago"),
-            glucose_reading_count_14d=cgm_reading_count,
+            glucose_reading_count_14d=cgm_meta["reading_count"],
             glucose_sync_stale=ctx.get("glucose_sync_stale", False),
             glucose_sync_stale_days=ctx.get("glucose_sync_stale_days"),
             weight_delta_kg=ctx.get("weight_delta_kg"),
@@ -85,6 +96,9 @@ class PatientPanelService:
             last_glucose_at=ctx.get("last_glucose_at"),
             last_glucose_source=ctx.get("last_glucose_source") or GlucoseSource.NONE,
             last_active_at=ctx.get("last_active_at"),
+            days_of_data=cgm_meta["days_of_data"],
+            sensor_active_pct=cgm_meta["sensor_active_pct"],
+            data_confidence=cgm_meta["data_confidence"],
             sources_fresh_as_of=ctx.get("sources_fresh_as_of") or {},
         )
         await self._store.upsert(signal)
@@ -96,12 +110,20 @@ class PatientPanelService:
     async def ensure_indexes(self) -> None:
         await self._store.ensure_indexes()
 
-    async def _cgm_window(self, patient_id: str) -> tuple[dict[str, Any], int]:
+    async def _cgm_window(self, patient_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
         end = datetime.now(timezone.utc).replace(tzinfo=None)
         start = end - timedelta(days=_CGM_WINDOW_DAYS)
         reports = await self._safe(self._cgm.fetch_daily_reports(patient_id, start, end), [])
         agg = aggregate_daily_cgm(reports)
-        return agg, int(agg.pop("reading_count", 0))
+        days = int(agg.pop("days_of_data", 0) or 0)
+        sensor_active = agg.pop("sensor_active_pct", None)
+        meta = {
+            "reading_count": int(agg.pop("reading_count", 0) or 0),
+            "days_of_data": days,
+            "sensor_active_pct": sensor_active,
+            "data_confidence": _confidence(days, sensor_active),
+        }
+        return agg, meta
 
     async def _safe(self, coro: Awaitable[Any], default: Any) -> Any:
         try:

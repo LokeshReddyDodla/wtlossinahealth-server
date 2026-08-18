@@ -3,11 +3,12 @@
 import pytest
 
 from lib.schemas.patient_panel_signal import (
+    DataConfidence,
     GlucoseSource,
     Modality,
     PanelAssessment,
 )
-from lib.services.patient_panel.service import PatientPanelService
+from lib.services.patient_panel.service import PatientPanelService, _confidence
 from lib.services.patient_panel.store import PatientPanelStore
 from tests.services.test_patient_panel_store import FakeCollection
 
@@ -73,9 +74,19 @@ async def test_recompute_cgm_patient_builds_at_risk_row():
     assert sig.assessment is PanelAssessment.AT_RISK
     assert "Nocturnal hypo 41%" in sig.reason
     assert sig.tir_pct == 78 and sig.gmi == 7.1
+    assert sig.days_of_data == 1 and sig.data_confidence is DataConfidence.LOW
 
     rows, total = await store.list(facility_id="f1")
     assert total == 1 and rows[0]["assessment"] == "at_risk"
+
+
+def test_confidence_tiers():
+    assert _confidence(0, None) is None
+    assert _confidence(12, 80) is DataConfidence.HIGH
+    assert _confidence(12, 30) is DataConfidence.LOW
+    assert _confidence(5, 60) is DataConfidence.MEDIUM
+    assert _confidence(2, 90) is DataConfidence.LOW
+    assert _confidence(12, None) is DataConfidence.HIGH
 
 
 @pytest.mark.asyncio
