@@ -29,13 +29,28 @@ class PatientPanelStore:
         await self._col.create_index(
             [("facility_id", 1), ("modality", 1)], name="panel_scope_modality_idx"
         )
+        await self._col.create_index(
+            [("facility_id", 1), ("priority", 1), ("patient_id", 1)],
+            name="panel_facility_priority_idx",
+        )
+        await self._col.create_index(
+            [("care_provider_ids", 1), ("priority", 1), ("patient_id", 1)],
+            name="panel_cp_priority_idx",
+        )
 
     async def get(self, patient_id: str) -> dict[str, Any] | None:
         return await self._col.find_one({"patient_id": patient_id}, {"_id": 0})
 
+    async def delete(self, patient_id: str) -> bool:
+        result = await self._col.delete_one({"patient_id": patient_id})
+        return result.deleted_count > 0
+
     async def upsert(self, signal: PatientPanelSignal) -> None:
         doc = signal.model_dump(mode="json")
-        await self._col.replace_one({"patient_id": signal.patient_id}, doc, upsert=True)
+        doc.pop("reviewed_at", None)  # owned by mark_reviewed; never overwrite a concurrent review
+        await self._col.update_one(
+            {"patient_id": signal.patient_id}, {"$set": doc}, upsert=True
+        )
 
     async def mark_reviewed(
         self, patient_id: str, at: str, state_since: str | None = None

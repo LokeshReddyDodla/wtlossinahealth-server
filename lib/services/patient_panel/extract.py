@@ -87,6 +87,8 @@ def aggregate_daily_cgm(reports: list[dict[str, Any]] | None) -> dict[str, Any]:
     if out.get("avg_glucose") is not None:
         out["gmi"] = round(3.31 + 0.02392 * out["avg_glucose"], 1)
     out["tir_delta"] = _tir_direction(rows)
+    hypo = [v["hypo_events"] for _, v, _ in rows if v.get("hypo_events") is not None]
+    out["hypo_events"] = sum(hypo) if hypo else None
     out["reading_count"] = sum(w for w, _, _ in rows)
     out["days_of_data"] = len(rows)
     out["sensor_active_pct"] = round(sensor_sum / sensor_w, 1) if sensor_w else None

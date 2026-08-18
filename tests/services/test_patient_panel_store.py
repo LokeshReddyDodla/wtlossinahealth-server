@@ -53,6 +53,13 @@ class FakeCollection:
     async def replace_one(self, flt, doc, upsert=False):
         self.docs[flt["patient_id"]] = doc
 
+    async def delete_one(self, flt):
+        for k, d in list(self.docs.items()):
+            if self._match(d, flt):
+                del self.docs[k]
+                return type("R", (), {"deleted_count": 1})()
+        return type("R", (), {"deleted_count": 0})()
+
     async def find_one(self, flt, projection=None):
         for d in self.docs.values():
             if self._match(d, flt):
@@ -61,11 +68,16 @@ class FakeCollection:
                 return r
         return None
 
-    async def update_one(self, flt, update):
+    async def update_one(self, flt, update, upsert=False):
         for d in self.docs.values():
             if self._match(d, flt):
                 d.update(update.get("$set", {}))
                 return type("R", (), {"matched_count": 1})()
+        if upsert:
+            doc = {k: v for k, v in flt.items() if not isinstance(v, dict)}
+            doc.update(update.get("$set", {}))
+            self.docs[doc["patient_id"]] = doc
+            return type("R", (), {"matched_count": 0, "upserted_id": doc["patient_id"]})()
         return type("R", (), {"matched_count": 0})()
 
     def _match(self, d, q):
@@ -253,6 +265,18 @@ def test_aggregate_daily_cgm_computes_tir_direction():
     out = aggregate_daily_cgm([newer, older])
     assert out["tir_delta"] == 30.0
     assert aggregate_daily_cgm([older])["tir_delta"] is None
+
+
+def test_aggregate_daily_cgm_sums_hypo_events():
+    reports = [
+        {"metadata": {"total_readings": 200}, "cgm_range_stats": {"in_target_70_180_percent": 80},
+         "hypo_events": [{"x": 1}, {"x": 2}]},
+        {"metadata": {"total_readings": 200}, "cgm_range_stats": {"in_target_70_180_percent": 80},
+         "hypo_events": [{"x": 3}]},
+    ]
+    assert aggregate_daily_cgm(reports)["hypo_events"] == 3
+    no_hypo = [{"metadata": {"total_readings": 200}, "cgm_range_stats": {"in_target_70_180_percent": 80}}]
+    assert aggregate_daily_cgm(no_hypo)["hypo_events"] is None
 
 
 def test_aggregate_daily_cgm_skips_zero_reading_days():

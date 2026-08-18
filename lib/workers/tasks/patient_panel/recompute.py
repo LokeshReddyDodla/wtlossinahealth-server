@@ -31,6 +31,16 @@ async def recompute_patient_panel(ctx: dict[str, Any], patient_id: str) -> TaskR
     )
 
 
+async def enqueue_panel_recompute(patient_id: str) -> None:
+    """Fire-and-forget panel refresh for one patient (on create / data change)."""
+    try:
+        await enqueue_job(
+            "recompute_patient_panel", patient_id, _queue_name=Queues.REPORTS
+        )
+    except Exception as e:
+        logger.warning(f"Failed to enqueue panel recompute for {patient_id}: {e}")
+
+
 @task_with_logging
 async def reconcile_patient_panel(ctx: dict[str, Any]) -> TaskResult:
     """Enumerate the roster in pages and enqueue a recompute per patient."""

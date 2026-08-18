@@ -247,3 +247,16 @@ async def test_recompute_activity_drop_from_fitness():
 async def test_recompute_no_context_skips():
     svc, store = _service(ctx={})
     assert await svc.recompute("pX") is None
+
+
+@pytest.mark.asyncio
+async def test_recompute_deletes_orphan_row_when_patient_gone():
+    good = {"metadata": {"total_readings": 288}, "cgm_range_stats": {"in_target_70_180_percent": 96}}
+    svc, store = _service(ctx={"name": "R", "modality": Modality.CGM, "has_any_data": True,
+                               "facility_id": "f1"}, reports=[good])
+    await svc.recompute("pZ")
+    assert await store.get("pZ") is not None
+
+    svc._context = lambda pid: _async({})  # patient hard-deleted
+    assert await svc.recompute("pZ") is None
+    assert await store.get("pZ") is None  # orphan row removed
