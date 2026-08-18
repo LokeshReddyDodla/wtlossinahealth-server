@@ -24,6 +24,7 @@ from .router import router
 @router.get("/patients/panel", response_model=SuccessResponse)
 async def get_patient_panel(
     status_filter: str | None = Query(None, alias="status"),
+    actionable: bool = Query(False),
     modality: str | None = Query(None),
     search: str | None = Query(None),
     needs_review: bool | None = Query(None),
@@ -48,6 +49,7 @@ async def get_patient_panel(
         care_provider_id=care_provider_id,
         is_facility_admin=is_facility_admin,
         status=status_filter,
+        actionable=actionable,
         modality=modality,
         search=search,
         needs_review=needs_review,
