@@ -14,6 +14,7 @@ from lib.services.patient_panel.extract import (
     sleep_inputs,
     smbg_inputs,
     vitals_inputs,
+    weight_inputs,
 )
 from lib.services.patient_panel.store import PatientPanelStore
 
@@ -231,6 +232,13 @@ def test_smbg_inputs_averages():
     assert smbg_inputs(rows)["smbg_avg"] == 120
     assert smbg_inputs([]) == {}
     assert smbg_inputs([SimpleNamespace(other=1)]) == {}
+
+
+def test_weight_inputs_net_delta():
+    rows = [{"time": "2026-06-01", "value": 90.0}, {"time": "2026-07-15", "value": 87.4}]
+    assert weight_inputs(rows)["weight_delta_kg"] == -2.6
+    assert weight_inputs([{"time": "x", "value": 80}]) == {}  # needs 2+ readings
+    assert weight_inputs([]) == {}
 
 
 def test_sleep_inputs_avg_hours():

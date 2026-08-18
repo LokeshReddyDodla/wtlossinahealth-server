@@ -22,6 +22,7 @@ from lib.services.patient_panel.extract import (
     sleep_inputs,
     smbg_inputs,
     vitals_inputs,
+    weight_inputs,
 )
 from lib.services.patient_panel.store import PatientPanelStore
 
@@ -110,6 +111,7 @@ class PatientPanelService:
         merged.update(vitals_inputs(await self._safe(self._vitals.get_latest_vitals(patient_id), [])))
         if merged.get("tir_pct") is None:
             merged.update(smbg_inputs(await self._safe(self._smbg.get_patient_smbgs(patient_id), [])))
+        merged.update(weight_inputs(await self._safe(self._vitals.get_weight_history(patient_id), [])))
         fitness = await self._fitness_window(patient_id)
         sleep = await self._sleep_window(patient_id)
 
@@ -122,7 +124,6 @@ class PatientPanelService:
             glucose_reading_count_14d=cgm_meta["reading_count"],
             glucose_sync_stale=ctx.get("glucose_sync_stale", False),
             glucose_sync_stale_days=ctx.get("glucose_sync_stale_days"),
-            weight_delta_kg=ctx.get("weight_delta_kg"),
             adherence_pct=ctx.get("adherence_pct"),
             activity_dropping=fitness.get("activity_dropping", False),
             activity_note=fitness.get("activity_note"),

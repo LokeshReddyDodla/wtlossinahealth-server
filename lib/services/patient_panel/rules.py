@@ -94,6 +94,8 @@ def _clinical(inp: PanelInputs, t) -> Triage | None:
     if inp.activity_dropping:
         note = inp.activity_note or "activity inconsistent"
         return _watch(f"Activity inconsistent · {note}")
+    if inp.weight_delta_kg is not None and inp.weight_delta_kg >= t.weight_regain_kg:
+        return _watch(f"Weight up {_num(inp.weight_delta_kg)} kg")
 
     if _assessable(inp):
         return Triage(

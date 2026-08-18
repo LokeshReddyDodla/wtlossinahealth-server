@@ -152,3 +152,16 @@ def smbg_inputs(readings: list[Any] | None) -> dict[str, Any]:
     if not vals:
         return {}
     return {"smbg_avg": round(sum(vals) / len(vals))}
+
+
+def weight_inputs(readings: list[dict[str, Any]] | None) -> dict[str, Any]:
+    """Net weight change (kg) over the window: latest reading minus the oldest."""
+    pts = [
+        (str(r.get("time")), r["value"])
+        for r in (readings or [])
+        if r.get("value") is not None
+    ]
+    if len(pts) < 2:
+        return {}
+    pts.sort(key=lambda p: p[0])
+    return {"weight_delta_kg": round(pts[-1][1] - pts[0][1], 1)}

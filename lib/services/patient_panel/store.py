@@ -9,7 +9,7 @@ from lib.schemas.patient_panel_signal import PatientPanelSignal
 _SORTABLE = {
     "priority", "name", "tir_pct", "avg_glucose", "cv_pct", "gmi",
     "below_70_pct", "above_180_pct", "a1c", "adherence_pct", "avg_steps",
-    "avg_sleep_hours", "last_glucose_at", "last_active_at", "computed_at",
+    "avg_sleep_hours", "weight_delta_kg", "last_glucose_at", "last_active_at", "computed_at",
 }
 
 
