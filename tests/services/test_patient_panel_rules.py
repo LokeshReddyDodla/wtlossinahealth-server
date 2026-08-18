@@ -119,6 +119,23 @@ def test_weight_only_patient_is_responding_not_gap():
     assert "-6.4 kg" in r.reason
 
 
+def test_lapsed_carries_last_known_state():
+    was_risk = classify(mk(glucose_sync_stale=True, glucose_sync_stale_days=24, tir_pct=45))
+    assert was_risk.assessment is PanelAssessment.LAPSED
+    assert was_risk.reason == "Was at-risk · no data 24d"
+    assert was_risk.priority == 15
+
+    was_ok = classify(mk(glucose_sync_stale=True, glucose_sync_stale_days=30, tir_pct=96))
+    assert was_ok.assessment is PanelAssessment.LAPSED
+    assert "Was stable" in was_ok.reason
+    assert was_ok.priority == 34
+
+    # stale but no last-known metrics at all → plain "No recent CGM"
+    none_known = classify(mk(glucose_sync_stale=True, glucose_sync_stale_days=8))
+    assert none_known.assessment is PanelAssessment.DATA_GAP
+    assert "No recent CGM" in none_known.reason
+
+
 def test_acuity_hypo_outranks_chronic_outranks_declining_watch():
     hypo = classify(mk(nocturnal_below_70_pct=41))
     chronic = classify(mk(a1c=10.5))

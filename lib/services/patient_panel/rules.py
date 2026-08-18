@@ -12,11 +12,20 @@ from lib.services.patient_panel.thresholds import for_patient
 
 _P_AT_RISK = 0
 _P_AT_RISK_CHRONIC = 5
+_P_LAPSED_RISK = 15
 _P_WATCH_DECLINING = 18
 _P_WATCH = 20
+_P_LAPSED_WATCH = 26
 _P_DATA_GAP = 30
+_P_LAPSED_OK = 34
 _P_NOT_STARTED = 40
 _P_RESPONDING = 50
+
+_LAPSED = {
+    ReasonSeverity.URGENT: ("at-risk", _P_LAPSED_RISK),
+    ReasonSeverity.WATCH: ("watch", _P_LAPSED_WATCH),
+    ReasonSeverity.INFO: ("stable", _P_LAPSED_OK),
+}
 
 
 def _pct(v: float) -> str:
@@ -39,14 +48,25 @@ def classify(inp: PanelInputs) -> Triage:
         )
 
     if inp.glucose_sync_stale:
+        was = _clinical(inp, t)
+        if was is not None:
+            return _lapsed(was, inp)
         tail = f" · {inp.glucose_sync_stale_days}d" if inp.glucose_sync_stale_days else ""
-        return Triage(
-            assessment=PanelAssessment.DATA_GAP,
-            reason=f"No recent CGM{tail}",
-            severity=ReasonSeverity.WATCH,
-            priority=_P_DATA_GAP,
-        )
+        return _gap(f"No recent CGM{tail}")
 
+    result = _clinical(inp, t)
+    if result is not None:
+        return result
+
+    if inp.glucose_expected:
+        if inp.last_glucose_days_ago is not None and inp.last_glucose_days_ago > t.no_glucose_days:
+            return _data_gap(inp, t)
+        if inp.glucose_reading_count_14d < t.min_readings_14d:
+            return _gap(f"Only {inp.glucose_reading_count_14d} readings / 2wk — no trend")
+    return _gap("No recent data — can't assess")
+
+
+def _clinical(inp: PanelInputs, t) -> Triage | None:
     if inp.nocturnal_below_70_pct is not None and inp.nocturnal_below_70_pct >= t.nocturnal_hypo_pct:
         return _at_risk(f"Nocturnal hypo {_pct(inp.nocturnal_below_70_pct)}")
     if inp.below_54_pct is not None and inp.below_54_pct >= t.very_low_pct:
@@ -58,20 +78,6 @@ def classify(inp: PanelInputs) -> Triage:
         return _at_risk(f"A1c {_pct(inp.a1c)}, uncontrolled", _P_AT_RISK_CHRONIC)
     if inp.tir_pct is not None and inp.tir_pct < t.tir_watch_floor:
         return _at_risk(f"TIR {_pct(inp.tir_pct)} · poorly controlled", _P_AT_RISK_CHRONIC)
-
-    if inp.glucose_expected and not _has_other_signal(inp):
-        has_glucose_summary = (
-            inp.tir_pct is not None or inp.smbg_avg is not None or inp.fasting_glucose is not None
-        )
-        if inp.last_glucose_days_ago is not None and inp.last_glucose_days_ago > t.no_glucose_days:
-            return _data_gap(inp, t)
-        if inp.glucose_reading_count_14d < t.min_readings_14d and not has_glucose_summary:
-            return Triage(
-                assessment=PanelAssessment.DATA_GAP,
-                reason=f"Only {inp.glucose_reading_count_14d} readings / 2wk — no trend",
-                severity=ReasonSeverity.WATCH,
-                priority=_P_DATA_GAP,
-            )
 
     if inp.tir_pct is not None and inp.tir_pct < t.tir_target:
         return _watch(f"TIR {_pct(inp.tir_pct)} · below target")
@@ -89,19 +95,24 @@ def classify(inp: PanelInputs) -> Triage:
         note = inp.activity_note or "activity inconsistent"
         return _watch(f"Activity inconsistent · {note}")
 
-    if not _assessable(inp):
+    if _assessable(inp):
         return Triage(
-            assessment=PanelAssessment.DATA_GAP,
-            reason="No recent data — can't assess",
-            severity=ReasonSeverity.WATCH,
-            priority=_P_DATA_GAP,
+            assessment=PanelAssessment.RESPONDING,
+            reason=_responding_reason(inp),
+            severity=ReasonSeverity.INFO,
+            priority=_P_RESPONDING,
         )
+    return None
 
+
+def _lapsed(was: Triage, inp: PanelInputs) -> Triage:
+    label, priority = _LAPSED[was.severity]
+    tail = f" · no data {inp.glucose_sync_stale_days}d" if inp.glucose_sync_stale_days else " · no data"
     return Triage(
-        assessment=PanelAssessment.RESPONDING,
-        reason=_responding_reason(inp),
-        severity=ReasonSeverity.INFO,
-        priority=_P_RESPONDING,
+        assessment=PanelAssessment.LAPSED,
+        reason=f"Was {label}{tail}",
+        severity=ReasonSeverity.WATCH,
+        priority=priority,
     )
 
 
@@ -110,10 +121,6 @@ def _assessable(inp: PanelInputs) -> bool:
         v is not None
         for v in (inp.tir_pct, inp.avg_glucose, inp.a1c, inp.fasting_glucose, inp.smbg_avg, inp.weight_delta_kg)
     )
-
-
-def _has_other_signal(inp: PanelInputs) -> bool:
-    return inp.a1c is not None or inp.weight_delta_kg is not None or inp.activity_dropping
 
 
 def _at_risk(reason: str, priority: int = _P_AT_RISK) -> Triage:
@@ -134,20 +141,22 @@ def _watch(reason: str, priority: int = _P_WATCH) -> Triage:
     )
 
 
-def _data_gap(inp: PanelInputs, t) -> Triage:
-    days = inp.last_glucose_days_ago
-    if days is not None and days >= t.disengaged_days:
-        reason = "Logging stopped ~1mo — likely disengaged"
-    elif days is not None:
-        reason = f"No recent glucose ({_num(days)}d) — can't assess"
-    else:
-        reason = "No recent glucose — can't assess"
+def _gap(reason: str) -> Triage:
     return Triage(
         assessment=PanelAssessment.DATA_GAP,
         reason=reason,
         severity=ReasonSeverity.WATCH,
         priority=_P_DATA_GAP,
     )
+
+
+def _data_gap(inp: PanelInputs, t) -> Triage:
+    days = inp.last_glucose_days_ago
+    if days is not None and days >= t.disengaged_days:
+        return _gap("Logging stopped ~1mo — likely disengaged")
+    if days is not None:
+        return _gap(f"No recent glucose ({_num(days)}d) — can't assess")
+    return _gap("No recent glucose — can't assess")
 
 
 def _responding_reason(inp: PanelInputs) -> str:

@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 ContextProvider = Callable[[str], Awaitable[dict[str, Any]]]
 
 _CGM_WINDOW_DAYS = 14
+_CGM_LAPSED_LOOKBACK_DAYS = 60
 
 
 def _confidence(days: int, sensor_active: float | None) -> DataConfidence | None:
@@ -61,7 +62,9 @@ class PatientPanelService:
             return None
 
         merged: dict[str, Any] = {}
-        cgm, cgm_meta = await self._cgm_window(patient_id)
+        cgm, cgm_meta = await self._cgm_window(patient_id, _CGM_WINDOW_DAYS)
+        if not cgm and ctx.get("glucose_sync_stale"):
+            cgm, cgm_meta = await self._cgm_window(patient_id, _CGM_LAPSED_LOOKBACK_DAYS)
         merged.update(cgm)
         merged.update(vitals_inputs(await self._safe(self._vitals.get_latest_vitals(patient_id), [])))
         if merged.get("tir_pct") is None:
@@ -110,9 +113,9 @@ class PatientPanelService:
     async def ensure_indexes(self) -> None:
         await self._store.ensure_indexes()
 
-    async def _cgm_window(self, patient_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    async def _cgm_window(self, patient_id: str, days: int) -> tuple[dict[str, Any], dict[str, Any]]:
         end = datetime.now(timezone.utc).replace(tzinfo=None)
-        start = end - timedelta(days=_CGM_WINDOW_DAYS)
+        start = end - timedelta(days=days)
         reports = await self._safe(self._cgm.fetch_daily_reports(patient_id, start, end), [])
         agg = aggregate_daily_cgm(reports)
         days = int(agg.pop("days_of_data", 0) or 0)

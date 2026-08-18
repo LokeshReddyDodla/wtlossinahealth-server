@@ -12,6 +12,7 @@ class PanelAssessment(str, Enum):
     RESPONDING = "responding"
     WATCH = "watch"
     AT_RISK = "at_risk"
+    LAPSED = "lapsed"
     DATA_GAP = "data_gap"
     NOT_STARTED = "not_started"
 
