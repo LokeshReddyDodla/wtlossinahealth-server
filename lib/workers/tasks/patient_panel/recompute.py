@@ -1,14 +1,4 @@
-"""Materialize the patient_panel_signal read model.
-
-`recompute_patient_panel` is the unit of work (one patient → one upserted row);
-`reconcile_patient_panel` is the sweep that enumerates the roster and fans out a
-recompute per patient. The sweep alone keeps the whole panel — including
-disengaged / data-gap patients, which a provider most needs to see — materialized
-on a cadence; event-driven recompute can enqueue the same unit for freshness.
-
-Recompute is idempotent (single upsert), so overlapping fan-out and re-runs are
-safe, and a source failure degrades one patient's row without failing the sweep.
-"""
+"""Materialize the patient_panel_signal read model."""
 
 from __future__ import annotations
 

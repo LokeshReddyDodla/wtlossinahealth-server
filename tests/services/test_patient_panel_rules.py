@@ -1,10 +1,4 @@
-"""Rule engine tests for the patient panel signal.
-
-The rules are pure and deterministic, so this covers the full matrix: each
-assessment band, the condition-aware (pregnancy) thresholds, modality handling
-(a weight-only patient is not a glucose gap), rule ordering (most-severe wins),
-and reason templating.
-"""
+"""Rule engine tests for the patient panel signal."""
 
 from lib.schemas.patient_panel_signal import (
     GlucoseSource,
@@ -21,14 +15,12 @@ def mk(**kw) -> PanelInputs:
     return PanelInputs(**kw)
 
 
-# ── not started ────────────────────────────────────────────────────────────
 def test_never_any_data_is_not_started():
     r = classify(PanelInputs(has_any_data=False))
     assert r.assessment is PanelAssessment.NOT_STARTED
     assert r.priority == 40
 
 
-# ── stale CGM readings → data gap (honest: missing data, not a broken sync) ──
 def test_stale_cgm_is_data_gap_not_a_sync_claim():
     r = classify(mk(glucose_sync_stale=True, glucose_sync_stale_days=8))
     assert r.assessment is PanelAssessment.DATA_GAP
@@ -37,7 +29,6 @@ def test_stale_cgm_is_data_gap_not_a_sync_claim():
     assert r.priority == 30  # below watch, not above it
 
 
-# ── at risk ────────────────────────────────────────────────────────────────
 def test_nocturnal_hypo_is_at_risk():
     r = classify(mk(nocturnal_below_70_pct=41, tir_pct=78))
     assert r.assessment is PanelAssessment.AT_RISK
@@ -62,7 +53,6 @@ def test_very_low_tir_is_at_risk():
     assert r.assessment is PanelAssessment.AT_RISK
 
 
-# ── data gap ───────────────────────────────────────────────────────────────
 def test_stale_glucose_is_data_gap():
     r = classify(mk(last_glucose_days_ago=30, glucose_reading_count_14d=0))
     assert r.assessment is PanelAssessment.DATA_GAP
@@ -81,7 +71,6 @@ def test_sparse_readings_is_data_gap():
     assert "3 readings" in r.reason
 
 
-# ── watch ──────────────────────────────────────────────────────────────────
 def test_below_target_tir_is_watch():
     r = classify(mk(tir_pct=62))
     assert r.assessment is PanelAssessment.WATCH
@@ -117,7 +106,6 @@ def test_worsening_tir_trend_is_watch():
     assert "slipping" in r.reason
 
 
-# ── responding ─────────────────────────────────────────────────────────────
 def test_high_tir_is_responding():
     r = classify(mk(tir_pct=96, tir_delta=3, below_54_pct=0))
     assert r.assessment is PanelAssessment.RESPONDING
@@ -126,13 +114,11 @@ def test_high_tir_is_responding():
 
 
 def test_weight_only_patient_is_responding_not_gap():
-    # A non-diabetic weight-loss patient has no glucose — that is not a data gap.
     r = classify(mk(glucose_expected=False, weight_delta_kg=-6.4, glucose_reading_count_14d=0))
     assert r.assessment is PanelAssessment.RESPONDING
     assert "-6.4 kg" in r.reason
 
 
-# ── condition-aware (pregnancy tightens targets) ───────────────────────────
 def test_pregnancy_tir_target_is_stricter():
     preg = classify(mk(is_pregnant=True, tir_pct=80))
     std = classify(mk(is_pregnant=False, tir_pct=80))
@@ -141,19 +127,15 @@ def test_pregnancy_tir_target_is_stricter():
 
 
 def test_pregnancy_nocturnal_hypo_more_sensitive():
-    # 4% nocturnal lows: at-risk in pregnancy (threshold 3), not standard (5).
     assert classify(mk(is_pregnant=True, nocturnal_below_70_pct=4)).assessment is PanelAssessment.AT_RISK
     assert classify(mk(is_pregnant=False, nocturnal_below_70_pct=4)).assessment is not PanelAssessment.AT_RISK
 
 
-# ── rule ordering: most severe wins ────────────────────────────────────────
 def test_hypo_danger_outranks_below_target_tir():
-    # Both a low TIR (watch) and nocturnal hypo (at-risk) present → at-risk.
     r = classify(mk(tir_pct=65, nocturnal_below_70_pct=12))
     assert r.assessment is PanelAssessment.AT_RISK
 
 
-# ── build_signal echoes metrics + classification onto the row ──────────────
 def test_build_signal_composes_row():
     sig = build_signal(
         patient_id="p1", name="Sunita Menon", age=52, sex="F",

@@ -1,11 +1,5 @@
-"""Concrete context provider for panel recompute — identity, scope, condition
-context, and the glucose frontier for one patient, from Postgres.
-
-The DB reads are thin and defensive; the composition into the context dict is a
-pure function (`_build`) so it is unit-tested without a database. This is the one
-piece tied to the patient-profile schema, kept isolated behind the service's
-injected `context_provider`.
-"""
+"""Context provider for panel recompute — identity, scope, conditions, and the
+glucose frontier for one patient, from Postgres."""
 
 from __future__ import annotations
 
@@ -27,9 +21,6 @@ from lib.models.patient_diabetic_history import PatientDiabeticHistory
 from lib.models.patient_reproductive_health import PatientReproductiveHealth
 from lib.schemas.patient_panel_signal import GlucoseSource, Modality
 
-# CGM should stream continuously, so a newest reading older than this means no
-# recent CGM data (a spent/removed sensor) — regardless of whether the app is
-# still syncing. This is a data signal, not a connection one.
 _CGM_STALE_DAYS = 2
 
 

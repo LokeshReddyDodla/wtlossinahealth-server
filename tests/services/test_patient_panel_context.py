@@ -1,5 +1,4 @@
-"""Pure context composition (_build) tests — the DB reads are thin; the mapping
-of profile fields into the panel context is what's worth testing."""
+"""Context composition (_build) tests for the patient panel signal."""
 
 from datetime import date, datetime, timezone
 

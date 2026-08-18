@@ -1,10 +1,4 @@
-"""Deterministic triage classification — a pure function over PanelInputs.
-
-No I/O, no AI: given the assembled signals, it returns the assessment, a
-templated reason, a severity, and a sort priority. Rules are evaluated
-most-severe first; the first match wins. Every reason is filled from the matched
-signal's values, so it is auditable and stable rather than generated prose.
-"""
+"""Deterministic triage classification — a pure function over PanelInputs."""
 
 from __future__ import annotations
 
@@ -16,8 +10,6 @@ from lib.schemas.patient_panel_signal import (
 )
 from lib.services.patient_panel.thresholds import for_patient
 
-# Priority bands (ascending — lower surfaces first in a triage sort). A patient
-# you can see trending badly (watch) outranks one you can't assess (data gap).
 _P_AT_RISK = 0
 _P_WATCH = 20
 _P_DATA_GAP = 30
@@ -36,7 +28,6 @@ def _num(v: float) -> str:
 def classify(inp: PanelInputs) -> Triage:
     t = for_patient(inp.is_pregnant)
 
-    # 1) Never any data — a new patient to onboard, not a clinical gap.
     if not inp.has_any_data:
         return Triage(
             assessment=PanelAssessment.NOT_STARTED,
@@ -45,9 +36,6 @@ def classify(inp: PanelInputs) -> Triage:
             priority=_P_NOT_STARTED,
         )
 
-    # 2) CGM connected but its readings are stale — no recent glucose to assess.
-    #    This is about missing data (a spent/removed sensor), not a broken sync:
-    #    last_cgm_reading_at is the last reading, not the last sync.
     if inp.glucose_sync_stale:
         tail = f" · {inp.glucose_sync_stale_days}d" if inp.glucose_sync_stale_days else ""
         return Triage(
@@ -57,7 +45,6 @@ def classify(inp: PanelInputs) -> Triage:
             priority=_P_DATA_GAP,
         )
 
-    # 3) Hypoglycemia danger.
     if inp.nocturnal_below_70_pct is not None and inp.nocturnal_below_70_pct >= t.nocturnal_hypo_pct:
         return _at_risk(f"Nocturnal hypo {_pct(inp.nocturnal_below_70_pct)}")
     if inp.below_54_pct is not None and inp.below_54_pct >= t.very_low_pct:
@@ -65,15 +52,11 @@ def classify(inp: PanelInputs) -> Triage:
     if inp.hypo_events is not None and inp.hypo_events >= t.frequent_low_events:
         return _at_risk(f"Frequent lows · {inp.hypo_events} events")
 
-    # 4) Uncontrolled glycemia.
     if inp.a1c is not None and inp.a1c >= t.a1c_high:
         return _at_risk(f"A1c {_pct(inp.a1c)}, uncontrolled")
     if inp.tir_pct is not None and inp.tir_pct < t.tir_watch_floor:
         return _at_risk(f"TIR {_pct(inp.tir_pct)} · poorly controlled")
 
-    # 5) Data gaps — only when glucose is expected AND there is nothing else to
-    #    assess on. Labs, weight, or an activity trend keep a patient assessable,
-    #    so absent CGM/SMBG is not a gap for them.
     if inp.glucose_expected and not _has_other_signal(inp):
         has_glucose_summary = (
             inp.tir_pct is not None or inp.smbg_avg is not None or inp.fasting_glucose is not None
@@ -88,7 +71,6 @@ def classify(inp: PanelInputs) -> Triage:
                 priority=_P_DATA_GAP,
             )
 
-    # 6) Watch band.
     if inp.tir_pct is not None and inp.tir_pct < t.tir_target:
         return _watch(f"TIR {_pct(inp.tir_pct)} · below target")
     if inp.a1c is not None and inp.a1c >= t.a1c_watch:
@@ -105,7 +87,6 @@ def classify(inp: PanelInputs) -> Triage:
         note = inp.activity_note or "activity inconsistent"
         return _watch(f"Activity inconsistent · {note}")
 
-    # 7) Responding — on target or improving.
     return Triage(
         assessment=PanelAssessment.RESPONDING,
         reason=_responding_reason(inp),
@@ -115,8 +96,6 @@ def classify(inp: PanelInputs) -> Triage:
 
 
 def _has_other_signal(inp: PanelInputs) -> bool:
-    """A non-glucose outcome that keeps the patient assessable despite absent
-    CGM/SMBG readings."""
     return inp.a1c is not None or inp.weight_delta_kg is not None or inp.activity_dropping
 
 

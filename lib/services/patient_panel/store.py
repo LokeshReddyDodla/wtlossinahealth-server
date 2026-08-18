@@ -1,9 +1,4 @@
-"""Mongo store for `patient_panel_signal` — the materialized read model.
-
-One row per patient (upserted on recompute), read scoped + filtered + sorted +
-paginated in a single query. Rows carry facility_id + care_provider_ids so
-visibility is one indexed filter, never a per-request join.
-"""
+"""Mongo store for `patient_panel_signal` — the materialized read model."""
 
 from __future__ import annotations
 
@@ -11,8 +6,6 @@ from typing import Any
 
 from lib.schemas.patient_panel_signal import PatientPanelSignal
 
-# Only these fields may drive a sort — guards against arbitrary client input
-# hitting an unindexed sort.
 _SORTABLE = {
     "priority", "name", "tir_pct", "avg_glucose", "cv_pct", "gmi",
     "below_70_pct", "above_180_pct", "a1c", "adherence_pct",
@@ -25,7 +18,6 @@ class PatientPanelStore:
         self._col = collection
 
     async def ensure_indexes(self) -> None:
-        """Idempotent; called once at startup like the other Mongo services."""
         await self._col.create_index("patient_id", name="panel_patient_idx", unique=True)
         await self._col.create_index(
             [("facility_id", 1), ("care_provider_ids", 1), ("priority", 1)],
@@ -39,8 +31,6 @@ class PatientPanelStore:
         )
 
     async def upsert(self, signal: PatientPanelSignal) -> None:
-        # mode="json" so enums serialise to their str value and datetimes to ISO —
-        # bson can't store Enum members, and ISO datetimes still sort correctly.
         doc = signal.model_dump(mode="json")
         await self._col.replace_one({"patient_id": signal.patient_id}, doc, upsert=True)
 
@@ -61,7 +51,6 @@ class PatientPanelStore:
         q: dict[str, Any] = {}
         if facility_id:
             q["facility_id"] = facility_id
-        # A non-admin provider sees only patients they're assigned to.
         if care_provider_id and not is_facility_admin:
             q["care_provider_ids"] = care_provider_id
         if status:
@@ -73,8 +62,6 @@ class PatientPanelStore:
 
         sort_key = sort if sort in _SORTABLE else "priority"
         direction = 1 if order >= 0 else -1
-        # patient_id as a stable tiebreaker so rows within one sort value keep a
-        # deterministic order across pages and refetches.
         sort_spec = [(sort_key, direction)]
         if sort_key != "patient_id":
             sort_spec.append(("patient_id", 1))
