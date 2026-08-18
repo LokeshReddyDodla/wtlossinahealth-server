@@ -86,6 +86,9 @@ class FakeCollection:
                 import re
                 if not re.search(v["$regex"], str(d.get(k, "")), re.I):
                     return False
+            elif isinstance(v, dict) and "$nin" in v:
+                if d.get(k) in v["$nin"]:
+                    return False
             elif k == "care_provider_ids":
                 if v not in (d.get(k) or []):
                     return False
@@ -146,6 +149,19 @@ async def test_scope_mirrors_roster_predicate():
 
     _, cp = await store.list(facility_id="f1", care_provider_id="cpX", is_facility_admin=False)
     assert cp == 2  # non-admin CP sees all their patients, cross-facility, no facility filter
+
+
+@pytest.mark.asyncio
+async def test_list_actionable_excludes_responding_and_not_started():
+    store = PatientPanelStore(FakeCollection())
+    await store.upsert(_sig("p1", "Risk", PanelInputs(has_any_data=True, nocturnal_below_70_pct=41), facility_id="f1"))
+    await store.upsert(_sig("p2", "Stable", PanelInputs(has_any_data=True, tir_pct=96), facility_id="f1"))
+    await store.upsert(_sig("p3", "New", PanelInputs(has_any_data=False), facility_id="f1"))
+    _, total = await store.list(facility_id="f1", actionable=True)
+    assert total == 1  # only the at-risk patient
+    # explicit status still overrides actionable
+    _, total = await store.list(facility_id="f1", status="responding", actionable=True)
+    assert total == 1
 
 
 @pytest.mark.asyncio

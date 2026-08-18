@@ -74,6 +74,7 @@ class PatientPanelStore:
         care_provider_id: str | None = None,
         is_facility_admin: bool = True,
         status: str | None = None,
+        actionable: bool = False,
         modality: str | None = None,
         search: str | None = None,
         needs_review: bool | None = None,
@@ -90,6 +91,8 @@ class PatientPanelStore:
             q["care_provider_ids"] = care_provider_id
         if status:
             q["assessment"] = status
+        elif actionable:
+            q["assessment"] = {"$nin": ["not_started", "responding"]}
         if modality:
             q["modality"] = modality
         if needs_review is not None:
