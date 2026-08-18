@@ -87,11 +87,26 @@ def classify(inp: PanelInputs) -> Triage:
         note = inp.activity_note or "activity inconsistent"
         return _watch(f"Activity inconsistent · {note}")
 
+    if not _assessable(inp):
+        return Triage(
+            assessment=PanelAssessment.DATA_GAP,
+            reason="No recent data — can't assess",
+            severity=ReasonSeverity.WATCH,
+            priority=_P_DATA_GAP,
+        )
+
     return Triage(
         assessment=PanelAssessment.RESPONDING,
         reason=_responding_reason(inp),
         severity=ReasonSeverity.INFO,
         priority=_P_RESPONDING,
+    )
+
+
+def _assessable(inp: PanelInputs) -> bool:
+    return any(
+        v is not None
+        for v in (inp.tir_pct, inp.avg_glucose, inp.a1c, inp.fasting_glucose, inp.smbg_avg, inp.weight_delta_kg)
     )
 
 

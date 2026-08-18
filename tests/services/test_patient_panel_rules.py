@@ -119,6 +119,15 @@ def test_weight_only_patient_is_responding_not_gap():
     assert "-6.4 kg" in r.reason
 
 
+def test_no_evidence_is_data_gap_not_responding():
+    r = classify(mk(has_any_data=True, glucose_expected=False))
+    assert r.assessment is PanelAssessment.DATA_GAP
+    assert r.priority == 30
+
+    r = classify(mk(has_any_data=True, glucose_expected=True))
+    assert r.assessment is PanelAssessment.DATA_GAP
+
+
 def test_pregnancy_tir_target_is_stricter():
     preg = classify(mk(is_pregnant=True, tir_pct=80))
     std = classify(mk(is_pregnant=False, tir_pct=80))
