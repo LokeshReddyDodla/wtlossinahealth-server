@@ -3,7 +3,7 @@ glucose frontier for one patient, from Postgres."""
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import func, select
@@ -11,6 +11,8 @@ from sqlalchemy import func, select
 from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.database import postgres_store
 from lib.models.associations import patient_care_provider_association
+from lib.models.care_intent import CareIntent
+from lib.models.care_intent_event import CareIntentEvent
 from lib.models.patient import Patient
 from lib.models.patient_connected_app import (
     PatientConnectedApp,
@@ -154,8 +156,36 @@ async def panel_context(patient_id: str) -> dict[str, Any]:
             )
         ).scalar_one_or_none()
 
+        # Care-plan adherence over the last 30 days — only queried when the
+        # patient has active care intents (cheap via the patient_id+status index).
+        adherence_pct: int | None = None
+        intent_ids = (
+            await s.execute(
+                select(CareIntent.care_intent_id).where(
+                    CareIntent.patient_id == patient_id,
+                    CareIntent.status == "active",
+                )
+            )
+        ).scalars().all()
+        if intent_ids:
+            since = datetime.now(timezone.utc).date() - timedelta(days=30)
+            counts = (
+                await s.execute(
+                    select(CareIntentEvent.status, func.count())
+                    .where(
+                        CareIntentEvent.care_intent_id.in_(intent_ids),
+                        CareIntentEvent.event_date >= since,
+                    )
+                    .group_by(CareIntentEvent.status)
+                )
+            ).all()
+            tally = {st: n for st, n in counts}
+            decided = tally.get("followed", 0) + tally.get("missed", 0)
+            if decided:
+                adherence_pct = round(100 * tally.get("followed", 0) / decided)
+
     is_pregnant = bool((rh and rh.is_pregnant) or (dh and dh.is_pregnant))
-    return _build(
+    ctx = _build(
         last_active_at=last_active_at,
         first_name=patient.first_name,
         last_name=patient.last_name,
@@ -173,3 +203,5 @@ async def panel_context(patient_id: str) -> dict[str, Any]:
         frontier_at=frontier_at,
         frontier_source=GlucoseSource.CGM if frontier_at is not None else GlucoseSource.NONE,
     )
+    ctx["adherence_pct"] = adherence_pct
+    return ctx
