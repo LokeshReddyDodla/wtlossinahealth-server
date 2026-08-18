@@ -122,7 +122,9 @@ async def test_recompute_labs_only_patient_uses_a1c():
 async def test_recompute_smbg_fills_when_no_cgm():
     ctx = {"name": "Chinnaiah", "modality": Modality.SMBG, "has_any_data": True,
            "facility_id": "f1"}
-    svc, _ = _service(ctx=ctx, reports=[], smbgs=[{"value": 150}, {"value": 154}])
+    from types import SimpleNamespace
+    smbgs = [SimpleNamespace(glucose_level=150), SimpleNamespace(glucose_level=154)]
+    svc, _ = _service(ctx=ctx, reports=[], smbgs=smbgs)
     sig = await svc.recompute("p3")
     assert sig.smbg_avg == 152
     assert sig.assessment is PanelAssessment.WATCH  # > 140 goal
@@ -178,9 +180,36 @@ async def test_worklist_needs_review_and_mark_reviewed():
     assert again.needs_review is True
     assert again.state_since == first.state_since
 
-    assert await svc.mark_reviewed("p1") is True
+    assert await svc.mark_reviewed("p1") == "ok"
     reviewed = await svc.recompute("p1")
     assert reviewed.needs_review is False
+
+
+@pytest.mark.asyncio
+async def test_mark_reviewed_rejects_stale_state():
+    ctx = {"name": "Sunita", "modality": Modality.CGM, "has_any_data": True, "facility_id": "f1"}
+    report = {"metadata": {"total_readings": 288},
+              "cgm_range_stats": {"in_target_70_180_percent": 96}}
+    svc, store = _service(ctx=ctx, reports=[report])
+
+    await svc.recompute("p1")  # RESPONDING
+    stale_state_since = (await store.get("p1"))["state_since"]  # the string the CP's UI holds
+
+    svc._cgm._r = [{"metadata": {"total_readings": 288},
+                    "cgm_summary_stats": {"nocturnal_time_below_70_percent": 41},
+                    "cgm_range_stats": {"in_target_70_180_percent": 40}}]
+    escalated = await svc.recompute("p1")  # AT_RISK, new state_since
+    assert escalated.assessment is PanelAssessment.AT_RISK
+
+    # Reviewer acknowledging the state they saw (RESPONDING) must NOT clear the escalation.
+    assert await svc.mark_reviewed("p1", stale_state_since) == "stale"
+    after = await svc.recompute("p1")
+    assert after.needs_review is True
+
+    # Acknowledging the current state succeeds.
+    current_state_since = (await store.get("p1"))["state_since"]
+    assert await svc.mark_reviewed("p1", current_state_since) == "ok"
+    assert (await svc.recompute("p1")).needs_review is False
 
 
 @pytest.mark.asyncio
@@ -218,3 +247,16 @@ async def test_recompute_activity_drop_from_fitness():
 async def test_recompute_no_context_skips():
     svc, store = _service(ctx={})
     assert await svc.recompute("pX") is None
+
+
+@pytest.mark.asyncio
+async def test_recompute_deletes_orphan_row_when_patient_gone():
+    good = {"metadata": {"total_readings": 288}, "cgm_range_stats": {"in_target_70_180_percent": 96}}
+    svc, store = _service(ctx={"name": "R", "modality": Modality.CGM, "has_any_data": True,
+                               "facility_id": "f1"}, reports=[good])
+    await svc.recompute("pZ")
+    assert await store.get("pZ") is not None
+
+    svc._context = lambda pid: _async({})  # patient hard-deleted
+    assert await svc.recompute("pZ") is None
+    assert await store.get("pZ") is None  # orphan row removed

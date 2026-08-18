@@ -87,6 +87,8 @@ def aggregate_daily_cgm(reports: list[dict[str, Any]] | None) -> dict[str, Any]:
     if out.get("avg_glucose") is not None:
         out["gmi"] = round(3.31 + 0.02392 * out["avg_glucose"], 1)
     out["tir_delta"] = _tir_direction(rows)
+    hypo = [v["hypo_events"] for _, v, _ in rows if v.get("hypo_events") is not None]
+    out["hypo_events"] = sum(hypo) if hypo else None
     out["reading_count"] = sum(w for w, _, _ in rows)
     out["days_of_data"] = len(rows)
     out["sensor_active_pct"] = round(sensor_sum / sensor_w, 1) if sensor_w else None
@@ -139,11 +141,14 @@ def vitals_inputs(latest_vitals: list[dict[str, Any]] | None) -> dict[str, Any]:
     return out
 
 
-def smbg_inputs(readings: list[dict[str, Any]] | None) -> dict[str, Any]:
-    vals = [
-        r["value"] for r in (readings or [])
-        if isinstance(r.get("value"), (int, float))
-    ]
+def smbg_inputs(readings: list[Any] | None) -> dict[str, Any]:
+    vals = []
+    for r in readings or []:
+        v = getattr(r, "glucose_level", None)
+        if v is None and isinstance(r, dict):
+            v = r.get("glucose_level")
+        if isinstance(v, (int, float)):
+            vals.append(v)
     if not vals:
         return {}
     return {"smbg_avg": round(sum(vals) / len(vals))}

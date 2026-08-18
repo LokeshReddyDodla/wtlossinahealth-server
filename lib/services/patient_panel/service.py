@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 
 from lib.schemas.patient_panel_signal import (
@@ -99,6 +99,7 @@ class PatientPanelService:
     async def recompute(self, patient_id: str) -> PatientPanelSignal | None:
         ctx = await self._safe(self._context(patient_id), {})
         if not ctx:
+            await self._store.delete(patient_id)  # patient gone → drop the orphan row
             return None
 
         merged: dict[str, Any] = {}
@@ -155,10 +156,13 @@ class PatientPanelService:
     async def list_panel(self, **kwargs) -> tuple[list[dict[str, Any]], int]:
         return await self._store.list(**kwargs)
 
-    async def mark_reviewed(self, patient_id: str) -> bool:
+    async def mark_reviewed(self, patient_id: str, state_since: str | None = None) -> str:
         return await self._store.mark_reviewed(
-            patient_id, datetime.now(timezone.utc).isoformat()
+            patient_id, datetime.now(timezone.utc).isoformat(), state_since
         )
+
+    async def delete(self, patient_id: str) -> bool:
+        return await self._store.delete(patient_id)
 
     async def ensure_indexes(self) -> None:
         await self._store.ensure_indexes()
@@ -180,8 +184,9 @@ class PatientPanelService:
         return sleep_inputs(reports)
 
     async def _cgm_window(self, patient_id: str, days: int) -> tuple[dict[str, Any], dict[str, Any]]:
-        end = datetime.now(timezone.utc).replace(tzinfo=None)
-        start = end - timedelta(days=days)
+        today = datetime.now(timezone.utc).date()
+        start = datetime.combine(today - timedelta(days=days), time.min)
+        end = datetime.combine(today, time.max)
         reports = await self._safe(self._cgm.fetch_daily_reports(patient_id, start, end), [])
         agg = aggregate_daily_cgm(reports)
         days = int(agg.pop("days_of_data", 0) or 0)

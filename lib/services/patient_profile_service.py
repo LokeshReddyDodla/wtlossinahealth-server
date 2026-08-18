@@ -2,6 +2,7 @@ import uuid
 from typing import Dict, List, Optional
 
 from fastapi import HTTPException, status
+from loguru import logger
 from sqlalchemy import distinct, exists, func, or_
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -374,6 +375,10 @@ class PatientProfileService:
 
             await postgres_session.commit()
             await postgres_session.refresh(new_patient)
+
+            from lib.workers.tasks.patient_panel.recompute import enqueue_panel_recompute
+
+            await enqueue_panel_recompute(str(new_patient.patient_id))
 
             return new_patient
 
@@ -1122,8 +1127,17 @@ class PatientProfileService:
                     user_id=str(patient.patient_id),
                 )
 
+            deleted_patient_id = str(patient.patient_id)
             await postgres_session.delete(patient)
             await postgres_session.commit()
+
+            try:
+                from lib.core.container import container
+                from lib.services.patient_panel.service import PatientPanelService
+
+                await container.resolve(PatientPanelService).delete(deleted_patient_id)
+            except Exception as e:
+                logger.warning(f"Failed to delete panel row for {deleted_patient_id}: {e}")
 
         except SQLAlchemyError as e:
             await postgres_session.rollback()

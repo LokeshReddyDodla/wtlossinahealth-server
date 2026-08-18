@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 from loguru import logger
@@ -14,6 +15,7 @@ from lib.workers.arq.redis import enqueue_job
 from lib.workers.tasks.base import TaskResult, task_with_logging
 
 _BATCH = 500
+_CYCLE_SECONDS = 1800
 
 
 @task_with_logging
@@ -29,11 +31,22 @@ async def recompute_patient_panel(ctx: dict[str, Any], patient_id: str) -> TaskR
     )
 
 
+async def enqueue_panel_recompute(patient_id: str) -> None:
+    """Fire-and-forget panel refresh for one patient (on create / data change)."""
+    try:
+        await enqueue_job(
+            "recompute_patient_panel", patient_id, _queue_name=Queues.REPORTS
+        )
+    except Exception as e:
+        logger.warning(f"Failed to enqueue panel recompute for {patient_id}: {e}")
+
+
 @task_with_logging
 async def reconcile_patient_panel(ctx: dict[str, Any]) -> TaskResult:
     """Enumerate the roster in pages and enqueue a recompute per patient."""
     enqueued = 0
     last_id: str | None = None
+    cycle = int(datetime.now(timezone.utc).timestamp() // _CYCLE_SECONDS)
     while True:
         async with postgres_store.get_session() as session:
             stmt = select(Patient.patient_id).order_by(Patient.patient_id).limit(_BATCH)
@@ -46,7 +59,7 @@ async def reconcile_patient_panel(ctx: dict[str, Any]) -> TaskResult:
             await enqueue_job(
                 "recompute_patient_panel",
                 pid,
-                _job_id=f"panel:recompute:{pid}",
+                _job_id=f"panel:recompute:{pid}:{cycle}",
                 _queue_name=Queues.REPORTS,
             )
             enqueued += 1

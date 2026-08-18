@@ -29,20 +29,43 @@ class PatientPanelStore:
         await self._col.create_index(
             [("facility_id", 1), ("modality", 1)], name="panel_scope_modality_idx"
         )
+        await self._col.create_index(
+            [("facility_id", 1), ("priority", 1), ("patient_id", 1)],
+            name="panel_facility_priority_idx",
+        )
+        await self._col.create_index(
+            [("care_provider_ids", 1), ("priority", 1), ("patient_id", 1)],
+            name="panel_cp_priority_idx",
+        )
 
     async def get(self, patient_id: str) -> dict[str, Any] | None:
         return await self._col.find_one({"patient_id": patient_id}, {"_id": 0})
 
+    async def delete(self, patient_id: str) -> bool:
+        result = await self._col.delete_one({"patient_id": patient_id})
+        return result.deleted_count > 0
+
     async def upsert(self, signal: PatientPanelSignal) -> None:
         doc = signal.model_dump(mode="json")
-        await self._col.replace_one({"patient_id": signal.patient_id}, doc, upsert=True)
-
-    async def mark_reviewed(self, patient_id: str, at: str) -> bool:
-        result = await self._col.update_one(
-            {"patient_id": patient_id},
-            {"$set": {"reviewed_at": at, "needs_review": False}},
+        doc.pop("reviewed_at", None)  # owned by mark_reviewed; never overwrite a concurrent review
+        await self._col.update_one(
+            {"patient_id": signal.patient_id}, {"$set": doc}, upsert=True
         )
-        return result.matched_count > 0
+
+    async def mark_reviewed(
+        self, patient_id: str, at: str, state_since: str | None = None
+    ) -> str:
+        flt: dict[str, Any] = {"patient_id": patient_id}
+        if state_since is not None:
+            flt["state_since"] = state_since
+        result = await self._col.update_one(
+            flt, {"$set": {"reviewed_at": at, "needs_review": False}}
+        )
+        if result.matched_count > 0:
+            return "ok"
+        if state_since is not None and await self._col.find_one({"patient_id": patient_id}):
+            return "stale"
+        return "not_found"
 
     async def list(
         self,
@@ -60,9 +83,10 @@ class PatientPanelStore:
         limit: int = 25,
     ) -> tuple[list[dict[str, Any]], int]:
         q: dict[str, Any] = {}
-        if facility_id:
-            q["facility_id"] = facility_id
-        if care_provider_id and not is_facility_admin:
+        if is_facility_admin:
+            if facility_id:
+                q["facility_id"] = facility_id
+        elif care_provider_id:
             q["care_provider_ids"] = care_provider_id
         if status:
             q["assessment"] = status

@@ -53,6 +53,13 @@ class FakeCollection:
     async def replace_one(self, flt, doc, upsert=False):
         self.docs[flt["patient_id"]] = doc
 
+    async def delete_one(self, flt):
+        for k, d in list(self.docs.items()):
+            if self._match(d, flt):
+                del self.docs[k]
+                return type("R", (), {"deleted_count": 1})()
+        return type("R", (), {"deleted_count": 0})()
+
     async def find_one(self, flt, projection=None):
         for d in self.docs.values():
             if self._match(d, flt):
@@ -61,11 +68,16 @@ class FakeCollection:
                 return r
         return None
 
-    async def update_one(self, flt, update):
+    async def update_one(self, flt, update, upsert=False):
         for d in self.docs.values():
             if self._match(d, flt):
                 d.update(update.get("$set", {}))
                 return type("R", (), {"matched_count": 1})()
+        if upsert:
+            doc = {k: v for k, v in flt.items() if not isinstance(v, dict)}
+            doc.update(update.get("$set", {}))
+            self.docs[doc["patient_id"]] = doc
+            return type("R", (), {"matched_count": 0, "upserted_id": doc["patient_id"]})()
         return type("R", (), {"matched_count": 0})()
 
     def _match(self, d, q):
@@ -119,6 +131,21 @@ async def test_list_filters_by_status_and_scope():
     assert total == 1 and rows[0]["name"] == "Sunita"
     rows, total = await store.list(facility_id="f1", care_provider_id="cpB", is_facility_admin=False)
     assert total == 1 and rows[0]["name"] == "Raj"
+
+
+@pytest.mark.asyncio
+async def test_scope_mirrors_roster_predicate():
+    store = PatientPanelStore(FakeCollection())
+    await store.upsert(_sig("a", "A", PanelInputs(has_any_data=True, tir_pct=96),
+                            facility_id="f1", care_provider_ids=["cpX"]))
+    await store.upsert(_sig("b", "B", PanelInputs(has_any_data=True, tir_pct=96),
+                            facility_id="f2", care_provider_ids=["cpX"]))
+
+    _, admin = await store.list(facility_id="f1", is_facility_admin=True)
+    assert admin == 1  # facility admin sees own facility only
+
+    _, cp = await store.list(facility_id="f1", care_provider_id="cpX", is_facility_admin=False)
+    assert cp == 2  # non-admin CP sees all their patients, cross-facility, no facility filter
 
 
 @pytest.mark.asyncio
@@ -183,8 +210,11 @@ def test_vitals_inputs_picks_a1c():
 
 
 def test_smbg_inputs_averages():
-    assert smbg_inputs([{"value": 110}, {"value": 130}, {"value": 120}])["smbg_avg"] == 120
+    from types import SimpleNamespace
+    rows = [SimpleNamespace(glucose_level=g) for g in (110, 130, 120)]
+    assert smbg_inputs(rows)["smbg_avg"] == 120
     assert smbg_inputs([]) == {}
+    assert smbg_inputs([SimpleNamespace(other=1)]) == {}
 
 
 def test_sleep_inputs_avg_hours():
@@ -235,6 +265,18 @@ def test_aggregate_daily_cgm_computes_tir_direction():
     out = aggregate_daily_cgm([newer, older])
     assert out["tir_delta"] == 30.0
     assert aggregate_daily_cgm([older])["tir_delta"] is None
+
+
+def test_aggregate_daily_cgm_sums_hypo_events():
+    reports = [
+        {"metadata": {"total_readings": 200}, "cgm_range_stats": {"in_target_70_180_percent": 80},
+         "hypo_events": [{"x": 1}, {"x": 2}]},
+        {"metadata": {"total_readings": 200}, "cgm_range_stats": {"in_target_70_180_percent": 80},
+         "hypo_events": [{"x": 3}]},
+    ]
+    assert aggregate_daily_cgm(reports)["hypo_events"] == 3
+    no_hypo = [{"metadata": {"total_readings": 200}, "cgm_range_stats": {"in_target_70_180_percent": 80}}]
+    assert aggregate_daily_cgm(no_hypo)["hypo_events"] is None
 
 
 def test_aggregate_daily_cgm_skips_zero_reading_days():
