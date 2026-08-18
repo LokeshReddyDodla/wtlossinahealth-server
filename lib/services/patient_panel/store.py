@@ -60,9 +60,10 @@ class PatientPanelStore:
         limit: int = 25,
     ) -> tuple[list[dict[str, Any]], int]:
         q: dict[str, Any] = {}
-        if facility_id:
-            q["facility_id"] = facility_id
-        if care_provider_id and not is_facility_admin:
+        if is_facility_admin:
+            if facility_id:
+                q["facility_id"] = facility_id
+        elif care_provider_id:
             q["care_provider_ids"] = care_provider_id
         if status:
             q["assessment"] = status

@@ -139,11 +139,14 @@ def vitals_inputs(latest_vitals: list[dict[str, Any]] | None) -> dict[str, Any]:
     return out
 
 
-def smbg_inputs(readings: list[dict[str, Any]] | None) -> dict[str, Any]:
-    vals = [
-        r["value"] for r in (readings or [])
-        if isinstance(r.get("value"), (int, float))
-    ]
+def smbg_inputs(readings: list[Any] | None) -> dict[str, Any]:
+    vals = []
+    for r in readings or []:
+        v = getattr(r, "glucose_level", None)
+        if v is None and isinstance(r, dict):
+            v = r.get("glucose_level")
+        if isinstance(v, (int, float)):
+            vals.append(v)
     if not vals:
         return {}
     return {"smbg_avg": round(sum(vals) / len(vals))}

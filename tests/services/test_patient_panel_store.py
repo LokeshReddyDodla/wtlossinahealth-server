@@ -122,6 +122,21 @@ async def test_list_filters_by_status_and_scope():
 
 
 @pytest.mark.asyncio
+async def test_scope_mirrors_roster_predicate():
+    store = PatientPanelStore(FakeCollection())
+    await store.upsert(_sig("a", "A", PanelInputs(has_any_data=True, tir_pct=96),
+                            facility_id="f1", care_provider_ids=["cpX"]))
+    await store.upsert(_sig("b", "B", PanelInputs(has_any_data=True, tir_pct=96),
+                            facility_id="f2", care_provider_ids=["cpX"]))
+
+    _, admin = await store.list(facility_id="f1", is_facility_admin=True)
+    assert admin == 1  # facility admin sees own facility only
+
+    _, cp = await store.list(facility_id="f1", care_provider_id="cpX", is_facility_admin=False)
+    assert cp == 2  # non-admin CP sees all their patients, cross-facility, no facility filter
+
+
+@pytest.mark.asyncio
 async def test_list_sorts_and_paginates():
     store = PatientPanelStore(FakeCollection())
     for i, tir in enumerate([96, 55, 72, 40, 88]):
@@ -183,8 +198,11 @@ def test_vitals_inputs_picks_a1c():
 
 
 def test_smbg_inputs_averages():
-    assert smbg_inputs([{"value": 110}, {"value": 130}, {"value": 120}])["smbg_avg"] == 120
+    from types import SimpleNamespace
+    rows = [SimpleNamespace(glucose_level=g) for g in (110, 130, 120)]
+    assert smbg_inputs(rows)["smbg_avg"] == 120
     assert smbg_inputs([]) == {}
+    assert smbg_inputs([SimpleNamespace(other=1)]) == {}
 
 
 def test_sleep_inputs_avg_hours():

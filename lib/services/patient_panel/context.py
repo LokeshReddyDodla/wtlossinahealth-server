@@ -11,7 +11,6 @@ from sqlalchemy import func, select
 from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.database import postgres_store
 from lib.models.associations import patient_care_provider_association
-from lib.models.care_provider import CareProvider
 from lib.models.patient import Patient
 from lib.models.patient_connected_app import (
     PatientConnectedApp,
@@ -130,15 +129,6 @@ async def panel_context(patient_id: str) -> dict[str, Any]:
                 )
             ).scalars().all()
         )
-        facility_id = None
-        if cp_ids:
-            facility_id = (
-                await s.execute(
-                    select(CareProvider.health_facility_id).where(
-                        CareProvider.care_provider_id == cp_ids[0]
-                    )
-                )
-            ).scalar_one_or_none()
 
         frontier_at: datetime | None = None
         for model in (PatientLibreView, PatientSinocare):
@@ -176,7 +166,7 @@ async def panel_context(patient_id: str) -> dict[str, Any]:
         is_pregnant=is_pregnant,
         pregnancy_weeks=(rh.pregnancy_weeks if rh else None) or (dh.pregnancy_weeks if dh else None),
         care_provider_ids=[str(c) for c in cp_ids],
-        facility_id=str(facility_id) if facility_id else None,
+        facility_id=str(patient.health_facility_id) if patient.health_facility_id else None,
         frontier_at=frontier_at,
         frontier_source=GlucoseSource.CGM if frontier_at is not None else GlucoseSource.NONE,
     )

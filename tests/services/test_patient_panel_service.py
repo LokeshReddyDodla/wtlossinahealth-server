@@ -122,7 +122,9 @@ async def test_recompute_labs_only_patient_uses_a1c():
 async def test_recompute_smbg_fills_when_no_cgm():
     ctx = {"name": "Chinnaiah", "modality": Modality.SMBG, "has_any_data": True,
            "facility_id": "f1"}
-    svc, _ = _service(ctx=ctx, reports=[], smbgs=[{"value": 150}, {"value": 154}])
+    from types import SimpleNamespace
+    smbgs = [SimpleNamespace(glucose_level=150), SimpleNamespace(glucose_level=154)]
+    svc, _ = _service(ctx=ctx, reports=[], smbgs=smbgs)
     sig = await svc.recompute("p3")
     assert sig.smbg_avg == 152
     assert sig.assessment is PanelAssessment.WATCH  # > 140 goal
