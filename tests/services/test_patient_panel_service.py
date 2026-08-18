@@ -180,9 +180,36 @@ async def test_worklist_needs_review_and_mark_reviewed():
     assert again.needs_review is True
     assert again.state_since == first.state_since
 
-    assert await svc.mark_reviewed("p1") is True
+    assert await svc.mark_reviewed("p1") == "ok"
     reviewed = await svc.recompute("p1")
     assert reviewed.needs_review is False
+
+
+@pytest.mark.asyncio
+async def test_mark_reviewed_rejects_stale_state():
+    ctx = {"name": "Sunita", "modality": Modality.CGM, "has_any_data": True, "facility_id": "f1"}
+    report = {"metadata": {"total_readings": 288},
+              "cgm_range_stats": {"in_target_70_180_percent": 96}}
+    svc, store = _service(ctx=ctx, reports=[report])
+
+    await svc.recompute("p1")  # RESPONDING
+    stale_state_since = (await store.get("p1"))["state_since"]  # the string the CP's UI holds
+
+    svc._cgm._r = [{"metadata": {"total_readings": 288},
+                    "cgm_summary_stats": {"nocturnal_time_below_70_percent": 41},
+                    "cgm_range_stats": {"in_target_70_180_percent": 40}}]
+    escalated = await svc.recompute("p1")  # AT_RISK, new state_since
+    assert escalated.assessment is PanelAssessment.AT_RISK
+
+    # Reviewer acknowledging the state they saw (RESPONDING) must NOT clear the escalation.
+    assert await svc.mark_reviewed("p1", stale_state_since) == "stale"
+    after = await svc.recompute("p1")
+    assert after.needs_review is True
+
+    # Acknowledging the current state succeeds.
+    current_state_since = (await store.get("p1"))["state_since"]
+    assert await svc.mark_reviewed("p1", current_state_since) == "ok"
+    assert (await svc.recompute("p1")).needs_review is False
 
 
 @pytest.mark.asyncio

@@ -155,9 +155,9 @@ class PatientPanelService:
     async def list_panel(self, **kwargs) -> tuple[list[dict[str, Any]], int]:
         return await self._store.list(**kwargs)
 
-    async def mark_reviewed(self, patient_id: str) -> bool:
+    async def mark_reviewed(self, patient_id: str, state_since: str | None = None) -> str:
         return await self._store.mark_reviewed(
-            patient_id, datetime.now(timezone.utc).isoformat()
+            patient_id, datetime.now(timezone.utc).isoformat(), state_since
         )
 
     async def ensure_indexes(self) -> None:

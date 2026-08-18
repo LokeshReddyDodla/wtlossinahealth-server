@@ -37,12 +37,20 @@ class PatientPanelStore:
         doc = signal.model_dump(mode="json")
         await self._col.replace_one({"patient_id": signal.patient_id}, doc, upsert=True)
 
-    async def mark_reviewed(self, patient_id: str, at: str) -> bool:
+    async def mark_reviewed(
+        self, patient_id: str, at: str, state_since: str | None = None
+    ) -> str:
+        flt: dict[str, Any] = {"patient_id": patient_id}
+        if state_since is not None:
+            flt["state_since"] = state_since
         result = await self._col.update_one(
-            {"patient_id": patient_id},
-            {"$set": {"reviewed_at": at, "needs_review": False}},
+            flt, {"$set": {"reviewed_at": at, "needs_review": False}}
         )
-        return result.matched_count > 0
+        if result.matched_count > 0:
+            return "ok"
+        if state_since is not None and await self._col.find_one({"patient_id": patient_id}):
+            return "stale"
+        return "not_found"
 
     async def list(
         self,

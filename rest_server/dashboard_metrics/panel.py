@@ -65,6 +65,9 @@ async def get_patient_panel(
 @router.post("/patients/{patient_id}/panel/reviewed", response_model=SuccessResponse)
 async def mark_panel_reviewed(
     patient_id: str,
+    state_since: str | None = Query(
+        None, description="The state_since the reviewer saw; the review only lands if it still matches."
+    ),
     panel_service: PatientPanelService = Depends(get_patient_panel_service),
     current_actor: Actor = Depends(
         get_current_actor(
@@ -74,6 +77,12 @@ async def mark_panel_reviewed(
         )
     ),
 ):
-    if not await panel_service.mark_reviewed(patient_id):
+    outcome = await panel_service.mark_reviewed(patient_id, state_since)
+    if outcome == "not_found":
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Patient not on panel")
+    if outcome == "stale":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Patient state changed since it was viewed; refresh before reviewing.",
+        )
     return SuccessResponse(message="Marked reviewed")
