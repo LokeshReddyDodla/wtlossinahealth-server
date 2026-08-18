@@ -89,6 +89,7 @@ class PatientPanelSignal(BaseModel):
     care_provider_ids: list[str] = Field(default_factory=list)
 
     name: str
+    profile_picture: str | None = None
     age: int | None = None
     sex: str | None = None
     conditions: list[str] = Field(default_factory=list)

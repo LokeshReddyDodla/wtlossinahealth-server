@@ -132,6 +132,7 @@ class PatientPanelService:
         signal = build_signal(
             patient_id=patient_id,
             name=ctx.get("name", ""),
+            profile_picture=ctx.get("profile_picture"),
             age=ctx.get("age"),
             sex=ctx.get("sex"),
             conditions=ctx.get("conditions") or [],

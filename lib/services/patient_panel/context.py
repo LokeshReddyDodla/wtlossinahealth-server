@@ -37,6 +37,7 @@ def _build(
     last_name: str | None,
     dob: date | None,
     gender: str | None,
+    profile_picture: str | None = None,
     weight_kg: float | None,
     created_at: datetime | None,
     diabetes_type: str | None,
@@ -78,6 +79,7 @@ def _build(
 
     return {
         "name": f"{first_name or ''} {last_name or ''}".strip(),
+        "profile_picture": profile_picture,
         "age": _age(dob, now),
         "sex": gender,
         "conditions": conditions,
@@ -157,6 +159,7 @@ async def panel_context(patient_id: str) -> dict[str, Any]:
         last_active_at=last_active_at,
         first_name=patient.first_name,
         last_name=patient.last_name,
+        profile_picture=patient.profile_picture,
         dob=patient.dob,
         gender=patient.gender,
         weight_kg=patient.weight_kg,
