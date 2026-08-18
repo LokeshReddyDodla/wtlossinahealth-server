@@ -5,7 +5,7 @@ server-side sorted/filtered query — no per-patient AI, no fan-out. Provider-ga
 and facility/CP-scoped exactly like the other dashboard-metrics roster reads.
 """
 
-from fastapi import Depends, Query
+from fastapi import Depends, HTTPException, Query, status
 
 from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.actor import Actor, get_current_actor
@@ -26,6 +26,7 @@ async def get_patient_panel(
     status_filter: str | None = Query(None, alias="status"),
     modality: str | None = Query(None),
     search: str | None = Query(None),
+    needs_review: bool | None = Query(None),
     sort: str = Query("priority"),
     order: str = Query("asc"),
     page: int = Query(1, ge=1),
@@ -49,6 +50,7 @@ async def get_patient_panel(
         status=status_filter,
         modality=modality,
         search=search,
+        needs_review=needs_review,
         sort=sort,
         order=1 if order == "asc" else -1,
         skip=(page - 1) * size,
@@ -58,3 +60,20 @@ async def get_patient_panel(
         message=f"{total} patients",
         data={"items": rows, "total": total, "page": page, "size": size},
     )
+
+
+@router.post("/patients/{patient_id}/panel/reviewed", response_model=SuccessResponse)
+async def mark_panel_reviewed(
+    patient_id: str,
+    panel_service: PatientPanelService = Depends(get_patient_panel_service),
+    current_actor: Actor = Depends(
+        get_current_actor(
+            allowed_roles=[ProfileTypeEnum.CARE_PROVIDER, ProfileTypeEnum.ADMIN],
+            care_provider_action=CareProviderPermissionAction.UPDATE,
+            care_provider_feature=CareProviderFeature.HEALTH_FACILITY,
+        )
+    ),
+):
+    if not await panel_service.mark_reviewed(patient_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Patient not on panel")
+    return SuccessResponse(message="Marked reviewed")

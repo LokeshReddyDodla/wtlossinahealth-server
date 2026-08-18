@@ -39,6 +39,92 @@ def cgm_inputs(report: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
+_AGG_FIELDS = (
+    "tir_pct", "avg_glucose", "cv_pct", "below_54_pct",
+    "below_70_pct", "above_180_pct", "nocturnal_below_70_pct",
+)
+
+
+def _wmean(rows: list[tuple[float, dict]], field: str) -> float | None:
+    num = sum(w * v[field] for w, v in rows if v.get(field) is not None)
+    den = sum(w for w, v in rows if v.get(field) is not None)
+    return round(num / den, 1) if den else None
+
+
+def _tir_direction(rows: list[tuple[float, dict, str]]) -> float | None:
+    if len(rows) < 2:
+        return None
+    ordered = sorted(rows, key=lambda t: t[2])
+    mid = len(ordered) // 2
+    older = _wmean([(w, v) for w, v, _ in ordered[:mid]], "tir_pct")
+    newer = _wmean([(w, v) for w, v, _ in ordered[mid:]], "tir_pct")
+    if older is None or newer is None:
+        return None
+    return round(newer - older, 1)
+
+
+def aggregate_daily_cgm(reports: list[dict[str, Any]] | None) -> dict[str, Any]:
+    """Reading-weighted mean of daily CGM reports into one window summary,
+    plus a week-over-week TIR direction (newer half vs older half)."""
+    rows = []
+    sensor_sum = 0.0
+    sensor_w = 0
+    for r in reports or []:
+        md = r.get("metadata") or {}
+        weight = md.get("total_readings") or 0
+        if weight > 0:
+            date = (md.get("date_range") or {}).get("start") or ""
+            rows.append((weight, cgm_inputs(r), date))
+            sa = md.get("sensor_active_percent")
+            if sa is not None:
+                sensor_sum += weight * sa
+                sensor_w += weight
+    if not rows:
+        return {}
+
+    plain = [(w, v) for w, v, _ in rows]
+    out: dict[str, Any] = {field: _wmean(plain, field) for field in _AGG_FIELDS}
+    if out.get("avg_glucose") is not None:
+        out["gmi"] = round(3.31 + 0.02392 * out["avg_glucose"], 1)
+    out["tir_delta"] = _tir_direction(rows)
+    out["reading_count"] = sum(w for w, _, _ in rows)
+    out["days_of_data"] = len(rows)
+    out["sensor_active_pct"] = round(sensor_sum / sensor_w, 1) if sensor_w else None
+    return out
+
+
+def fitness_inputs(reports: list[dict[str, Any]] | None) -> dict[str, Any]:
+    rows = []
+    for r in reports or []:
+        steps = r.get("steps")
+        if steps is not None:
+            date = ((r.get("metadata") or {}).get("date_range") or {}).get("start") or ""
+            rows.append((steps, date))
+    if not rows:
+        return {}
+
+    out: dict[str, Any] = {"avg_steps": round(sum(s for s, _ in rows) / len(rows))}
+    if len(rows) >= 4:
+        ordered = sorted(rows, key=lambda t: t[1])
+        mid = len(ordered) // 2
+        older = round(sum(s for s, _ in ordered[:mid]) / mid)
+        newer = round(sum(s for s, _ in ordered[mid:]) / (len(ordered) - mid))
+        if older >= 500 and newer < older * 0.5:
+            out["activity_dropping"] = True
+            out["activity_note"] = f"steps {older:,}→{newer:,}"
+    return out
+
+
+def sleep_inputs(reports: list[dict[str, Any]] | None) -> dict[str, Any]:
+    mins = [
+        d for r in (reports or [])
+        if (d := ((r.get("duration") or {}).get("total_duration")))
+    ]
+    if not mins:
+        return {}
+    return {"avg_sleep_hours": round(sum(mins) / len(mins) / 60, 1)}
+
+
 def vitals_inputs(latest_vitals: list[dict[str, Any]] | None) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for row in latest_vitals or []:

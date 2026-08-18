@@ -3,11 +3,12 @@
 import pytest
 
 from lib.schemas.patient_panel_signal import (
+    DataConfidence,
     GlucoseSource,
     Modality,
     PanelAssessment,
 )
-from lib.services.patient_panel.service import PatientPanelService
+from lib.services.patient_panel.service import PatientPanelService, _confidence
 from lib.services.patient_panel.store import PatientPanelStore
 from tests.services.test_patient_panel_store import FakeCollection
 
@@ -16,7 +17,7 @@ class _CGM:
     def __init__(self, reports):
         self._r = reports
 
-    async def fetch_reports(self, patient_id):
+    async def fetch_daily_reports(self, patient_id, start, end):
         return self._r
 
 
@@ -36,7 +37,23 @@ class _SMBG:
         return self._readings
 
 
-def _service(*, ctx, reports=None, vitals=None, smbgs=None):
+class _Fitness:
+    def __init__(self, reports):
+        self._r = reports
+
+    async def fetch_daily_reports_in_range(self, patient_id, start, end):
+        return self._r
+
+
+class _Sleep:
+    def __init__(self, reports):
+        self._r = reports
+
+    async def fetch_daily_reports_in_range(self, patient_id, start, end):
+        return self._r
+
+
+def _service(*, ctx, reports=None, vitals=None, smbgs=None, fitness=None, sleep=None):
     store = PatientPanelStore(FakeCollection())
     svc = PatientPanelService(
         store=store,
@@ -44,6 +61,8 @@ def _service(*, ctx, reports=None, vitals=None, smbgs=None):
         cgm_report_service=_CGM(reports or []),
         vital_service=_Vitals(vitals or []),
         smbg_service=_SMBG(smbgs or []),
+        fitness_report_service=_Fitness(fitness or []),
+        sleep_report_service=_Sleep(sleep or []),
     )
     return svc, store
 
@@ -60,6 +79,7 @@ async def test_recompute_cgm_patient_builds_at_risk_row():
         "has_any_data": True, "last_glucose_source": GlucoseSource.CGM,
     }
     report = {
+        "metadata": {"total_readings": 288},
         "cgm_summary_stats": {"average_glucose_mgdl": 158, "gmi": 7.0,
                               "coefficient_of_variation_percent": 34,
                               "nocturnal_time_below_70_percent": 41},
@@ -71,10 +91,20 @@ async def test_recompute_cgm_patient_builds_at_risk_row():
     sig = await svc.recompute("p1")
     assert sig.assessment is PanelAssessment.AT_RISK
     assert "Nocturnal hypo 41%" in sig.reason
-    assert sig.tir_pct == 78 and sig.gmi == 7.0
+    assert sig.tir_pct == 78 and sig.gmi == 7.1
+    assert sig.days_of_data == 1 and sig.data_confidence is DataConfidence.LOW
 
     rows, total = await store.list(facility_id="f1")
     assert total == 1 and rows[0]["assessment"] == "at_risk"
+
+
+def test_confidence_tiers():
+    assert _confidence(0, None) is None
+    assert _confidence(12, 80) is DataConfidence.HIGH
+    assert _confidence(12, 30) is DataConfidence.LOW
+    assert _confidence(5, 60) is DataConfidence.MEDIUM
+    assert _confidence(2, 90) is DataConfidence.LOW
+    assert _confidence(12, None) is DataConfidence.HIGH
 
 
 @pytest.mark.asyncio
@@ -101,13 +131,14 @@ async def test_recompute_smbg_fills_when_no_cgm():
 @pytest.mark.asyncio
 async def test_recompute_source_failure_degrades_gracefully():
     class _Boom:
-        async def fetch_reports(self, pid):
+        async def fetch_daily_reports(self, pid, start, end):
             raise RuntimeError("clickhouse down")
 
     store = PatientPanelStore(FakeCollection())
     svc = PatientPanelService(
         store=store, context_provider=lambda pid: _async({"name": "X", "has_any_data": True, "facility_id": "f1"}),
         cgm_report_service=_Boom(), vital_service=_Vitals([]), smbg_service=_SMBG([]),
+        fitness_report_service=_Fitness([]), sleep_report_service=_Sleep([]),
     )
     sig = await svc.recompute("p4")  # must not raise
     assert sig is not None
@@ -116,14 +147,71 @@ async def test_recompute_source_failure_degrades_gracefully():
 
 
 @pytest.mark.asyncio
-async def test_recompute_uses_newest_cgm_report():
-    old = {"cgm_summary_stats": {}, "cgm_range_stats": {"in_target_70_180_percent": 45}, "trend": {}}
-    new = {"cgm_summary_stats": {}, "cgm_range_stats": {"in_target_70_180_percent": 96}, "trend": {}}
+async def test_recompute_aggregates_daily_cgm_reading_weighted():
+    day_a = {"metadata": {"total_readings": 100},
+             "cgm_summary_stats": {"average_glucose_mgdl": 120},
+             "cgm_range_stats": {"in_target_70_180_percent": 60}}
+    day_b = {"metadata": {"total_readings": 300},
+             "cgm_summary_stats": {"average_glucose_mgdl": 120},
+             "cgm_range_stats": {"in_target_70_180_percent": 96}}
     ctx = {"name": "Raj", "modality": Modality.CGM, "has_any_data": True, "facility_id": "f1"}
-    svc, _ = _service(ctx=ctx, reports=[old, new])
+    svc, _ = _service(ctx=ctx, reports=[day_a, day_b])
     sig = await svc.recompute("p5")
-    assert sig.tir_pct == 96
+    assert sig.tir_pct == 87.0
     assert sig.assessment is PanelAssessment.RESPONDING
+
+
+@pytest.mark.asyncio
+async def test_worklist_needs_review_and_mark_reviewed():
+    ctx = {"name": "Sunita", "modality": Modality.CGM, "has_any_data": True,
+           "facility_id": "f1", "care_provider_ids": ["cp1"]}
+    report = {"metadata": {"total_readings": 288},
+              "cgm_summary_stats": {"nocturnal_time_below_70_percent": 41},
+              "cgm_range_stats": {"in_target_70_180_percent": 78}}
+    svc, store = _service(ctx=ctx, reports=[report])
+
+    first = await svc.recompute("p1")
+    assert first.assessment is PanelAssessment.AT_RISK
+    assert first.needs_review is True and first.state_since is not None
+
+    again = await svc.recompute("p1")
+    assert again.needs_review is True
+    assert again.state_since == first.state_since
+
+    assert await svc.mark_reviewed("p1") is True
+    reviewed = await svc.recompute("p1")
+    assert reviewed.needs_review is False
+
+
+@pytest.mark.asyncio
+async def test_worklist_resurfaces_on_change():
+    ctx = {"name": "Raj", "modality": Modality.CGM, "has_any_data": True, "facility_id": "f1"}
+    good = {"metadata": {"total_readings": 288}, "cgm_range_stats": {"in_target_70_180_percent": 96}}
+    svc, _ = _service(ctx=ctx, reports=[good])
+    resp = await svc.recompute("p2")
+    assert resp.assessment is PanelAssessment.RESPONDING and resp.needs_review is False
+
+    svc._cgm._r = [{"metadata": {"total_readings": 288}, "cgm_range_stats": {"in_target_70_180_percent": 40}}]
+    worse = await svc.recompute("p2")
+    assert worse.assessment is PanelAssessment.AT_RISK
+    assert worse.needs_review is True and worse.changed_at is not None
+
+
+@pytest.mark.asyncio
+async def test_recompute_activity_drop_from_fitness():
+    ctx = {"name": "Nagarjuna", "modality": Modality.CGM, "has_any_data": True, "facility_id": "f1"}
+    cgm = [{"metadata": {"total_readings": 288}, "cgm_range_stats": {"in_target_70_180_percent": 96}}]
+
+    def day(steps, d):
+        return {"steps": steps, "metadata": {"date_range": {"start": d}}}
+
+    fit = [day(3000, "2026-08-01"), day(2800, "2026-08-02"),
+           day(200, "2026-08-10"), day(150, "2026-08-11")]
+    svc, _ = _service(ctx=ctx, reports=cgm, fitness=fit)
+    sig = await svc.recompute("p9")
+    assert sig.assessment is PanelAssessment.WATCH
+    assert "steps" in sig.reason
+    assert sig.avg_steps is not None
 
 
 @pytest.mark.asyncio

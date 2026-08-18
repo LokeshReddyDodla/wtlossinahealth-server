@@ -8,7 +8,10 @@ from lib.schemas.patient_panel_signal import (
 )
 from lib.services.patient_panel.compute import build_signal
 from lib.services.patient_panel.extract import (
+    aggregate_daily_cgm,
     cgm_inputs,
+    fitness_inputs,
+    sleep_inputs,
     smbg_inputs,
     vitals_inputs,
 )
@@ -49,6 +52,21 @@ class FakeCollection:
 
     async def replace_one(self, flt, doc, upsert=False):
         self.docs[flt["patient_id"]] = doc
+
+    async def find_one(self, flt, projection=None):
+        for d in self.docs.values():
+            if self._match(d, flt):
+                r = dict(d)
+                r.pop("_id", None)
+                return r
+        return None
+
+    async def update_one(self, flt, update):
+        for d in self.docs.values():
+            if self._match(d, flt):
+                d.update(update.get("$set", {}))
+                return type("R", (), {"matched_count": 1})()
+        return type("R", (), {"matched_count": 0})()
 
     def _match(self, d, q):
         for k, v in q.items():
@@ -167,3 +185,63 @@ def test_vitals_inputs_picks_a1c():
 def test_smbg_inputs_averages():
     assert smbg_inputs([{"value": 110}, {"value": 130}, {"value": 120}])["smbg_avg"] == 120
     assert smbg_inputs([]) == {}
+
+
+def test_sleep_inputs_avg_hours():
+    reports = [
+        {"duration": {"total_duration": 420}},
+        {"duration": {"total_duration": 360}},
+        {"duration": {}},
+    ]
+    assert sleep_inputs(reports)["avg_sleep_hours"] == 6.5
+    assert sleep_inputs([]) == {}
+
+
+def test_fitness_inputs_avg_and_activity_drop():
+    def day(steps, d):
+        return {"steps": steps, "metadata": {"date_range": {"start": d}}}
+    reports = [day(3000, "2026-08-01"), day(2500, "2026-08-02"),
+               day(300, "2026-08-10"), day(150, "2026-08-11")]
+    out = fitness_inputs(reports)
+    assert out["avg_steps"] == round((3000 + 2500 + 300 + 150) / 4)
+    assert out["activity_dropping"] is True
+    assert "steps 2,750→225" in out["activity_note"]
+
+    steady = [day(4000, "2026-08-01"), day(4200, "2026-08-02"),
+              day(3900, "2026-08-10"), day(4100, "2026-08-11")]
+    assert "activity_dropping" not in fitness_inputs(steady)
+    assert fitness_inputs([]) == {}
+
+
+def test_aggregate_daily_cgm_reading_weighted():
+    reports = [
+        {"metadata": {"total_readings": 100}, "cgm_summary_stats": {"average_glucose_mgdl": 100},
+         "cgm_range_stats": {"in_target_70_180_percent": 50}},
+        {"metadata": {"total_readings": 300}, "cgm_summary_stats": {"average_glucose_mgdl": 140},
+         "cgm_range_stats": {"in_target_70_180_percent": 90}},
+    ]
+    out = aggregate_daily_cgm(reports)
+    assert out["tir_pct"] == 80.0
+    assert out["avg_glucose"] == 130.0
+    assert out["gmi"] == round(3.31 + 0.02392 * 130.0, 1)
+    assert out["reading_count"] == 400
+
+
+def test_aggregate_daily_cgm_computes_tir_direction():
+    older = {"metadata": {"total_readings": 200, "date_range": {"start": "2026-08-01"}},
+             "cgm_range_stats": {"in_target_70_180_percent": 60}}
+    newer = {"metadata": {"total_readings": 200, "date_range": {"start": "2026-08-10"}},
+             "cgm_range_stats": {"in_target_70_180_percent": 90}}
+    out = aggregate_daily_cgm([newer, older])
+    assert out["tir_delta"] == 30.0
+    assert aggregate_daily_cgm([older])["tir_delta"] is None
+
+
+def test_aggregate_daily_cgm_skips_zero_reading_days():
+    reports = [
+        {"metadata": {"total_readings": 0}, "cgm_range_stats": {"in_target_70_180_percent": 10}},
+        {"metadata": {"total_readings": 200}, "cgm_range_stats": {"in_target_70_180_percent": 88}},
+    ]
+    out = aggregate_daily_cgm(reports)
+    assert out["tir_pct"] == 88.0 and out["reading_count"] == 200
+    assert aggregate_daily_cgm([]) == {}

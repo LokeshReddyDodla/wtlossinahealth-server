@@ -12,6 +12,7 @@ class PanelAssessment(str, Enum):
     RESPONDING = "responding"
     WATCH = "watch"
     AT_RISK = "at_risk"
+    LAPSED = "lapsed"
     DATA_GAP = "data_gap"
     NOT_STARTED = "not_started"
 
@@ -20,6 +21,12 @@ class ReasonSeverity(str, Enum):
     URGENT = "urgent"
     WATCH = "watch"
     INFO = "info"
+
+
+class DataConfidence(str, Enum):
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
 
 
 class GlucoseSource(str, Enum):
@@ -112,6 +119,17 @@ class PatientPanelSignal(BaseModel):
     glucose_sync_stale: bool = False
     last_active_at: datetime | None = None
     adherence_pct: float | None = None
+    avg_steps: int | None = None
+    avg_sleep_hours: float | None = None
+
+    days_of_data: int | None = None
+    sensor_active_pct: float | None = None
+    data_confidence: DataConfidence | None = None
+
+    state_since: datetime | None = None
+    changed_at: datetime | None = None
+    reviewed_at: datetime | None = None
+    needs_review: bool = False
 
     computed_at: datetime
     sources_fresh_as_of: dict[str, datetime] = Field(default_factory=dict)

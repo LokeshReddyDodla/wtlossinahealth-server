@@ -66,14 +66,13 @@ from lib.services.patient_diet_plan_service import PatientDietPlanService
 from lib.services.patient_fitness_plan_service import PatientFitnessPlanService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.services.vector import PatientProfileVectorService
-from lib.services.patient_sleep_service import PatientSleepService
 from lib.services.patient_smbg_service import PatientSmbgService
 from lib.services.patient_vital_service import PatientVitalService
 from lib.services.patient_summary import PatientSummaryService
 from lib.services.active_patient_service import ActivePatientService
 from lib.services.osteoflag_service import OsteoFlagService
 from lib.services.reports import SleepReportService
-from lib.services.vector import SMBGVectorService, VitalsVectorService, WorkoutVectorService
+from lib.services.vector import SleepVectorService, SMBGVectorService, VitalsVectorService, WorkoutVectorService
 from lib.services.sqs_service import SQSService
 from lib.services.token_usage_service import TokenUsageService
 from lib.services.user_device_service import UserDeviceService
@@ -291,13 +290,6 @@ def get_active_patient_service() -> ActivePatientService:
     )
 
 
-def get_patient_sleep_service() -> PatientSleepService:
-    return cast(
-        PatientSleepService,
-        container.resolve(PatientSleepService),
-    )
-
-
 def get_meal_service() -> MealService:
     return cast(
         MealService,
@@ -472,6 +464,10 @@ def get_cgm_vector_service() -> CGMVectorService:
 
 def get_fitness_vector_service() -> FitnessVectorService:
     return cast(FitnessVectorService, container.resolve(FitnessVectorService))
+
+
+def get_sleep_vector_service() -> SleepVectorService:
+    return cast(SleepVectorService, container.resolve(SleepVectorService))
 
 
 def get_meal_vector_service() -> MealVectorService:

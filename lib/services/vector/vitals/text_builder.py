@@ -48,6 +48,11 @@ class VitalsTextReprBuilder:
         if heart_rate is not None:
             vital_measurements.append(f"Heart rate: {heart_rate} bpm")
 
+        # Resting heart rate
+        resting_heart_rate = vital.get("resting_heart_rate")
+        if resting_heart_rate is not None:
+            vital_measurements.append(f"Resting heart rate: {resting_heart_rate} bpm")
+
         # Temperature
         temperature = vital.get("temperature")
         if temperature is not None:

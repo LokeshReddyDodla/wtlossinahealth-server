@@ -8,8 +8,8 @@ from lib.schemas.patient_panel_signal import PatientPanelSignal
 
 _SORTABLE = {
     "priority", "name", "tir_pct", "avg_glucose", "cv_pct", "gmi",
-    "below_70_pct", "above_180_pct", "a1c", "adherence_pct",
-    "last_glucose_at", "last_active_at", "computed_at",
+    "below_70_pct", "above_180_pct", "a1c", "adherence_pct", "avg_steps",
+    "avg_sleep_hours", "last_glucose_at", "last_active_at", "computed_at",
 }
 
 
@@ -30,9 +30,19 @@ class PatientPanelStore:
             [("facility_id", 1), ("modality", 1)], name="panel_scope_modality_idx"
         )
 
+    async def get(self, patient_id: str) -> dict[str, Any] | None:
+        return await self._col.find_one({"patient_id": patient_id}, {"_id": 0})
+
     async def upsert(self, signal: PatientPanelSignal) -> None:
         doc = signal.model_dump(mode="json")
         await self._col.replace_one({"patient_id": signal.patient_id}, doc, upsert=True)
+
+    async def mark_reviewed(self, patient_id: str, at: str) -> bool:
+        result = await self._col.update_one(
+            {"patient_id": patient_id},
+            {"$set": {"reviewed_at": at, "needs_review": False}},
+        )
+        return result.matched_count > 0
 
     async def list(
         self,
@@ -43,6 +53,7 @@ class PatientPanelStore:
         status: str | None = None,
         modality: str | None = None,
         search: str | None = None,
+        needs_review: bool | None = None,
         sort: str = "priority",
         order: int = 1,
         skip: int = 0,
@@ -57,6 +68,8 @@ class PatientPanelStore:
             q["assessment"] = status
         if modality:
             q["modality"] = modality
+        if needs_review is not None:
+            q["needs_review"] = needs_review
         if search:
             q["name"] = {"$regex": search, "$options": "i"}
 

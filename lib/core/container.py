@@ -84,7 +84,6 @@ from lib.services.patient_profile_service import PatientProfileService
 from lib.services.profile_agent import ProfileAgentService
 from lib.services.vector import PatientProfileVectorService
 from lib.services.vector.plans import PlansVectorService
-from lib.services.patient_sleep_service import PatientSleepService
 from lib.services.patient_smbg_service import PatientSmbgService
 from lib.services.patient_vital_service import PatientVitalService
 from lib.services.patient_summary import PatientSummaryService
@@ -106,7 +105,7 @@ from lib.services.osteoflag_service import OsteoFlagService
 
 # Processors
 from lib.services.reports import SleepReportService
-from lib.services.vector import SMBGVectorService, WorkoutVectorService
+from lib.services.vector import SleepVectorService, SMBGVectorService, WorkoutVectorService
 from lib.services.vector.checkin import CheckinVectorService
 from lib.services.daily_checkin_service import DailyCheckinService
 from lib.services.sqs_service import SQSService
@@ -444,6 +443,8 @@ container.register(
         cgm_report_service=cast(CGMReportService, container.resolve(CGMReportService)),
         vital_service=cast(PatientVitalService, container.resolve(PatientVitalService)),
         smbg_service=cast(PatientSmbgService, container.resolve(PatientSmbgService)),
+        fitness_report_service=cast(FitnessReportService, container.resolve(FitnessReportService)),
+        sleep_report_service=cast(SleepReportService, container.resolve(SleepReportService)),
     ),
     scope=Scope.singleton,
 )
@@ -507,17 +508,6 @@ container.register(
     PatientVitalService,
     lambda: PatientVitalService(
         clickhouse_store=cast(ClickHouseStore, container.resolve(ClickHouseStore)),
-    ),
-)
-
-# 🔹 Patient Sleep Service
-container.register(
-    PatientSleepService,
-    lambda: PatientSleepService(
-        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
-        patient_profile_service=cast(
-            PatientProfileService, container.resolve(PatientProfileService)
-        ),
     ),
 )
 
@@ -983,6 +973,15 @@ container.register(
 container.register(
     FitnessVectorService,
     lambda: FitnessVectorService(
+        qdrant_store=cast(QdrantStore, container.resolve(QdrantStore))
+    ),
+)
+
+
+# 🔹 Sleep Vector Service
+container.register(
+    SleepVectorService,
+    lambda: SleepVectorService(
         qdrant_store=cast(QdrantStore, container.resolve(QdrantStore))
     ),
 )

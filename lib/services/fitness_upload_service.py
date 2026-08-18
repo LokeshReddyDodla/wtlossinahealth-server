@@ -8,9 +8,16 @@ from lib.workers.tasks.fitness.enqueue import (
     enqueue_process_fitness_upload_async,
 )
 from lib.workers.tasks.sleep.enqueue import enqueue_process_sleep_upload_async
+from lib.workers.tasks.vitals.enqueue import enqueue_generate_vital_vector_async
 from lib.utils.postgres_session_decorator import with_postgres_session
 from rest_server.patients.fitness.api_schema import FitnessDataRequest
 from sqlalchemy.ext.asyncio import AsyncSession
+
+_FITNESS_VITAL_KEY = {"blood_oxygen": "spo2", "body_temperature": "temperature"}
+_VECTORIZED_VITALS = {
+    "heart_rate", "resting_heart_rate", "systolic_bp", "diastolic_bp",
+    "spo2", "temperature", "respiratory_rate", "weight",
+}
 
 
 class FitnessUploadService:
@@ -200,6 +207,7 @@ class FitnessUploadService:
 
         if vitals_data_points:
             self.clickhouse_store.write_data("aihealth.vitals_data", vitals_data_points)
+            await self._enqueue_vitals_vector(patient_id, vitals_data_points)
 
         if fitness_data.blood_glucose:
             values = [
@@ -223,6 +231,24 @@ class FitnessUploadService:
                 },
             )
             await postgres_session.execute(stmt)
+
+    async def _enqueue_vitals_vector(self, patient_id: str, points: list[dict]) -> None:
+        latest: dict[str, dict] = {}
+        for p in points:
+            key = _FITNESS_VITAL_KEY.get(p["type"], p["type"])
+            if key in _VECTORIZED_VITALS and (key not in latest or p["time"] > latest[key]["time"]):
+                latest[key] = p
+        if not latest:
+            return
+        newest = max(latest.values(), key=lambda p: p["time"])
+        snapshot: dict = {key: p["value"] for key, p in latest.items()}
+        snapshot.update({
+            "test_time": newest["time"],
+            "source_name": newest.get("source_name") or "wearable",
+            "source_platform": newest.get("source_platform") or "",
+        })
+        vital_id = f"fitness:{patient_id}:{newest['time'].date()}"
+        await enqueue_generate_vital_vector_async(patient_id, vital_id, snapshot)
 
     async def update_last_sync(self, patient_id: str, dateTo: datetime):
         fitness_sync_key = f"fitness_sync:{patient_id}"
