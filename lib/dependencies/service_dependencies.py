@@ -66,7 +66,6 @@ from lib.services.patient_diet_plan_service import PatientDietPlanService
 from lib.services.patient_fitness_plan_service import PatientFitnessPlanService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.services.vector import PatientProfileVectorService
-from lib.services.patient_sleep_service import PatientSleepService
 from lib.services.patient_smbg_service import PatientSmbgService
 from lib.services.patient_vital_service import PatientVitalService
 from lib.services.patient_summary import PatientSummaryService
@@ -288,13 +287,6 @@ def get_active_patient_service() -> ActivePatientService:
     return cast(
         ActivePatientService,
         container.resolve(ActivePatientService),
-    )
-
-
-def get_patient_sleep_service() -> PatientSleepService:
-    return cast(
-        PatientSleepService,
-        container.resolve(PatientSleepService),
     )
 
 

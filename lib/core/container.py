@@ -84,7 +84,6 @@ from lib.services.patient_profile_service import PatientProfileService
 from lib.services.profile_agent import ProfileAgentService
 from lib.services.vector import PatientProfileVectorService
 from lib.services.vector.plans import PlansVectorService
-from lib.services.patient_sleep_service import PatientSleepService
 from lib.services.patient_smbg_service import PatientSmbgService
 from lib.services.patient_vital_service import PatientVitalService
 from lib.services.patient_summary import PatientSummaryService
@@ -508,17 +507,6 @@ container.register(
     PatientVitalService,
     lambda: PatientVitalService(
         clickhouse_store=cast(ClickHouseStore, container.resolve(ClickHouseStore)),
-    ),
-)
-
-# 🔹 Patient Sleep Service
-container.register(
-    PatientSleepService,
-    lambda: PatientSleepService(
-        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
-        patient_profile_service=cast(
-            PatientProfileService, container.resolve(PatientProfileService)
-        ),
     ),
 )
 
