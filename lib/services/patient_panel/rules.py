@@ -11,6 +11,8 @@ from lib.schemas.patient_panel_signal import (
 from lib.services.patient_panel.thresholds import for_patient
 
 _P_AT_RISK = 0
+_P_AT_RISK_CHRONIC = 5
+_P_WATCH_DECLINING = 18
 _P_WATCH = 20
 _P_DATA_GAP = 30
 _P_NOT_STARTED = 40
@@ -53,9 +55,9 @@ def classify(inp: PanelInputs) -> Triage:
         return _at_risk(f"Frequent lows · {inp.hypo_events} events")
 
     if inp.a1c is not None and inp.a1c >= t.a1c_high:
-        return _at_risk(f"A1c {_pct(inp.a1c)}, uncontrolled")
+        return _at_risk(f"A1c {_pct(inp.a1c)}, uncontrolled", _P_AT_RISK_CHRONIC)
     if inp.tir_pct is not None and inp.tir_pct < t.tir_watch_floor:
-        return _at_risk(f"TIR {_pct(inp.tir_pct)} · poorly controlled")
+        return _at_risk(f"TIR {_pct(inp.tir_pct)} · poorly controlled", _P_AT_RISK_CHRONIC)
 
     if inp.glucose_expected and not _has_other_signal(inp):
         has_glucose_summary = (
@@ -80,7 +82,7 @@ def classify(inp: PanelInputs) -> Triage:
     if inp.smbg_avg is not None and inp.smbg_avg > t.smbg_goal:
         return _watch(f"SMBG avg {_num(inp.smbg_avg)} · above goal")
     if inp.tir_delta is not None and inp.tir_delta <= -t.tir_drop_mild:
-        return _watch(f"TIR slipping ({inp.tir_delta:+g})")
+        return _watch(f"TIR slipping ({inp.tir_delta:+g})", _P_WATCH_DECLINING)
     if inp.cv_pct is not None and inp.cv_pct > t.cv_high:
         return _watch(f"High variability · CV {_pct(inp.cv_pct)}")
     if inp.activity_dropping:
@@ -114,21 +116,21 @@ def _has_other_signal(inp: PanelInputs) -> bool:
     return inp.a1c is not None or inp.weight_delta_kg is not None or inp.activity_dropping
 
 
-def _at_risk(reason: str) -> Triage:
+def _at_risk(reason: str, priority: int = _P_AT_RISK) -> Triage:
     return Triage(
         assessment=PanelAssessment.AT_RISK,
         reason=reason,
         severity=ReasonSeverity.URGENT,
-        priority=_P_AT_RISK,
+        priority=priority,
     )
 
 
-def _watch(reason: str) -> Triage:
+def _watch(reason: str, priority: int = _P_WATCH) -> Triage:
     return Triage(
         assessment=PanelAssessment.WATCH,
         reason=reason,
         severity=ReasonSeverity.WATCH,
-        priority=_P_WATCH,
+        priority=priority,
     )
 
 

@@ -119,6 +119,18 @@ def test_weight_only_patient_is_responding_not_gap():
     assert "-6.4 kg" in r.reason
 
 
+def test_acuity_hypo_outranks_chronic_outranks_declining_watch():
+    hypo = classify(mk(nocturnal_below_70_pct=41))
+    chronic = classify(mk(a1c=10.5))
+    declining = classify(mk(tir_pct=72, tir_delta=-6))
+    stable_watch = classify(mk(tir_pct=62))
+    assert hypo.priority == 0
+    assert chronic.priority == 5
+    assert declining.priority == 18
+    assert stable_watch.priority == 20
+    assert hypo.priority < chronic.priority < declining.priority < stable_watch.priority
+
+
 def test_no_evidence_is_data_gap_not_responding():
     r = classify(mk(has_any_data=True, glucose_expected=False))
     assert r.assessment is PanelAssessment.DATA_GAP
