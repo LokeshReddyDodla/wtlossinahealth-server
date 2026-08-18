@@ -40,7 +40,6 @@ from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.postgres_session_decorator import with_postgres_session
 from rest_server.patients.meals.api_schema import (
     PatientMealUpdateRequest,
-    PatientMealUploadRequest,
 )
 
 from .helpers import (
@@ -264,67 +263,6 @@ class MealService:
             ]
 
         except SQLAlchemyError as e:
-            raise_http_exception(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                message="Database Error",
-                detail=str(e),
-            )
-
-    @with_postgres_session
-    async def upload_meal(
-        self,
-        meal_data: PatientMealUploadRequest,
-        patient_id: str,
-        *,
-        postgres_session: AsyncSession,
-    ) -> PatientMealModel:
-        try:
-            _img_urls = _normalize_to_image_urls(meal_data.image_url, meal_data.image_urls)
-            meal = PatientMealModel(
-                type=meal_data.type,
-                slot=meal_data.type,
-                time=meal_data.datetime.time(),
-                date=meal_data.datetime.date(),
-                source=meal_data.source,
-                description=meal_data.description,
-                image_urls=_img_urls,
-                patient_id=patient_id,
-            )
-
-            postgres_session.add(meal)
-            await postgres_session.commit()
-            await postgres_session.refresh(meal)
-
-            await enqueue_daily_meal_report_async(str(patient_id), meal.date)
-
-            # EventBus publish — gamification (and any future subscribers)
-            # react from here, same as the save_from_preview flow.
-            try:
-                from lib.ai_foundation.events.bus import EventBus
-                from lib.ai_foundation.events.schemas import HealthEvent, HealthEventType
-                from lib.core.container import container
-
-                bus = container.resolve(EventBus)
-                await bus.publish(
-                    HealthEvent(
-                        event_type=HealthEventType.MEAL_LOGGED.value,
-                        patient_id=str(patient_id),
-                        data={
-                            "meal_id": str(meal.id),
-                            "slot": meal.type,
-                            "consumed_at": meal_data.datetime.isoformat(),
-                            "source": meal.source,
-                        },
-                        source_agent="meal_upload",
-                    )
-                )
-            except Exception:
-                logger.exception("MEAL_LOGGED publish failed for %s", patient_id)
-
-            return meal
-
-        except SQLAlchemyError as e:
-            await postgres_session.rollback()
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 message="Database Error",
