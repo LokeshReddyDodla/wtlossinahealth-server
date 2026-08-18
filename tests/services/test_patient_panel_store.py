@@ -184,6 +184,16 @@ def test_aggregate_daily_cgm_reading_weighted():
     assert out["reading_count"] == 400
 
 
+def test_aggregate_daily_cgm_computes_tir_direction():
+    older = {"metadata": {"total_readings": 200, "date_range": {"start": "2026-08-01"}},
+             "cgm_range_stats": {"in_target_70_180_percent": 60}}
+    newer = {"metadata": {"total_readings": 200, "date_range": {"start": "2026-08-10"}},
+             "cgm_range_stats": {"in_target_70_180_percent": 90}}
+    out = aggregate_daily_cgm([newer, older])
+    assert out["tir_delta"] == 30.0
+    assert aggregate_daily_cgm([older])["tir_delta"] is None
+
+
 def test_aggregate_daily_cgm_skips_zero_reading_days():
     reports = [
         {"metadata": {"total_readings": 0}, "cgm_range_stats": {"in_target_70_180_percent": 10}},

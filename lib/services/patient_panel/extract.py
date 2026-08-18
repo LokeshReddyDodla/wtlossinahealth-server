@@ -45,24 +45,42 @@ _AGG_FIELDS = (
 )
 
 
+def _wmean(rows: list[tuple[float, dict]], field: str) -> float | None:
+    num = sum(w * v[field] for w, v in rows if v.get(field) is not None)
+    den = sum(w for w, v in rows if v.get(field) is not None)
+    return round(num / den, 1) if den else None
+
+
+def _tir_direction(rows: list[tuple[float, dict, str]]) -> float | None:
+    if len(rows) < 2:
+        return None
+    ordered = sorted(rows, key=lambda t: t[2])
+    mid = len(ordered) // 2
+    older = _wmean([(w, v) for w, v, _ in ordered[:mid]], "tir_pct")
+    newer = _wmean([(w, v) for w, v, _ in ordered[mid:]], "tir_pct")
+    if older is None or newer is None:
+        return None
+    return round(newer - older, 1)
+
+
 def aggregate_daily_cgm(reports: list[dict[str, Any]] | None) -> dict[str, Any]:
-    """Reading-weighted mean of daily CGM reports into one window summary."""
+    """Reading-weighted mean of daily CGM reports into one window summary,
+    plus a week-over-week TIR direction (newer half vs older half)."""
     rows = []
     for r in reports or []:
         weight = ((r.get("metadata") or {}).get("total_readings")) or 0
         if weight > 0:
-            rows.append((weight, cgm_inputs(r)))
+            date = ((r.get("metadata") or {}).get("date_range") or {}).get("start") or ""
+            rows.append((weight, cgm_inputs(r), date))
     if not rows:
         return {}
 
-    out: dict[str, Any] = {}
-    for field in _AGG_FIELDS:
-        num = sum(w * v[field] for w, v in rows if v.get(field) is not None)
-        den = sum(w for w, v in rows if v.get(field) is not None)
-        out[field] = round(num / den, 1) if den else None
+    plain = [(w, v) for w, v, _ in rows]
+    out: dict[str, Any] = {field: _wmean(plain, field) for field in _AGG_FIELDS}
     if out.get("avg_glucose") is not None:
         out["gmi"] = round(3.31 + 0.02392 * out["avg_glucose"], 1)
-    out["reading_count"] = sum(w for w, _ in rows)
+    out["tir_delta"] = _tir_direction(rows)
+    out["reading_count"] = sum(w for w, _, _ in rows)
     return out
 
 
