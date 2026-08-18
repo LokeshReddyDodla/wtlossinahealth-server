@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import uuid4
 
 from lib.core.clickhouse_store import ClickHouseStore
@@ -53,6 +53,18 @@ class PatientVitalService:
     async def get_latest_vitals(self, patient_id: str) -> list[dict]:
         """Most recent reading per vital type."""
         return self.clickhouse.query_vitals_latest(patient_id)
+
+    async def get_weight_history(self, patient_id: str, days: int = 60) -> list[dict]:
+        """Weight readings over the trailing window, for weight-trend triage."""
+        end = datetime.utcnow()
+        rows, _ = self.clickhouse.query_vitals(
+            patient_id,
+            start_time=end - timedelta(days=days),
+            end_time=end,
+            types=["weight"],
+            limit=200,
+        )
+        return rows
 
     async def upload_patient_vital(
         self,

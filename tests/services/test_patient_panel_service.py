@@ -22,11 +22,15 @@ class _CGM:
 
 
 class _Vitals:
-    def __init__(self, rows):
+    def __init__(self, rows, weight=None):
         self._rows = rows
+        self._weight = weight or []
 
     async def get_latest_vitals(self, patient_id):
         return self._rows
+
+    async def get_weight_history(self, patient_id, days=60):
+        return self._weight
 
 
 class _SMBG:
@@ -53,13 +57,13 @@ class _Sleep:
         return self._r
 
 
-def _service(*, ctx, reports=None, vitals=None, smbgs=None, fitness=None, sleep=None):
+def _service(*, ctx, reports=None, vitals=None, smbgs=None, fitness=None, sleep=None, weight=None):
     store = PatientPanelStore(FakeCollection())
     svc = PatientPanelService(
         store=store,
         context_provider=lambda pid: _async(ctx),
         cgm_report_service=_CGM(reports or []),
-        vital_service=_Vitals(vitals or []),
+        vital_service=_Vitals(vitals or [], weight=weight),
         smbg_service=_SMBG(smbgs or []),
         fitness_report_service=_Fitness(fitness or []),
         sleep_report_service=_Sleep(sleep or []),
@@ -128,6 +132,27 @@ async def test_recompute_smbg_fills_when_no_cgm():
     sig = await svc.recompute("p3")
     assert sig.smbg_avg == 152
     assert sig.assessment is PanelAssessment.WATCH  # > 140 goal
+
+
+@pytest.mark.asyncio
+async def test_recompute_weight_loss_is_responding():
+    ctx = {"name": "Rohan", "modality": Modality.WEIGHT, "has_any_data": True,
+           "facility_id": "f1", "glucose_expected": False}
+    weight = [{"time": "2026-06-01", "value": 92.0}, {"time": "2026-07-30", "value": 88.5}]
+    svc, _ = _service(ctx=ctx, reports=[], weight=weight)
+    sig = await svc.recompute("w1")
+    assert sig.weight_delta_kg == -3.5
+    assert sig.assessment is PanelAssessment.RESPONDING and "kg" in sig.reason
+
+
+@pytest.mark.asyncio
+async def test_recompute_weight_regain_is_watch():
+    ctx = {"name": "Anu", "modality": Modality.WEIGHT, "has_any_data": True,
+           "facility_id": "f1", "glucose_expected": False}
+    weight = [{"time": "2026-06-01", "value": 70.0}, {"time": "2026-07-30", "value": 72.5}]
+    svc, _ = _service(ctx=ctx, reports=[], weight=weight)
+    sig = await svc.recompute("w2")
+    assert sig.assessment is PanelAssessment.WATCH and "Weight up" in sig.reason
 
 
 @pytest.mark.asyncio

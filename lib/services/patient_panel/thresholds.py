@@ -26,6 +26,9 @@ class Thresholds:
     min_readings_14d: int
     disengaged_days: float
 
+    weight_regain_kg: float
+    weight_loss_kg: float
+
 
 STANDARD = Thresholds(
     tir_target=70,
@@ -42,6 +45,8 @@ STANDARD = Thresholds(
     no_glucose_days=14,
     min_readings_14d=4,
     disengaged_days=25,
+    weight_regain_kg=1.5,
+    weight_loss_kg=1.0,
 )
 
 PREGNANCY = Thresholds(
@@ -59,6 +64,8 @@ PREGNANCY = Thresholds(
     no_glucose_days=7,
     min_readings_14d=8,
     disengaged_days=21,
+    weight_regain_kg=1.0,
+    weight_loss_kg=1.0,
 )
 
 
