@@ -8,6 +8,7 @@ from lib.schemas.patient_panel_signal import (
 )
 from lib.services.patient_panel.compute import build_signal
 from lib.services.patient_panel.extract import (
+    aggregate_daily_cgm,
     cgm_inputs,
     smbg_inputs,
     vitals_inputs,
@@ -167,3 +168,27 @@ def test_vitals_inputs_picks_a1c():
 def test_smbg_inputs_averages():
     assert smbg_inputs([{"value": 110}, {"value": 130}, {"value": 120}])["smbg_avg"] == 120
     assert smbg_inputs([]) == {}
+
+
+def test_aggregate_daily_cgm_reading_weighted():
+    reports = [
+        {"metadata": {"total_readings": 100}, "cgm_summary_stats": {"average_glucose_mgdl": 100},
+         "cgm_range_stats": {"in_target_70_180_percent": 50}},
+        {"metadata": {"total_readings": 300}, "cgm_summary_stats": {"average_glucose_mgdl": 140},
+         "cgm_range_stats": {"in_target_70_180_percent": 90}},
+    ]
+    out = aggregate_daily_cgm(reports)
+    assert out["tir_pct"] == 80.0
+    assert out["avg_glucose"] == 130.0
+    assert out["gmi"] == round(3.31 + 0.02392 * 130.0, 1)
+    assert out["reading_count"] == 400
+
+
+def test_aggregate_daily_cgm_skips_zero_reading_days():
+    reports = [
+        {"metadata": {"total_readings": 0}, "cgm_range_stats": {"in_target_70_180_percent": 10}},
+        {"metadata": {"total_readings": 200}, "cgm_range_stats": {"in_target_70_180_percent": 88}},
+    ]
+    out = aggregate_daily_cgm(reports)
+    assert out["tir_pct"] == 88.0 and out["reading_count"] == 200
+    assert aggregate_daily_cgm([]) == {}

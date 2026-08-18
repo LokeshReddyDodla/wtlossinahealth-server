@@ -39,6 +39,33 @@ def cgm_inputs(report: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
+_AGG_FIELDS = (
+    "tir_pct", "avg_glucose", "cv_pct", "below_54_pct",
+    "below_70_pct", "above_180_pct", "nocturnal_below_70_pct",
+)
+
+
+def aggregate_daily_cgm(reports: list[dict[str, Any]] | None) -> dict[str, Any]:
+    """Reading-weighted mean of daily CGM reports into one window summary."""
+    rows = []
+    for r in reports or []:
+        weight = ((r.get("metadata") or {}).get("total_readings")) or 0
+        if weight > 0:
+            rows.append((weight, cgm_inputs(r)))
+    if not rows:
+        return {}
+
+    out: dict[str, Any] = {}
+    for field in _AGG_FIELDS:
+        num = sum(w * v[field] for w, v in rows if v.get(field) is not None)
+        den = sum(w for w, v in rows if v.get(field) is not None)
+        out[field] = round(num / den, 1) if den else None
+    if out.get("avg_glucose") is not None:
+        out["gmi"] = round(3.31 + 0.02392 * out["avg_glucose"], 1)
+    out["reading_count"] = sum(w for w, _ in rows)
+    return out
+
+
 def vitals_inputs(latest_vitals: list[dict[str, Any]] | None) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for row in latest_vitals or []:

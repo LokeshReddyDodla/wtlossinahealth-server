@@ -16,7 +16,7 @@ class _CGM:
     def __init__(self, reports):
         self._r = reports
 
-    async def fetch_reports(self, patient_id):
+    async def fetch_daily_reports(self, patient_id, start, end):
         return self._r
 
 
@@ -60,6 +60,7 @@ async def test_recompute_cgm_patient_builds_at_risk_row():
         "has_any_data": True, "last_glucose_source": GlucoseSource.CGM,
     }
     report = {
+        "metadata": {"total_readings": 288},
         "cgm_summary_stats": {"average_glucose_mgdl": 158, "gmi": 7.0,
                               "coefficient_of_variation_percent": 34,
                               "nocturnal_time_below_70_percent": 41},
@@ -71,7 +72,7 @@ async def test_recompute_cgm_patient_builds_at_risk_row():
     sig = await svc.recompute("p1")
     assert sig.assessment is PanelAssessment.AT_RISK
     assert "Nocturnal hypo 41%" in sig.reason
-    assert sig.tir_pct == 78 and sig.gmi == 7.0
+    assert sig.tir_pct == 78 and sig.gmi == 7.1
 
     rows, total = await store.list(facility_id="f1")
     assert total == 1 and rows[0]["assessment"] == "at_risk"
@@ -101,7 +102,7 @@ async def test_recompute_smbg_fills_when_no_cgm():
 @pytest.mark.asyncio
 async def test_recompute_source_failure_degrades_gracefully():
     class _Boom:
-        async def fetch_reports(self, pid):
+        async def fetch_daily_reports(self, pid, start, end):
             raise RuntimeError("clickhouse down")
 
     store = PatientPanelStore(FakeCollection())
@@ -116,13 +117,17 @@ async def test_recompute_source_failure_degrades_gracefully():
 
 
 @pytest.mark.asyncio
-async def test_recompute_uses_newest_cgm_report():
-    old = {"cgm_summary_stats": {}, "cgm_range_stats": {"in_target_70_180_percent": 45}, "trend": {}}
-    new = {"cgm_summary_stats": {}, "cgm_range_stats": {"in_target_70_180_percent": 96}, "trend": {}}
+async def test_recompute_aggregates_daily_cgm_reading_weighted():
+    day_a = {"metadata": {"total_readings": 100},
+             "cgm_summary_stats": {"average_glucose_mgdl": 120},
+             "cgm_range_stats": {"in_target_70_180_percent": 60}}
+    day_b = {"metadata": {"total_readings": 300},
+             "cgm_summary_stats": {"average_glucose_mgdl": 120},
+             "cgm_range_stats": {"in_target_70_180_percent": 96}}
     ctx = {"name": "Raj", "modality": Modality.CGM, "has_any_data": True, "facility_id": "f1"}
-    svc, _ = _service(ctx=ctx, reports=[old, new])
+    svc, _ = _service(ctx=ctx, reports=[day_a, day_b])
     sig = await svc.recompute("p5")
-    assert sig.tir_pct == 96
+    assert sig.tir_pct == 87.0
     assert sig.assessment is PanelAssessment.RESPONDING
 
 
