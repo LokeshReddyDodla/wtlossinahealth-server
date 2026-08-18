@@ -93,6 +93,28 @@ def aggregate_daily_cgm(reports: list[dict[str, Any]] | None) -> dict[str, Any]:
     return out
 
 
+def fitness_inputs(reports: list[dict[str, Any]] | None) -> dict[str, Any]:
+    rows = []
+    for r in reports or []:
+        steps = r.get("steps")
+        if steps is not None:
+            date = ((r.get("metadata") or {}).get("date_range") or {}).get("start") or ""
+            rows.append((steps, date))
+    if not rows:
+        return {}
+
+    out: dict[str, Any] = {"avg_steps": round(sum(s for s, _ in rows) / len(rows))}
+    if len(rows) >= 4:
+        ordered = sorted(rows, key=lambda t: t[1])
+        mid = len(ordered) // 2
+        older = round(sum(s for s, _ in ordered[:mid]) / mid)
+        newer = round(sum(s for s, _ in ordered[mid:]) / (len(ordered) - mid))
+        if older >= 500 and newer < older * 0.5:
+            out["activity_dropping"] = True
+            out["activity_note"] = f"steps {older:,}→{newer:,}"
+    return out
+
+
 def vitals_inputs(latest_vitals: list[dict[str, Any]] | None) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for row in latest_vitals or []:

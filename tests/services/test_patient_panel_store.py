@@ -10,6 +10,7 @@ from lib.services.patient_panel.compute import build_signal
 from lib.services.patient_panel.extract import (
     aggregate_daily_cgm,
     cgm_inputs,
+    fitness_inputs,
     smbg_inputs,
     vitals_inputs,
 )
@@ -183,6 +184,22 @@ def test_vitals_inputs_picks_a1c():
 def test_smbg_inputs_averages():
     assert smbg_inputs([{"value": 110}, {"value": 130}, {"value": 120}])["smbg_avg"] == 120
     assert smbg_inputs([]) == {}
+
+
+def test_fitness_inputs_avg_and_activity_drop():
+    def day(steps, d):
+        return {"steps": steps, "metadata": {"date_range": {"start": d}}}
+    reports = [day(3000, "2026-08-01"), day(2500, "2026-08-02"),
+               day(300, "2026-08-10"), day(150, "2026-08-11")]
+    out = fitness_inputs(reports)
+    assert out["avg_steps"] == round((3000 + 2500 + 300 + 150) / 4)
+    assert out["activity_dropping"] is True
+    assert "steps 2,750→225" in out["activity_note"]
+
+    steady = [day(4000, "2026-08-01"), day(4200, "2026-08-02"),
+              day(3900, "2026-08-10"), day(4100, "2026-08-11")]
+    assert "activity_dropping" not in fitness_inputs(steady)
+    assert fitness_inputs([]) == {}
 
 
 def test_aggregate_daily_cgm_reading_weighted():

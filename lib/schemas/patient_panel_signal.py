@@ -119,6 +119,7 @@ class PatientPanelSignal(BaseModel):
     glucose_sync_stale: bool = False
     last_active_at: datetime | None = None
     adherence_pct: float | None = None
+    avg_steps: int | None = None
 
     days_of_data: int | None = None
     sensor_active_pct: float | None = None

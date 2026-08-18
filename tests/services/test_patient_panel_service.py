@@ -37,7 +37,15 @@ class _SMBG:
         return self._readings
 
 
-def _service(*, ctx, reports=None, vitals=None, smbgs=None):
+class _Fitness:
+    def __init__(self, reports):
+        self._r = reports
+
+    async def fetch_daily_reports_in_range(self, patient_id, start, end):
+        return self._r
+
+
+def _service(*, ctx, reports=None, vitals=None, smbgs=None, fitness=None):
     store = PatientPanelStore(FakeCollection())
     svc = PatientPanelService(
         store=store,
@@ -45,6 +53,7 @@ def _service(*, ctx, reports=None, vitals=None, smbgs=None):
         cgm_report_service=_CGM(reports or []),
         vital_service=_Vitals(vitals or []),
         smbg_service=_SMBG(smbgs or []),
+        fitness_report_service=_Fitness(fitness or []),
     )
     return svc, store
 
@@ -120,6 +129,7 @@ async def test_recompute_source_failure_degrades_gracefully():
     svc = PatientPanelService(
         store=store, context_provider=lambda pid: _async({"name": "X", "has_any_data": True, "facility_id": "f1"}),
         cgm_report_service=_Boom(), vital_service=_Vitals([]), smbg_service=_SMBG([]),
+        fitness_report_service=_Fitness([]),
     )
     sig = await svc.recompute("p4")  # must not raise
     assert sig is not None
@@ -176,6 +186,23 @@ async def test_worklist_resurfaces_on_change():
     worse = await svc.recompute("p2")
     assert worse.assessment is PanelAssessment.AT_RISK
     assert worse.needs_review is True and worse.changed_at is not None
+
+
+@pytest.mark.asyncio
+async def test_recompute_activity_drop_from_fitness():
+    ctx = {"name": "Nagarjuna", "modality": Modality.CGM, "has_any_data": True, "facility_id": "f1"}
+    cgm = [{"metadata": {"total_readings": 288}, "cgm_range_stats": {"in_target_70_180_percent": 96}}]
+
+    def day(steps, d):
+        return {"steps": steps, "metadata": {"date_range": {"start": d}}}
+
+    fit = [day(3000, "2026-08-01"), day(2800, "2026-08-02"),
+           day(200, "2026-08-10"), day(150, "2026-08-11")]
+    svc, _ = _service(ctx=ctx, reports=cgm, fitness=fit)
+    sig = await svc.recompute("p9")
+    assert sig.assessment is PanelAssessment.WATCH
+    assert "steps" in sig.reason
+    assert sig.avg_steps is not None
 
 
 @pytest.mark.asyncio

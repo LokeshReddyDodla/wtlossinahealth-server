@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from lib.schemas.patient_panel_signal import (
@@ -18,6 +18,7 @@ from lib.schemas.patient_panel_signal import (
 from lib.services.patient_panel.compute import build_signal
 from lib.services.patient_panel.extract import (
     aggregate_daily_cgm,
+    fitness_inputs,
     smbg_inputs,
     vitals_inputs,
 )
@@ -27,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 ContextProvider = Callable[[str], Awaitable[dict[str, Any]]]
 
-_CGM_WINDOW_DAYS = 14
+_WINDOW_DAYS = 14
 _CGM_LAPSED_LOOKBACK_DAYS = 60
 
 
@@ -83,12 +84,14 @@ class PatientPanelService:
         cgm_report_service: Any,
         vital_service: Any,
         smbg_service: Any,
+        fitness_report_service: Any,
     ):
         self._store = store
         self._context = context_provider
         self._cgm = cgm_report_service
         self._vitals = vital_service
         self._smbg = smbg_service
+        self._fitness = fitness_report_service
 
     async def recompute(self, patient_id: str) -> PatientPanelSignal | None:
         ctx = await self._safe(self._context(patient_id), {})
@@ -96,16 +99,17 @@ class PatientPanelService:
             return None
 
         merged: dict[str, Any] = {}
-        cgm, cgm_meta = await self._cgm_window(patient_id, _CGM_WINDOW_DAYS)
+        cgm, cgm_meta = await self._cgm_window(patient_id, _WINDOW_DAYS)
         if not cgm and ctx.get("glucose_sync_stale"):
             cgm, cgm_meta = await self._cgm_window(patient_id, _CGM_LAPSED_LOOKBACK_DAYS)
         merged.update(cgm)
         merged.update(vitals_inputs(await self._safe(self._vitals.get_latest_vitals(patient_id), [])))
         if merged.get("tir_pct") is None:
             merged.update(smbg_inputs(await self._safe(self._smbg.get_patient_smbgs(patient_id), [])))
+        fitness = await self._fitness_window(patient_id)
 
         inputs = PanelInputs(
-            has_any_data=bool(ctx.get("has_any_data", bool(merged))),
+            has_any_data=bool(ctx.get("has_any_data", bool(merged) or bool(fitness))),
             is_pregnant=ctx.get("is_pregnant", False),
             glucose_expected=ctx.get("glucose_expected", True),
             enrolled_days=ctx.get("enrolled_days"),
@@ -115,8 +119,8 @@ class PatientPanelService:
             glucose_sync_stale_days=ctx.get("glucose_sync_stale_days"),
             weight_delta_kg=ctx.get("weight_delta_kg"),
             adherence_pct=ctx.get("adherence_pct"),
-            activity_dropping=ctx.get("activity_dropping", False),
-            activity_note=ctx.get("activity_note"),
+            activity_dropping=fitness.get("activity_dropping", False),
+            activity_note=fitness.get("activity_note"),
             **merged,
         )
 
@@ -133,6 +137,7 @@ class PatientPanelService:
             last_glucose_at=ctx.get("last_glucose_at"),
             last_glucose_source=ctx.get("last_glucose_source") or GlucoseSource.NONE,
             last_active_at=ctx.get("last_active_at"),
+            avg_steps=fitness.get("avg_steps"),
             days_of_data=cgm_meta["days_of_data"],
             sensor_active_pct=cgm_meta["sensor_active_pct"],
             data_confidence=cgm_meta["data_confidence"],
@@ -152,6 +157,14 @@ class PatientPanelService:
 
     async def ensure_indexes(self) -> None:
         await self._store.ensure_indexes()
+
+    async def _fitness_window(self, patient_id: str) -> dict[str, Any]:
+        end = date.today()
+        start = end - timedelta(days=_WINDOW_DAYS)
+        reports = await self._safe(
+            self._fitness.fetch_daily_reports_in_range(patient_id, start, end), []
+        )
+        return fitness_inputs(reports)
 
     async def _cgm_window(self, patient_id: str, days: int) -> tuple[dict[str, Any], dict[str, Any]]:
         end = datetime.now(timezone.utc).replace(tzinfo=None)
