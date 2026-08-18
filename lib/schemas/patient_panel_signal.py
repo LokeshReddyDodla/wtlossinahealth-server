@@ -124,5 +124,10 @@ class PatientPanelSignal(BaseModel):
     sensor_active_pct: float | None = None
     data_confidence: DataConfidence | None = None
 
+    state_since: datetime | None = None
+    changed_at: datetime | None = None
+    reviewed_at: datetime | None = None
+    needs_review: bool = False
+
     computed_at: datetime
     sources_fresh_as_of: dict[str, datetime] = Field(default_factory=dict)

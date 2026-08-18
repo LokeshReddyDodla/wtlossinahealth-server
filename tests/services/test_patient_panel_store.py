@@ -51,6 +51,21 @@ class FakeCollection:
     async def replace_one(self, flt, doc, upsert=False):
         self.docs[flt["patient_id"]] = doc
 
+    async def find_one(self, flt, projection=None):
+        for d in self.docs.values():
+            if self._match(d, flt):
+                r = dict(d)
+                r.pop("_id", None)
+                return r
+        return None
+
+    async def update_one(self, flt, update):
+        for d in self.docs.values():
+            if self._match(d, flt):
+                d.update(update.get("$set", {}))
+                return type("R", (), {"matched_count": 1})()
+        return type("R", (), {"matched_count": 0})()
+
     def _match(self, d, q):
         for k, v in q.items():
             if isinstance(v, dict) and "$regex" in v:

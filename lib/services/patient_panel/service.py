@@ -11,6 +11,7 @@ from lib.schemas.patient_panel_signal import (
     DataConfidence,
     GlucoseSource,
     Modality,
+    PanelAssessment,
     PanelInputs,
     PatientPanelSignal,
 )
@@ -38,6 +39,39 @@ def _confidence(days: int, sensor_active: float | None) -> DataConfidence | None
     if days >= 4 and (sensor_active is None or sensor_active >= 40):
         return DataConfidence.MEDIUM
     return DataConfidence.LOW
+
+
+_CONCERNING = {
+    PanelAssessment.AT_RISK,
+    PanelAssessment.WATCH,
+    PanelAssessment.LAPSED,
+    PanelAssessment.DATA_GAP,
+}
+
+
+def _parse_dt(v: Any) -> datetime | None:
+    if isinstance(v, datetime):
+        return v
+    try:
+        return datetime.fromisoformat(v) if v else None
+    except (ValueError, TypeError):
+        return None
+
+
+def _apply_worklist(signal: PatientPanelSignal, prior: dict[str, Any] | None) -> None:
+    now = signal.computed_at
+    same = bool(prior) and prior.get("assessment") == signal.assessment.value
+    signal.reviewed_at = _parse_dt(prior.get("reviewed_at")) if prior else None
+    if same:
+        signal.state_since = _parse_dt(prior.get("state_since")) or now
+        signal.changed_at = _parse_dt(prior.get("changed_at"))
+    else:
+        signal.state_since = now
+        signal.changed_at = now
+    concerning = signal.assessment in _CONCERNING
+    signal.needs_review = concerning and (
+        signal.reviewed_at is None or signal.reviewed_at < signal.state_since
+    )
 
 
 class PatientPanelService:
@@ -104,11 +138,17 @@ class PatientPanelService:
             data_confidence=cgm_meta["data_confidence"],
             sources_fresh_as_of=ctx.get("sources_fresh_as_of") or {},
         )
+        _apply_worklist(signal, await self._store.get(patient_id))
         await self._store.upsert(signal)
         return signal
 
     async def list_panel(self, **kwargs) -> tuple[list[dict[str, Any]], int]:
         return await self._store.list(**kwargs)
+
+    async def mark_reviewed(self, patient_id: str) -> bool:
+        return await self._store.mark_reviewed(
+            patient_id, datetime.now(timezone.utc).isoformat()
+        )
 
     async def ensure_indexes(self) -> None:
         await self._store.ensure_indexes()

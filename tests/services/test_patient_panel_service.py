@@ -143,6 +143,42 @@ async def test_recompute_aggregates_daily_cgm_reading_weighted():
 
 
 @pytest.mark.asyncio
+async def test_worklist_needs_review_and_mark_reviewed():
+    ctx = {"name": "Sunita", "modality": Modality.CGM, "has_any_data": True,
+           "facility_id": "f1", "care_provider_ids": ["cp1"]}
+    report = {"metadata": {"total_readings": 288},
+              "cgm_summary_stats": {"nocturnal_time_below_70_percent": 41},
+              "cgm_range_stats": {"in_target_70_180_percent": 78}}
+    svc, store = _service(ctx=ctx, reports=[report])
+
+    first = await svc.recompute("p1")
+    assert first.assessment is PanelAssessment.AT_RISK
+    assert first.needs_review is True and first.state_since is not None
+
+    again = await svc.recompute("p1")
+    assert again.needs_review is True
+    assert again.state_since == first.state_since
+
+    assert await svc.mark_reviewed("p1") is True
+    reviewed = await svc.recompute("p1")
+    assert reviewed.needs_review is False
+
+
+@pytest.mark.asyncio
+async def test_worklist_resurfaces_on_change():
+    ctx = {"name": "Raj", "modality": Modality.CGM, "has_any_data": True, "facility_id": "f1"}
+    good = {"metadata": {"total_readings": 288}, "cgm_range_stats": {"in_target_70_180_percent": 96}}
+    svc, _ = _service(ctx=ctx, reports=[good])
+    resp = await svc.recompute("p2")
+    assert resp.assessment is PanelAssessment.RESPONDING and resp.needs_review is False
+
+    svc._cgm._r = [{"metadata": {"total_readings": 288}, "cgm_range_stats": {"in_target_70_180_percent": 40}}]
+    worse = await svc.recompute("p2")
+    assert worse.assessment is PanelAssessment.AT_RISK
+    assert worse.needs_review is True and worse.changed_at is not None
+
+
+@pytest.mark.asyncio
 async def test_recompute_no_context_skips():
     svc, store = _service(ctx={})
     assert await svc.recompute("pX") is None
