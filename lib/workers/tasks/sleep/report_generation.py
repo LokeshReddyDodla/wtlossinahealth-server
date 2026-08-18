@@ -194,6 +194,10 @@ async def _generate_monthly_reports(
 
         await service.save_reports_bulk(patient_id, reports)
 
+        from lib.workers.tasks.sleep.vector_generation import _trigger_vector_generation
+
+        await _trigger_vector_generation(patient_id, start_date, end_date)
+
         logger.info(
             f"Generated {len(reports)} sleep reports for {patient_id}: "
             f"{start_date.date()} - {end_date.date()}"

@@ -8,6 +8,7 @@ from .fitness import FitnessVectorService, FitnessSectionProcessor, FitnessSecti
 from .meal import MealVectorService, MealTextReprBuilder
 from .smbg import SMBGVectorService, SMBGTextReprBuilder
 from .profile import PatientProfileVectorService, PatientProfileTextReprBuilder
+from .sleep import SleepVectorService, build_sleep_text
 from .vitals import VitalsVectorService, VitalsTextReprBuilder
 from .workout import WorkoutVectorService, WorkoutTextReprBuilder
 
@@ -21,6 +22,8 @@ __all__ = [
     "FitnessSectionTemplates",
     "MealVectorService",
     "MealTextReprBuilder",
+    "SleepVectorService",
+    "build_sleep_text",
     "SMBGVectorService",
     "SMBGTextReprBuilder",
     "PatientProfileVectorService",

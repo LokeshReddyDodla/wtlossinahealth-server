@@ -105,7 +105,7 @@ from lib.services.osteoflag_service import OsteoFlagService
 
 # Processors
 from lib.services.reports import SleepReportService
-from lib.services.vector import SMBGVectorService, WorkoutVectorService
+from lib.services.vector import SleepVectorService, SMBGVectorService, WorkoutVectorService
 from lib.services.vector.checkin import CheckinVectorService
 from lib.services.daily_checkin_service import DailyCheckinService
 from lib.services.sqs_service import SQSService
@@ -973,6 +973,15 @@ container.register(
 container.register(
     FitnessVectorService,
     lambda: FitnessVectorService(
+        qdrant_store=cast(QdrantStore, container.resolve(QdrantStore))
+    ),
+)
+
+
+# 🔹 Sleep Vector Service
+container.register(
+    SleepVectorService,
+    lambda: SleepVectorService(
         qdrant_store=cast(QdrantStore, container.resolve(QdrantStore))
     ),
 )

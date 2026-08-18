@@ -72,7 +72,7 @@ from lib.services.patient_summary import PatientSummaryService
 from lib.services.active_patient_service import ActivePatientService
 from lib.services.osteoflag_service import OsteoFlagService
 from lib.services.reports import SleepReportService
-from lib.services.vector import SMBGVectorService, VitalsVectorService, WorkoutVectorService
+from lib.services.vector import SleepVectorService, SMBGVectorService, VitalsVectorService, WorkoutVectorService
 from lib.services.sqs_service import SQSService
 from lib.services.token_usage_service import TokenUsageService
 from lib.services.user_device_service import UserDeviceService
@@ -464,6 +464,10 @@ def get_cgm_vector_service() -> CGMVectorService:
 
 def get_fitness_vector_service() -> FitnessVectorService:
     return cast(FitnessVectorService, container.resolve(FitnessVectorService))
+
+
+def get_sleep_vector_service() -> SleepVectorService:
+    return cast(SleepVectorService, container.resolve(SleepVectorService))
 
 
 def get_meal_vector_service() -> MealVectorService:

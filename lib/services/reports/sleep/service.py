@@ -87,9 +87,11 @@ class SleepReportService:
             raise
 
     async def fetch_daily_reports_in_range(
-        self, patient_id: str, start_date: date, end_date: date
+        self, patient_id: str, start_date: date, end_date: date,
+        include_id: bool = False,
     ):
         try:
+            projection = {} if include_id else {"_id": 0}
             start_iso = datetime.combine(start_date, time.min).isoformat()
             end_iso = (
                 datetime.combine(end_date, time.max).replace(microsecond=0).isoformat()
@@ -103,7 +105,7 @@ class SleepReportService:
                         "metadata.date_range.start": {"$gte": start_iso},
                         "metadata.date_range.end": {"$lte": end_iso},
                     },
-                    {"_id": 0},
+                    projection,
                 )
                 .sort("metadata.date_range.start", 1)
                 .to_list(length=None)
