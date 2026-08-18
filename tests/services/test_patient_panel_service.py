@@ -45,7 +45,15 @@ class _Fitness:
         return self._r
 
 
-def _service(*, ctx, reports=None, vitals=None, smbgs=None, fitness=None):
+class _Sleep:
+    def __init__(self, reports):
+        self._r = reports
+
+    async def fetch_daily_reports_in_range(self, patient_id, start, end):
+        return self._r
+
+
+def _service(*, ctx, reports=None, vitals=None, smbgs=None, fitness=None, sleep=None):
     store = PatientPanelStore(FakeCollection())
     svc = PatientPanelService(
         store=store,
@@ -54,6 +62,7 @@ def _service(*, ctx, reports=None, vitals=None, smbgs=None, fitness=None):
         vital_service=_Vitals(vitals or []),
         smbg_service=_SMBG(smbgs or []),
         fitness_report_service=_Fitness(fitness or []),
+        sleep_report_service=_Sleep(sleep or []),
     )
     return svc, store
 
@@ -129,7 +138,7 @@ async def test_recompute_source_failure_degrades_gracefully():
     svc = PatientPanelService(
         store=store, context_provider=lambda pid: _async({"name": "X", "has_any_data": True, "facility_id": "f1"}),
         cgm_report_service=_Boom(), vital_service=_Vitals([]), smbg_service=_SMBG([]),
-        fitness_report_service=_Fitness([]),
+        fitness_report_service=_Fitness([]), sleep_report_service=_Sleep([]),
     )
     sig = await svc.recompute("p4")  # must not raise
     assert sig is not None

@@ -19,6 +19,7 @@ from lib.services.patient_panel.compute import build_signal
 from lib.services.patient_panel.extract import (
     aggregate_daily_cgm,
     fitness_inputs,
+    sleep_inputs,
     smbg_inputs,
     vitals_inputs,
 )
@@ -85,6 +86,7 @@ class PatientPanelService:
         vital_service: Any,
         smbg_service: Any,
         fitness_report_service: Any,
+        sleep_report_service: Any,
     ):
         self._store = store
         self._context = context_provider
@@ -92,6 +94,7 @@ class PatientPanelService:
         self._vitals = vital_service
         self._smbg = smbg_service
         self._fitness = fitness_report_service
+        self._sleep = sleep_report_service
 
     async def recompute(self, patient_id: str) -> PatientPanelSignal | None:
         ctx = await self._safe(self._context(patient_id), {})
@@ -107,6 +110,7 @@ class PatientPanelService:
         if merged.get("tir_pct") is None:
             merged.update(smbg_inputs(await self._safe(self._smbg.get_patient_smbgs(patient_id), [])))
         fitness = await self._fitness_window(patient_id)
+        sleep = await self._sleep_window(patient_id)
 
         inputs = PanelInputs(
             has_any_data=bool(ctx.get("has_any_data", bool(merged) or bool(fitness))),
@@ -138,6 +142,7 @@ class PatientPanelService:
             last_glucose_source=ctx.get("last_glucose_source") or GlucoseSource.NONE,
             last_active_at=ctx.get("last_active_at"),
             avg_steps=fitness.get("avg_steps"),
+            avg_sleep_hours=sleep.get("avg_sleep_hours"),
             days_of_data=cgm_meta["days_of_data"],
             sensor_active_pct=cgm_meta["sensor_active_pct"],
             data_confidence=cgm_meta["data_confidence"],
@@ -165,6 +170,14 @@ class PatientPanelService:
             self._fitness.fetch_daily_reports_in_range(patient_id, start, end), []
         )
         return fitness_inputs(reports)
+
+    async def _sleep_window(self, patient_id: str) -> dict[str, Any]:
+        end = date.today()
+        start = end - timedelta(days=_WINDOW_DAYS)
+        reports = await self._safe(
+            self._sleep.fetch_daily_reports_in_range(patient_id, start, end), []
+        )
+        return sleep_inputs(reports)
 
     async def _cgm_window(self, patient_id: str, days: int) -> tuple[dict[str, Any], dict[str, Any]]:
         end = datetime.now(timezone.utc).replace(tzinfo=None)

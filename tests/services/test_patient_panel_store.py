@@ -11,6 +11,7 @@ from lib.services.patient_panel.extract import (
     aggregate_daily_cgm,
     cgm_inputs,
     fitness_inputs,
+    sleep_inputs,
     smbg_inputs,
     vitals_inputs,
 )
@@ -184,6 +185,16 @@ def test_vitals_inputs_picks_a1c():
 def test_smbg_inputs_averages():
     assert smbg_inputs([{"value": 110}, {"value": 130}, {"value": 120}])["smbg_avg"] == 120
     assert smbg_inputs([]) == {}
+
+
+def test_sleep_inputs_avg_hours():
+    reports = [
+        {"duration": {"total_duration": 420}},
+        {"duration": {"total_duration": 360}},
+        {"duration": {}},
+    ]
+    assert sleep_inputs(reports)["avg_sleep_hours"] == 6.5
+    assert sleep_inputs([]) == {}
 
 
 def test_fitness_inputs_avg_and_activity_drop():

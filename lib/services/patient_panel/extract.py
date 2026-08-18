@@ -115,6 +115,16 @@ def fitness_inputs(reports: list[dict[str, Any]] | None) -> dict[str, Any]:
     return out
 
 
+def sleep_inputs(reports: list[dict[str, Any]] | None) -> dict[str, Any]:
+    mins = [
+        d for r in (reports or [])
+        if (d := ((r.get("duration") or {}).get("total_duration")))
+    ]
+    if not mins:
+        return {}
+    return {"avg_sleep_hours": round(sum(mins) / len(mins) / 60, 1)}
+
+
 def vitals_inputs(latest_vitals: list[dict[str, Any]] | None) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for row in latest_vitals or []:

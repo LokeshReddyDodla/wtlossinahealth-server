@@ -444,6 +444,7 @@ container.register(
         vital_service=cast(PatientVitalService, container.resolve(PatientVitalService)),
         smbg_service=cast(PatientSmbgService, container.resolve(PatientSmbgService)),
         fitness_report_service=cast(FitnessReportService, container.resolve(FitnessReportService)),
+        sleep_report_service=cast(SleepReportService, container.resolve(SleepReportService)),
     ),
     scope=Scope.singleton,
 )
