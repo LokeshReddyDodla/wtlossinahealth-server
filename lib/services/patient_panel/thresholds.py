@@ -1,11 +1,4 @@
-"""Clinical thresholds for panel triage — the single, reviewable source of the
-deterministic cut-points behind PanelAssessment.
-
-Condition-aware: pregnancy targets the tighter 63-140 range (matching the
-day-view clinical alerts), everyone else the consensus 70-180. These are a
-medical decision and live here so that review happens in one place — no
-threshold is ever inlined in the rule engine.
-"""
+"""Condition-aware clinical thresholds for panel triage."""
 
 from __future__ import annotations
 
@@ -14,24 +7,24 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class Thresholds:
-    tir_target: float  # TIR at/above this = on target
-    tir_watch_floor: float  # tir_watch_floor ≤ TIR < tir_target = watch; below = at risk
-    fasting_goal: float  # fasting above this = watch
-    smbg_goal: float  # SMBG average above this = watch
+    tir_target: float
+    tir_watch_floor: float
+    fasting_goal: float
+    smbg_goal: float
 
-    very_low_pct: float  # % time <54 mg/dL at/above this = at risk
-    nocturnal_hypo_pct: float  # nocturnal % <70 at/above this = at risk
-    frequent_low_events: int  # hypo events at/above this = at risk
+    very_low_pct: float
+    nocturnal_hypo_pct: float
+    frequent_low_events: int
 
-    a1c_high: float  # A1c at/above this = at risk
-    a1c_watch: float  # A1c at/above this (below a1c_high) = watch
+    a1c_high: float
+    a1c_watch: float
 
-    tir_drop_mild: float  # TIR delta ≤ -this = watch (worsening trend)
-    cv_high: float  # coefficient of variation above this = watch
+    tir_drop_mild: float
+    cv_high: float
 
-    no_glucose_days: float  # last glucose older than this = data gap
-    min_readings_14d: int  # fewer than this in 14d (no summary metrics) = data gap
-    disengaged_days: float  # last glucose older than this = "logging stopped"
+    no_glucose_days: float
+    min_readings_14d: int
+    disengaged_days: float
 
 
 STANDARD = Thresholds(

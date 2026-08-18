@@ -1,5 +1,4 @@
-"""Pure context composition (_build) tests — the DB reads are thin; the mapping
-of profile fields into the panel context is what's worth testing."""
+"""Context composition (_build) tests for the patient panel signal."""
 
 from datetime import date, datetime, timezone
 
@@ -42,9 +41,9 @@ def test_connected_but_stale_sensor_flags_sync():
     assert c["glucose_sync_stale_days"] == 8
 
 
-def test_long_gap_is_not_sync_stale_but_a_data_gap():
+def test_long_gap_is_still_stale_cgm():
     c = _b(frontier_at=datetime(2026, 7, 1, tzinfo=timezone.utc), frontier_source=GlucoseSource.CGM)
-    assert c["glucose_sync_stale"] is False  # >14 days → plain gap, not "not syncing"
+    assert c["glucose_sync_stale"] is True  # any gap > threshold = stale CGM readings
     assert c["last_glucose_days_ago"] > 14
 
 

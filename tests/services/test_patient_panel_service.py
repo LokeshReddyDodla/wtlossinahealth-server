@@ -117,7 +117,6 @@ async def test_recompute_source_failure_degrades_gracefully():
 
 @pytest.mark.asyncio
 async def test_recompute_uses_newest_cgm_report():
-    # fetch_reports is ascending; the newest (last) report must win.
     old = {"cgm_summary_stats": {}, "cgm_range_stats": {"in_target_70_180_percent": 45}, "trend": {}}
     new = {"cgm_summary_stats": {}, "cgm_range_stats": {"in_target_70_180_percent": 96}, "trend": {}}
     ctx = {"name": "Raj", "modality": Modality.CGM, "has_any_data": True, "facility_id": "f1"}

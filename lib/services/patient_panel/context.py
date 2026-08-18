@@ -1,11 +1,5 @@
-"""Concrete context provider for panel recompute — identity, scope, condition
-context, and the glucose frontier for one patient, from Postgres.
-
-The DB reads are thin and defensive; the composition into the context dict is a
-pure function (`_build`) so it is unit-tested without a database. This is the one
-piece tied to the patient-profile schema, kept isolated behind the service's
-injected `context_provider`.
-"""
+"""Context provider for panel recompute — identity, scope, conditions, and the
+glucose frontier for one patient, from Postgres."""
 
 from __future__ import annotations
 
@@ -27,10 +21,7 @@ from lib.models.patient_diabetic_history import PatientDiabeticHistory
 from lib.models.patient_reproductive_health import PatientReproductiveHealth
 from lib.schemas.patient_panel_signal import GlucoseSource, Modality
 
-# A connected sensor whose newest reading is older than this — but not yet
-# abandoned — reads as "not syncing" (actionable), rather than a plain data gap.
-_SYNC_STALE_MIN_DAYS = 2
-_SYNC_STALE_MAX_DAYS = 14
+_CGM_STALE_DAYS = 2
 
 
 def _age(dob: date | None, now: datetime) -> int | None:
@@ -72,7 +63,7 @@ def _build(
     sync_stale = False
     if frontier_at is not None:
         days_ago = (now - _as_utc(frontier_at)).days
-        sync_stale = _SYNC_STALE_MIN_DAYS < days_ago <= _SYNC_STALE_MAX_DAYS
+        sync_stale = days_ago > _CGM_STALE_DAYS
 
     if frontier_at is not None:
         modality = Modality.CGM

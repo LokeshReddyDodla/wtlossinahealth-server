@@ -1,8 +1,4 @@
-"""Store (upsert/scoped-paginated list) and pure extractor tests.
-
-The store runs against an in-memory fake collection; the extractors run against
-real document shapes (CGM report model_dump, ClickHouse vitals rows).
-"""
+"""Store and pure-extractor tests for the patient panel signal."""
 
 import pytest
 
@@ -19,15 +15,17 @@ from lib.services.patient_panel.extract import (
 from lib.services.patient_panel.store import PatientPanelStore
 
 
-# ── fake async Mongo collection ────────────────────────────────────────────
 class _Cursor:
     def __init__(self, rows):
         self._rows = rows
 
-    def sort(self, key, order):
-        self._rows = sorted(
-            self._rows, key=lambda d: (d.get(key) is None, d.get(key)), reverse=order < 0
-        )
+    def sort(self, spec):
+        for key, direction in reversed(spec):
+            self._rows = sorted(
+                self._rows,
+                key=lambda d, k=key: (d.get(k) is None, d.get(k)),
+                reverse=direction < 0,
+            )
         return self
 
     def skip(self, n):
@@ -99,10 +97,8 @@ async def test_list_filters_by_status_and_scope():
                             facility_id="f1", care_provider_ids=["cpA"]))
     await store.upsert(_sig("p2", "Raj", PanelInputs(has_any_data=True, tir_pct=96),
                             facility_id="f1", care_provider_ids=["cpB"]))
-    # facility-wide, filter at_risk
     rows, total = await store.list(facility_id="f1", status="at_risk")
     assert total == 1 and rows[0]["name"] == "Sunita"
-    # a provider sees only their own patients
     rows, total = await store.list(facility_id="f1", care_provider_id="cpB", is_facility_admin=False)
     assert total == 1 and rows[0]["name"] == "Raj"
 
@@ -115,7 +111,6 @@ async def test_list_sorts_and_paginates():
                                 facility_id="f1"))
     rows, total = await store.list(facility_id="f1", sort="priority", order=1, limit=2)
     assert total == 5 and len(rows) == 2
-    # priority ascending → the at-risk (tir 40) surfaces first
     assert rows[0]["assessment"] == "at_risk"
 
 
@@ -128,7 +123,6 @@ async def test_list_search_by_name():
     assert total == 1 and rows[0]["name"] == "Raj Ramanand"
 
 
-# ── extractors ─────────────────────────────────────────────────────────────
 def test_cgm_inputs_from_report():
     report = {
         "cgm_summary_stats": {

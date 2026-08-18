@@ -1,15 +1,4 @@
-"""Assembly + read service for the patient panel signal.
-
-`recompute` gathers a patient's signals from source services, runs the pure
-extractors + rule engine, and upserts one materialized row. `list_panel` is the
-scoped, paginated read both the table and the Panel view call.
-
-Source access is defensive: any one source failing degrades that patient's row
-to partial inputs (the rules already handle missing signals) — it never fails
-the whole recompute. The identity/scope/availability that depends on the patient
-profile schema is injected as a `context_provider`, so this service stays
-decoupled from that schema and unit-testable.
-"""
+"""Assembly + read service for the patient panel signal."""
 
 from __future__ import annotations
 
@@ -33,8 +22,6 @@ from lib.services.patient_panel.store import PatientPanelStore
 
 logger = logging.getLogger(__name__)
 
-# context_provider(patient_id) -> identity/scope/availability for one patient.
-# Keys consumed below; missing keys fall back to safe defaults.
 ContextProvider = Callable[[str], Awaitable[dict[str, Any]]]
 
 
@@ -62,7 +49,6 @@ class PatientPanelService:
         merged: dict[str, Any] = {}
         merged.update(cgm_inputs(await self._latest_cgm_report(patient_id)))
         merged.update(vitals_inputs(await self._safe(self._vitals.get_latest_vitals(patient_id), [])))
-        # SMBG average only fills in when there's no CGM summary to lean on.
         if merged.get("tir_pct") is None:
             merged.update(smbg_inputs(await self._safe(self._smbg.get_patient_smbgs(patient_id), [])))
 
@@ -106,11 +92,8 @@ class PatientPanelService:
     async def ensure_indexes(self) -> None:
         await self._store.ensure_indexes()
 
-    # ── internals ──────────────────────────────────────────────────────────
-
     async def _latest_cgm_report(self, patient_id: str) -> dict | None:
-        # fetch_reports sorts custom reports by date ascending, so the newest is
-        # the last element.
+        # fetch_reports is date-ascending; the newest report is the last element.
         reports = await self._safe(self._cgm.fetch_reports(patient_id), [])
         return reports[-1] if reports else None
 

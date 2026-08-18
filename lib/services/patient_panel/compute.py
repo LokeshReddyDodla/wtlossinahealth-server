@@ -1,10 +1,4 @@
-"""Assemble a PatientPanelSignal from identity + already-gathered PanelInputs.
-
-This is the pure transform: classify the inputs, then echo the metrics onto the
-row for the grid columns. Fetching the inputs from source services (CGM reports,
-vitals, care-plan progress) is the materialization service's job (Phase 2);
-keeping the transform separate keeps it fully unit-testable.
-"""
+"""Assemble a PatientPanelSignal from identity + already-gathered PanelInputs."""
 
 from __future__ import annotations
 

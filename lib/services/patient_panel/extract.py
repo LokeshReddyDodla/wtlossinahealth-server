@@ -1,9 +1,4 @@
-"""Pure mappers from source documents to PanelInputs fields.
-
-The field-level extraction is the fiddly, error-prone part, so it lives here as
-pure functions with no I/O — unit-tested against real document shapes. The
-assembly service (service.py) fetches the documents and merges these partials.
-"""
+"""Pure mappers from source documents to PanelInputs fields."""
 
 from __future__ import annotations
 
@@ -16,7 +11,6 @@ def _add(*vals: float | None) -> float | None:
 
 
 def cgm_inputs(report: dict[str, Any] | None) -> dict[str, Any]:
-    """From a stored CGM report doc (CGMStats.model_dump; see lib/schemas/cgm_stats.py)."""
     if not report:
         return {}
     s = report.get("cgm_summary_stats") or {}
@@ -25,7 +19,7 @@ def cgm_inputs(report: dict[str, Any] | None) -> dict[str, Any]:
 
     tir = r.get("in_target_70_180_percent")
     if tir is None:
-        tir = r.get("in_target_63_140_percent")  # pregnancy report
+        tir = r.get("in_target_63_140_percent")
 
     above_180 = _add(r.get("above_180_below_250_percent"), r.get("above_250_percent"))
     below_70 = _add(r.get("below_70_above_54_percent"), r.get("below_54_percent"))
@@ -46,7 +40,6 @@ def cgm_inputs(report: dict[str, Any] | None) -> dict[str, Any]:
 
 
 def vitals_inputs(latest_vitals: list[dict[str, Any]] | None) -> dict[str, Any]:
-    """From ClickHouseStore.query_vitals_latest — rows of {type, value, time, source_name}."""
     out: dict[str, Any] = {}
     for row in latest_vitals or []:
         vt = (row.get("type") or "").lower()
@@ -61,7 +54,6 @@ def vitals_inputs(latest_vitals: list[dict[str, Any]] | None) -> dict[str, Any]:
 
 
 def smbg_inputs(readings: list[dict[str, Any]] | None) -> dict[str, Any]:
-    """Average of recent SMBG values, when no CGM summary is available."""
     vals = [
         r["value"] for r in (readings or [])
         if isinstance(r.get("value"), (int, float))
