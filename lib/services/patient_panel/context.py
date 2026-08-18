@@ -6,8 +6,9 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
+from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.database import postgres_store
 from lib.models.associations import patient_care_provider_association
 from lib.models.care_provider import CareProvider
@@ -19,6 +20,7 @@ from lib.models.patient_connected_app import (
 )
 from lib.models.patient_diabetic_history import PatientDiabeticHistory
 from lib.models.patient_reproductive_health import PatientReproductiveHealth
+from lib.models.user_device import UserDevice
 from lib.schemas.patient_panel_signal import GlucoseSource, Modality
 
 _CGM_STALE_DAYS = 2
@@ -46,6 +48,7 @@ def _build(
     facility_id: str | None,
     frontier_at: datetime | None,
     frontier_source: GlucoseSource,
+    last_active_at: datetime | None = None,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     now = now or datetime.now(timezone.utc)
@@ -91,6 +94,7 @@ def _build(
         "last_glucose_days_ago": days_ago,
         "glucose_sync_stale": sync_stale,
         "glucose_sync_stale_days": int(days_ago) if sync_stale and days_ago is not None else None,
+        "last_active_at": last_active_at,
     }
 
 
@@ -149,8 +153,18 @@ async def panel_context(patient_id: str) -> dict[str, Any]:
             if row is not None and (frontier_at is None or row > frontier_at):
                 frontier_at = row
 
+        last_active_at = (
+            await s.execute(
+                select(func.max(UserDevice.last_active_at)).where(
+                    UserDevice.user_id == patient_id,
+                    UserDevice.profile_type == ProfileTypeEnum.PATIENT.value,
+                )
+            )
+        ).scalar_one_or_none()
+
     is_pregnant = bool((rh and rh.is_pregnant) or (dh and dh.is_pregnant))
     return _build(
+        last_active_at=last_active_at,
         first_name=patient.first_name,
         last_name=patient.last_name,
         dob=patient.dob,
