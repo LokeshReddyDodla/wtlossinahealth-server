@@ -33,9 +33,9 @@ async def test_fitness_vitals_snapshot(monkeypatch):
 
     d = captured["data"]
     assert d["heart_rate"] == 82
+    assert d["resting_heart_rate"] == 55
     assert d["spo2"] == 97
     assert d["weight"] == 80.5
-    assert "resting_heart_rate" not in d
     assert d["test_time"] == t2
     assert captured["vid"] == "fitness:p1:2026-08-10"
 
@@ -53,5 +53,5 @@ async def test_no_vectorized_vitals_enqueues_nothing(monkeypatch):
         fake_enqueue,
     )
     svc = FitnessUploadService(None, None, None)
-    await svc._enqueue_vitals_vector("p1", [{"type": "resting_heart_rate", "value": 55, "time": dt.datetime(2026, 8, 10)}])
+    await svc._enqueue_vitals_vector("p1", [{"type": "active_energy", "value": 300, "time": dt.datetime(2026, 8, 10)}])
     assert called is False

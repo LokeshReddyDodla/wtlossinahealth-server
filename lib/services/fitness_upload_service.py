@@ -15,8 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 _FITNESS_VITAL_KEY = {"blood_oxygen": "spo2", "body_temperature": "temperature"}
 _VECTORIZED_VITALS = {
-    "heart_rate", "systolic_bp", "diastolic_bp", "spo2",
-    "temperature", "respiratory_rate", "weight",
+    "heart_rate", "resting_heart_rate", "systolic_bp", "diastolic_bp",
+    "spo2", "temperature", "respiratory_rate", "weight",
 }
 
 
