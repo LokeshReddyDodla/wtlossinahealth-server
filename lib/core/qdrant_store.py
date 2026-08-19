@@ -1,9 +1,11 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator, Dict, Optional
 
 from decouple import config
 from qdrant_client import AsyncQdrantClient
+from qdrant_client.http.exceptions import ResponseHandlingException
 from qdrant_client.models import (
     VectorParams,
     Distance,
@@ -165,13 +167,30 @@ class QdrantStore:
         async with self.get_client() as client:
             for i in range(0, len(points), chunk_size):
                 chunk = points[i : i + chunk_size]
-                await client.upsert(
-                    collection_name=collection_name, points=chunk, wait=False
-                )
+                await self._upsert_chunk(client, collection_name, chunk)
                 if (i // chunk_size + 1) % 10 == 0:
                     logger.info(
                         f"📤 Upserted {min(i + chunk_size, total)}/{total} points"
                     )
+
+    async def _upsert_chunk(
+        self, client: AsyncQdrantClient, collection_name: str, chunk: list
+    ) -> None:
+        # The singleton client can sit idle for minutes (embedding generation)
+        # between upserts; Qdrant then closes the keep-alive and the first write
+        # fails with a transport ReadError, wrapped as ResponseHandlingException.
+        # httpx evicts the dead connection on error, so a retry reconnects.
+        # Upserts overwrite by point id, so replaying a chunk is idempotent.
+        for attempt in range(3):
+            try:
+                await client.upsert(
+                    collection_name=collection_name, points=chunk, wait=False
+                )
+                return
+            except ResponseHandlingException:
+                if attempt == 2:
+                    raise
+                await asyncio.sleep(0.5 * (attempt + 1))
 
     async def close(self):
         """Closes Qdrant client (usually only on server shutdown)."""
