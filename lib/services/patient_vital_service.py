@@ -56,7 +56,8 @@ class PatientVitalService:
 
     async def get_weight_history(self, patient_id: str, days: int = 60) -> list[dict]:
         """Weight readings over the trailing window, for weight-trend triage."""
-        end = datetime.utcnow()
+        # ClickHouse toDateTime() only accepts second precision.
+        end = datetime.utcnow().replace(microsecond=0)
         rows, _ = self.clickhouse.query_vitals(
             patient_id,
             start_time=end - timedelta(days=days),
