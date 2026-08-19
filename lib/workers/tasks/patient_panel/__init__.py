@@ -14,7 +14,14 @@ __all__ = [
 
 
 def get_tasks():
-    return [recompute_patient_panel, reconcile_patient_panel]
+    from arq.worker import func
+
+    # keep_result=0 lets the stable per-patient _job_id re-enqueue each cycle;
+    # a kept result key would block it. Nothing awaits this result.
+    return [
+        func(recompute_patient_panel, name="recompute_patient_panel", keep_result=0),
+        reconcile_patient_panel,
+    ]
 
 
 def get_cron_jobs():
