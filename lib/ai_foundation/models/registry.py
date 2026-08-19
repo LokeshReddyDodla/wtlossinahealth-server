@@ -334,17 +334,6 @@ def build_default_registry(
             tags=["fast", "structured", "anthropic"],
         ),
         ModelSpec(
-            model_id="claude-opus-4-6",
-            provider=ModelProvider.ANTHROPIC,
-            temperature=0.0,
-            timeout_seconds=60.0,
-            cost_per_1k_input=0.015,
-            cost_per_1k_output=0.075,
-            supports_structured=True,
-            supports_streaming=True,
-            tags=["powerful", "reasoning", "anthropic"],
-        ),
-        ModelSpec(
             model_id="claude-haiku-4-5-20251001",
             provider=ModelProvider.ANTHROPIC,
             temperature=0.0,
@@ -366,17 +355,6 @@ def build_default_registry(
             supports_structured=True,
             supports_streaming=True,
             tags=["fast", "cheap", "structured"],
-        ),
-        ModelSpec(
-            model_id="gpt-4.1",
-            provider=ModelProvider.OPENAI,
-            temperature=0.0,
-            timeout_seconds=15.0,
-            cost_per_1k_input=0.002,
-            cost_per_1k_output=0.008,
-            supports_structured=True,
-            supports_streaming=True,
-            tags=["balanced", "structured"],
         ),
         ModelSpec(
             model_id="gpt-5.1",
@@ -412,15 +390,15 @@ def build_default_registry(
             tags=["vision", "multimodal"],
         ),
         ModelSpec(
-            model_id="gpt-5.6-terra",
+            model_id="gpt-5.4-nano",
             provider=ModelProvider.OPENAI,
             temperature=0.0,
-            timeout_seconds=60.0,
-            cost_per_1k_input=0.005,
-            cost_per_1k_output=0.015,
+            timeout_seconds=30.0,
+            cost_per_1k_input=0.0002,
+            cost_per_1k_output=0.00125,
             supports_structured=True,
             supports_streaming=True,
-            tags=["powerful", "reasoning"], 
+            tags=["fast", "cheap", "reasoning"],
         ),
         ModelSpec(
             model_id="text-embedding-3-large",
@@ -457,46 +435,43 @@ def build_default_registry(
         ),
     ])
 
-    # Task routes: primaries come from settings (see config.py); fallbacks
-    # are cross-provider so one provider outage never takes down a task.
+    # Fallbacks are cross-provider so one provider outage never takes down a task.
     registry.set_task_route(
         ModelTask.INTENT_EXTRACTION,
         primary=thinker,
-        fallbacks=["gpt-4.1-mini", "gemini-2.5-flash"],
+        fallbacks=["claude-haiku-4-5-20251001", "gemini-2.5-flash"],
     )
     registry.set_task_route(
         ModelTask.RESPONSE_GENERATION,
         primary=responder,
-        fallbacks=["gpt-5.1", "gemini-2.5-pro"],
+        fallbacks=["claude-sonnet-4-6", "gemini-2.5-pro"],
     )
     registry.set_task_route(
         ModelTask.STRUCTURED_ANALYSIS,
         primary=thinker,
-        fallbacks=["gpt-4.1-mini", "gemini-2.5-flash"],
+        fallbacks=["claude-sonnet-4-6", "gemini-2.5-flash"],
     )
-    # Extractor (photo → items). gpt-5.2: ~half the vision error of the 4o
-    # generation at lower price; gpt-4o first fallback = pre-upgrade behavior.
+    # Meal photo → items: the whole chain must be vision-capable (sends the image).
     registry.set_task_route(
         ModelTask.MEAL_ANALYSIS,
         primary="gpt-5.2",
-        fallbacks=["gpt-4o", "gemini-2.5-flash", thinker],
+        fallbacks=["claude-sonnet-4-6", "gemini-2.5-pro"],
     )
-    # Text-only meal engines (scorer/alternatives/glucose fallback) send JSON,
-    # never the photo — vision pricing there was ~6x waste (efficiency audit).
+    # Text-only meal engines (scorer/alternatives/glucose) send JSON, not the photo.
     registry.set_task_route(
         ModelTask.MEAL_REASONING,
         primary="gpt-4.1-mini",
-        fallbacks=["gemini-2.5-flash", thinker],
+        fallbacks=["claude-haiku-4-5-20251001", "gemini-2.5-flash"],
     )
     registry.set_task_route(
         ModelTask.CLASSIFICATION,
         primary=thinker,
-        fallbacks=["gpt-4.1-mini", "gemini-2.5-flash"],
+        fallbacks=["claude-sonnet-4-6", "gemini-2.5-flash"],
     )
     registry.set_task_route(
         ModelTask.SUMMARIZATION,
         primary=thinker,
-        fallbacks=["gpt-4.1-mini", "gemini-2.5-flash"],
+        fallbacks=["claude-haiku-4-5-20251001", "gemini-2.5-flash"],
     )
     registry.set_task_route(
         ModelTask.EMBEDDING,
@@ -505,19 +480,49 @@ def build_default_registry(
     registry.set_task_route(
         ModelTask.QUALITY_JUDGE,
         primary=adv_thinker,
-        fallbacks=[thinker],
+        fallbacks=["claude-sonnet-4-6", "gemini-2.5-pro"],
     )
     registry.set_task_route(
         ModelTask.PRODUCT_BOT,
         primary="gpt-4.1-mini",
-        fallbacks=["gemini-2.5-flash", "claude-haiku-4-5-20251001"],
+        fallbacks=["claude-haiku-4-5-20251001", "gemini-2.5-flash"],
     )
     # Patient-facing translation (preferred AI language). Cheap tier — the
     # deterministic post-checks in TranslationService guard fidelity.
     registry.set_task_route(
         ModelTask.TRANSLATION,
         primary="gpt-4.1-mini",
-        fallbacks=["gemini-2.5-flash", "claude-haiku-4-5-20251001"],
+        fallbacks=["claude-haiku-4-5-20251001", "gemini-2.5-flash"],
     )
 
+    validate_registry_pricing(registry)
     return registry
+
+
+def validate_registry_pricing(registry: ModelRegistry) -> None:
+    """Fail fast if any registered model is missing from LiteLLM's price table.
+
+    Cost in Langfuse comes from LiteLLM pricing keyed on the exact model string
+    (google is sent prefixed as ``gemini/<id>``). If a string isn't a key in
+    ``litellm.model_cost``, the call is silently costed at $0 — so we assert at
+    boot instead of discovering a wrong invoice weeks later.
+    """
+    import litellm
+
+    missing = []
+    for spec in registry.list_models():
+        # Mirror gateway._litellm_model_id: google is sent as "gemini/<id>".
+        key = (
+            f"gemini/{spec.model_id}"
+            if spec.provider == ModelProvider.GOOGLE
+            else spec.model_id
+        )
+        if key not in litellm.model_cost:
+            missing.append(key)
+
+    if missing:
+        raise ModelNotFoundError(
+            f"These registry models are not in litellm.model_cost and will be "
+            f"costed at $0 in Langfuse: {missing}. Fix the model_id, or register "
+            f"custom pricing via litellm.register_model()."
+        )

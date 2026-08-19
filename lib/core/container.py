@@ -432,20 +432,6 @@ container.register(
     scope=Scope.singleton,
 )
 container.register(
-    "inbody_day_summaries_collection",
-    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
-        "inbody_day_summaries"
-    ),
-    scope=Scope.singleton,
-)
-container.register(
-    "inbody_scan_analyses_collection",
-    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
-        "inbody_scan_analyses"
-    ),
-    scope=Scope.singleton,
-)
-container.register(
     "analytics_events_collection",
     factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
         "wtloss_analytics_events"
@@ -1256,74 +1242,9 @@ container.register(
         coach_messenger_service=cast(
             CoachMessengerService, container.resolve(CoachMessengerService)
         ),
-        suggestion_cards_collection=container.resolve("suggestion_cards_collection")
+        suggestion_cards_collection=container.resolve("suggestion_cards_collection"),
         ),
     )
-
-
-# 🔹 InBody — standalone patient-level report domain
-from lib.services.inbody.extraction_service import InbodyExtractionService
-from lib.services.inbody.service import InbodyReportService
-from lib.services.inbody.day_summary_service import InbodyDaySummaryService
-from lib.services.inbody.trends_service import InbodyTrendsService
-from lib.services.inbody.attribution_service import InbodyAttributionService
-from lib.services.vector.inbody import InbodyVectorService
-
-container.register(
-    InbodyExtractionService,
-    lambda: InbodyExtractionService(
-        model_gateway=cast(ModelGateway, container.resolve(ModelGateway)),
-    ),
-    scope=Scope.singleton,
-)
-
-container.register(
-    InbodyReportService,
-    lambda: InbodyReportService(
-        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
-        extraction_service=cast(
-            InbodyExtractionService,
-            container.resolve(InbodyExtractionService),
-        ),
-    ),
-    scope=Scope.singleton,
-)
-
-container.register(
-    InbodyDaySummaryService,
-    lambda: InbodyDaySummaryService(
-        summaries_collection=container.resolve(
-            "inbody_day_summaries_collection"
-        ),
-    ),
-    scope=Scope.singleton,
-)
-
-container.register(
-    InbodyTrendsService,
-    lambda: InbodyTrendsService(
-        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
-    ),
-    scope=Scope.singleton,
-)
-
-container.register(
-    InbodyAttributionService,
-    lambda: InbodyAttributionService(
-        analyses_collection=container.resolve(
-            "inbody_scan_analyses_collection"
-        ),
-    ),
-    scope=Scope.singleton,
-)
-
-container.register(
-    InbodyVectorService,
-    lambda: InbodyVectorService(
-        qdrant_store=cast(QdrantStore, container.resolve(QdrantStore))
-    ),
-    scope=Scope.singleton,
-)
 
 # 🔹 CGM Upload Service
 container.register(
