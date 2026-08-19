@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from datetime import date, datetime, time, timedelta, timezone
@@ -98,22 +99,31 @@ class PatientPanelService:
         self._sleep = sleep_report_service
 
     async def recompute(self, patient_id: str) -> PatientPanelSignal | None:
-        ctx = await self._safe(self._context(patient_id), {})
+        # The lapsed-CGM widen and SMBG fallback below depend on this round's
+        # results, so they run after the gather rather than inside it.
+        ctx, (cgm, cgm_meta), latest_vitals, weight_history, fitness, sleep = (
+            await asyncio.gather(
+                self._safe(self._context(patient_id), {}),
+                self._cgm_window(patient_id, _WINDOW_DAYS),
+                self._safe(self._vitals.get_latest_vitals(patient_id), []),
+                self._safe(self._vitals.get_weight_history(patient_id), []),
+                self._fitness_window(patient_id),
+                self._sleep_window(patient_id),
+            )
+        )
         if not ctx:
             await self._store.delete(patient_id)  # patient gone → drop the orphan row
             return None
 
-        merged: dict[str, Any] = {}
-        cgm, cgm_meta = await self._cgm_window(patient_id, _WINDOW_DAYS)
         if not cgm and ctx.get("glucose_sync_stale"):
             cgm, cgm_meta = await self._cgm_window(patient_id, _CGM_LAPSED_LOOKBACK_DAYS)
+
+        merged: dict[str, Any] = {}
         merged.update(cgm)
-        merged.update(vitals_inputs(await self._safe(self._vitals.get_latest_vitals(patient_id), [])))
+        merged.update(vitals_inputs(latest_vitals))
         if merged.get("tir_pct") is None:
             merged.update(smbg_inputs(await self._safe(self._smbg.get_patient_smbgs(patient_id), [])))
-        merged.update(weight_inputs(await self._safe(self._vitals.get_weight_history(patient_id), [])))
-        fitness = await self._fitness_window(patient_id)
-        sleep = await self._sleep_window(patient_id)
+        merged.update(weight_inputs(weight_history))
 
         inputs = PanelInputs(
             has_any_data=bool(ctx.get("has_any_data", bool(merged) or bool(fitness))),
