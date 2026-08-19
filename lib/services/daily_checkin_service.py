@@ -19,6 +19,7 @@ from lib.models.mood_entry import MoodEntry
 from lib.models.sleep_checkin import SleepCheckin
 from lib.models.symptom_entry import SymptomEntry, SymptomEntryItem
 from lib.schemas.daily_checkin import MoodEntryInput, SleepCheckinInput, SymptomEntryInput
+from lib.services.patient_profile_service import PatientProfileService
 from lib.services.vector.checkin import CheckinVectorService
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.postgres_session_decorator import with_postgres_session
@@ -33,9 +34,24 @@ class DailyCheckinService:
         self,
         postgres_store: PostgresStore,
         checkin_vector_service: CheckinVectorService,
+        patient_profile_service: PatientProfileService,
     ):
         self.postgres_store = postgres_store
         self.checkin_vector_service = checkin_vector_service
+        self.patient_profile_service = patient_profile_service
+
+    async def _demographics(self, patient_id: str) -> tuple[int, str]:
+        """(age, gender) for demographic tagging on vector points; falls back
+        to neutral values so a profile lookup failure never blocks a checkin."""
+        try:
+            profile = await self.patient_profile_service.fetch_patient_profile(
+                patient_id
+            )
+            if profile:
+                return profile.age, profile.gender
+        except Exception as e:
+            logger.warning("Profile lookup failed for %s: %s", patient_id, e)
+        return 0, "unknown"
 
     # ── Sleep ──────────────────────────────────────────────────────────────
 
@@ -82,6 +98,7 @@ class DailyCheckinService:
 
             # Vectorize (fire-and-forget logging on error)
             try:
+                age, gender = await self._demographics(patient_id)
                 await self.checkin_vector_service.upsert_sleep_vector(
                     patient_id=patient_id,
                     sleep_data={
@@ -92,11 +109,27 @@ class DailyCheckinService:
                         "wake_time": data.wake_time,
                         "notes": data.notes,
                     },
-                    patient_age=0,
-                    patient_gender="unknown",
+                    patient_age=age,
+                    patient_gender=gender,
                 )
             except Exception as e:
                 logger.error(f"Failed to vectorize sleep for {patient_id}: {e}")
+
+            # Sleep report regen (fire-and-forget)
+            try:
+                from datetime import datetime as _dt
+                from datetime import time as _time
+
+                from lib.workers.tasks.sleep.enqueue import (
+                    enqueue_process_sleep_upload_async,
+                )
+                await enqueue_process_sleep_upload_async(
+                    patient_id,
+                    _dt.combine(checkin_date, _time.min),
+                    _dt.combine(checkin_date, _time.max),
+                )
+            except Exception as e:
+                logger.error(f"Failed to enqueue sleep report for {patient_id}: {e}")
 
             # Gamification hook (fire-and-forget)
             try:
@@ -274,6 +307,7 @@ class DailyCheckinService:
 
             # Vectorize
             try:
+                age, gender = await self._demographics(patient_id)
                 await self.checkin_vector_service.upsert_mood_vector(
                     patient_id=patient_id,
                     mood_entry_id=str(record.id),
@@ -284,8 +318,8 @@ class DailyCheckinService:
                         "notes": data.notes,
                         "recorded_at": recorded_at,
                     },
-                    patient_age=0,
-                    patient_gender="unknown",
+                    patient_age=age,
+                    patient_gender=gender,
                 )
             except Exception as e:
                 logger.error(f"Failed to vectorize mood for {patient_id}: {e}")
@@ -495,12 +529,13 @@ class DailyCheckinService:
                         for item in data.symptoms
                     ],
                 }
+                age, gender = await self._demographics(patient_id)
                 await self.checkin_vector_service.upsert_symptom_vector(
                     patient_id=patient_id,
                     symptom_entry_id=str(record.id),
                     symptom_data=symptom_data,
-                    patient_age=0,
-                    patient_gender="unknown",
+                    patient_age=age,
+                    patient_gender=gender,
                 )
             except Exception as e:
                 logger.error(f"Failed to vectorize symptoms for {patient_id}: {e}")

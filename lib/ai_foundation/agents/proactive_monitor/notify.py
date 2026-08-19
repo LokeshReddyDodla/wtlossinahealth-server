@@ -42,14 +42,6 @@ async def send_top_insight_notification(
 
     is_event = trigger is not None
 
-    if not is_event:
-        from lib.services.notification_budget import can_send, record_sent
-
-        notif_type = "health_alert" if is_urgent else "health_insight"
-        if not can_send(target, notif_type):
-            logger.info("Notification budget exceeded for %s, skipping %s", target, notif_type)
-            return
-
     # Preferred AI language: the user sees the translated push; the English
     # original stays on the insight record (audit invariant).
     translation = await _translate_for_target(
@@ -60,9 +52,8 @@ async def send_top_insight_notification(
     push_body = translation["message"] if translation else top.body
     push_query = translation["suggested_query"] if translation else (top.suggested_query or "")
 
-    # Record BEFORE sending: a recorded-but-unsent insight self-heals (next
-    # scan dedups against it and can resend); a sent-but-unrecorded one
-    # double-pushes the patient and leaves a dangling insight_id in the app.
+    # Record before sending: a recorded-but-unsent insight is retried next
+    # scan; a sent-but-unrecorded one double-pushes and leaves a dangling id.
     try:
         await monitor.record_insight(
             patient_id, top, trigger=trigger,
@@ -73,34 +64,55 @@ async def send_top_insight_notification(
     except Exception as e:
         logger.warning("Failed to record insight for %s: %s", patient_id, e)
 
-    try:
-        await fcm.send_fcm_notification_to_user_devices(
-            user_id=target,
-            title=push_title,
-            body=push_body,
-            channel_key="alerts" if is_urgent else "health_insights",
-            group_key="alert_group" if is_urgent else "health_insights_group",
-            data={
-                "type": "proactive_insight",
-                "insight_id": top.insight_id,
-                "category": top.category.value,
-                "severity": top.severity.value,
-                "patient_id": patient_id,
-                "suggested_query": push_query,
-                "total_insights": str(len(insights)),
-                # Source-event linkage + chat routing (companion Phase 3).
-                # route=chat means: this insight continues the health-agent
-                # conversation — open the chat, not the insights list.
-                "entity_type": entity_type or "",
-                "entity_id": entity_id or "",
-                "route": "chat" if chat_continuation else "",
-                "thread_id": thread_id or "",
-            },
-        )
-        if not is_event:
-            record_sent(target)
-    except Exception as e:
-        logger.warning("Failed to send notification for %s: %s", patient_id, e)
+    # Delivery goes through the broker: EVENT insights (a trigger fired) are
+    # unlimited and ignore quiet hours; unprompted cron insights are the
+    # PROACTIVE tier (per-category cap + quiet hours + mute). Title/body are
+    # already in the patient's language, so the broker doesn't re-translate.
+    from lib.services.notifications.broker import deliver
+
+    broker_category = _broker_category(trigger, is_urgent)
+    await deliver(
+        target,
+        category=broker_category,
+        title=push_title,
+        body=push_body,
+        channel_key="alerts" if is_urgent else "health_insights",
+        group_key="alert_group" if is_urgent else "health_insights_group",
+        severity=top.severity.value,
+        prelocalized=True,
+        record_inbox=False,  # insights live in the insight store, not the inbox
+        data={
+            "type": "proactive_insight",
+            "insight_id": top.insight_id,
+            "category": top.category.value,
+            "severity": top.severity.value,
+            "patient_id": patient_id,
+            "suggested_query": push_query,
+            "total_insights": str(len(insights)),
+            # Source-event linkage + chat routing (companion Phase 3).
+            # route=chat means: this insight continues the health-agent
+            # conversation — open the chat, not the insights list.
+            "entity_type": entity_type or "",
+            "entity_id": entity_id or "",
+            "route": "chat" if chat_continuation else "",
+            "thread_id": thread_id or "",
+        },
+    )
+
+
+def _broker_category(trigger: str | None, is_urgent: bool) -> str:
+    """Map a scan to a broker policy category. A safety-urgent event is
+    CRITICAL (unmutable); a normal event is its own EVENT-tier category;
+    an unprompted cron insight is PROACTIVE."""
+    if trigger is None:
+        return "proactive_insight"
+    if is_urgent:
+        return "safety_alert"
+    # Event categories mirror the trigger names in policy.py
+    return trigger if trigger in {
+        "meal_logged", "smbg_logged", "symptom_logged",
+        "cgm_threshold_crossed", "medication_missed",
+    } else "proactive_insight"
 
 
 async def _translate_for_target(

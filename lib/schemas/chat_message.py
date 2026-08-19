@@ -27,7 +27,7 @@ class MetadataSchema(BaseModel):
 class ReadReceiptSchema(BaseModel):
     reader_id: str = Field(..., description="UUID of the reader.")
     read_at: datetime = Field(
-        default_factory=datetime.now,
+        default_factory=datetime.utcnow,
         description="Timestamp when the message was read.",
     )
 
@@ -57,11 +57,11 @@ class ChatMessageBase(BaseModel):
         None, description="UUID of the message being replied to."
     )
     timestamp: datetime = Field(
-        default_factory=datetime.now,
+        default_factory=datetime.utcnow,
         description="Timestamp of the message creation.",
     )
     updated_at: datetime = Field(
-        default_factory=datetime.now,
+        default_factory=datetime.utcnow,
         description="Timestamp of the last update (e.g., for reactions or edits).",
     )
     metadata: MetadataSchema = Field(

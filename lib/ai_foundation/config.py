@@ -50,12 +50,14 @@ class AIFoundationSettings(BaseSettings):
     # ── Reasoning Engine ──────────────────────────────────────────────────
 
     REASONING_DEFAULT_TIER: str = Field(default="standard", description="Default reasoning tier: basic, standard, advanced, unlimited")
-    REASONING_THINKER_MODEL: str = Field(default="claude-haiku-4-5-20251001", description="Model for reasoning/tool decisions")
-    REASONING_RESPONDER_MODEL: str = Field(default="claude-sonnet-4-6", description="Model for final response generation")
+    REASONING_THINKER_MODEL: str = Field(default="gpt-5.4-nano", description="Model for reasoning/tool decisions — fast, 1M context, reasoning, cheap workhorse")
+    REASONING_RESPONDER_MODEL: str = Field(default="gpt-5.1", description="Model for final response generation — reasoning, 128K output")
     REASONING_TIMEOUT_SECONDS: float = Field(default=30.0, description="Per-round timeout for thinker LLM calls")
     RESPONDER_TIMEOUT_SECONDS: float = Field(default=60.0, description="Timeout for final response generation (long answers exceed model spec defaults)")
     REASONING_MAX_TOOL_RESULT_CHARS: int = Field(default=16_000, description="Max chars per tool result")
     STREAMING_PIPELINE_TIMEOUT_SECONDS: float = Field(default=90.0, description="End-to-end timeout for the full streaming pipeline")
+    EVENT_FRESHNESS_HOURS: float = Field(default=6.0, description="An event whose source time is older than this is a backfill, not a live moment — no reactive push")
+    PIPELINE_RETRY_BACKOFF_SECONDS: float = Field(default=2.5, description="Backoff before the single silent pipeline retry that precedes any patient-visible error")
 
     # ── Planning ──────────────────────────────────────────────────────────
 
@@ -69,7 +71,7 @@ class AIFoundationSettings(BaseSettings):
     REFLECTION_MAX_ROUNDS: int = Field(default=2, description="Max reflection rounds for UNLIMITED tier")
     REFLECTION_TIMEOUT_SECONDS: float = Field(default=15.0, description="Timeout for reflection LLM call")
 
-    REASONING_ADVANCED_THINKER_MODEL: str = Field(default="claude-sonnet-4-6", description="Thinker model for ADVANCED/UNLIMITED tiers")
+    REASONING_ADVANCED_THINKER_MODEL: str = Field(default="gpt-5.1", description="Thinker model for ADVANCED/UNLIMITED tiers — reasoning")
 
     # ── Coordinator ──────────────────────────────────────────────────────
 
@@ -80,9 +82,9 @@ class AIFoundationSettings(BaseSettings):
     STEP_LOG_TRUNCATION_CHARS: int = Field(default=500, description="Max chars per tool result in reasoning step logs")
     SUMMARY_TRUNCATION_CHARS: int = Field(default=200, description="Max chars for display summaries in SSE events")
     LOOKUP_DEFAULT_LIMIT: int = Field(default=200, description="Default record limit for look_up tool")
-    BASELINE_DISPLAY_LIMIT: int = Field(default=200, description="Max individual records shown in compare_baseline")
+    METABOLIC_MEAL_HISTORY_LIMIT: int = Field(default=500, description="Max meal records assembled into a metabolic patient state")
     MAX_CONTEXT_FACTS: int = Field(default=10, description="Max patient facts included in LLM context")
-    MAX_HISTORY_MESSAGES: int = Field(default=8, description="Max conversation history messages in LLM context")
+    MAX_HISTORY_MESSAGES: int = Field(default=24, description="Max conversation history messages in LLM context — a companion that forgets (and then denies) its own turn-4 advice by turn 12 gaslights the patient; 12 exchanges covers a long session")
     PROMPT_CACHE_MAX_SIZE: int = Field(default=5, description="Max entries in per-role prompt cache")
 
     # ── Panel (Multi-Patient) Queries ─────────────────────────────────────

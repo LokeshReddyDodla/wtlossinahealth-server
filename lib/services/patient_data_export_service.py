@@ -55,27 +55,9 @@ class PatientDataExportService:
         "patient_summaries",
         "patient_documents",
         "patient_document_summary_interactions",
-        "profile_update_conversations",
-        "wtloss_inbody_reports",
-        "wtloss_weight_loss_interactions",
-        "wtloss_weight_loss_progress_analyses",
-        "wtloss_exercise_preferences",
-        "wtloss_fitness_screen",
-        "wtloss_willingness_commitment",
     ]
 
-    MONGO_USER_ID_COLLECTIONS = [
-        "health_query_conversations",
-        "wtloss_plan_snapshots",
-        "wtloss_flow_instances",
-        "wtloss_tasks",
-        "wtloss_glpinjection_login",
-        "wtloss_symptom_daily",
-        "wtloss_suggestion_cards",
-        "wtloss_weekly_symptoms_glp1",
-        "wtloss_audit_traces",
-        "wtloss_analytics_events",
-    ]
+    MONGO_USER_ID_COLLECTIONS: list[str] = []
 
     def __init__(self, postgres_store: PostgresStore, mongo_store: MongoStore, clickhouse_store):
         self.postgres_store = postgres_store
@@ -593,7 +575,7 @@ class PatientDataExportService:
     def _extract_clickhouse_data(self, patient_id: str) -> Dict[str, List[Dict[str, Any]]]:
         output: Dict[str, List[Dict[str, Any]]] = {}
         for table in self.CLICKHOUSE_TABLES:
-            query = f"SELECT * FROM {table} WHERE patient_id = %(patient_id)s"
+            query = f"SELECT * FROM {table} FINAL WHERE patient_id = %(patient_id)s"
             rows, columns = self.clickhouse_store.client.execute(
                 query,
                 {"patient_id": patient_id},

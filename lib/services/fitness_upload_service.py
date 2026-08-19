@@ -1,8 +1,6 @@
 from datetime import datetime
-from typing import Optional
-
 from dateutil.parser import parse
-from sqlalchemy import delete
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from lib.core.postgres_store import PostgresStore
 from lib.models.patient_smbg import PatientSMBG
@@ -10,9 +8,16 @@ from lib.workers.tasks.fitness.enqueue import (
     enqueue_process_fitness_upload_async,
 )
 from lib.workers.tasks.sleep.enqueue import enqueue_process_sleep_upload_async
+from lib.workers.tasks.vitals.enqueue import enqueue_generate_vital_vector_async
 from lib.utils.postgres_session_decorator import with_postgres_session
 from rest_server.patients.fitness.api_schema import FitnessDataRequest
 from sqlalchemy.ext.asyncio import AsyncSession
+
+_FITNESS_VITAL_KEY = {"blood_oxygen": "spo2", "body_temperature": "temperature"}
+_VECTORIZED_VITALS = {
+    "heart_rate", "resting_heart_rate", "systolic_bp", "diastolic_bp",
+    "spo2", "temperature", "respiratory_rate", "weight",
+}
 
 
 class FitnessUploadService:
@@ -39,9 +44,6 @@ class FitnessUploadService:
             fitness_data.end_datetime,
         )
 
-        await self.delete_existing_data(
-            patient_id, start_datetime, end_datetime, postgres_session=postgres_session
-        )
         await self.insert_new_data(
             patient_id, fitness_data, postgres_session=postgres_session
         )
@@ -86,32 +88,23 @@ class FitnessUploadService:
             # Weight via HealthKit
             if fitness_data.weight:
                 await handler.on_weight_logged(_UUID(patient_id))
+                try:
+                    from lib.utils.sync_profile_weight import sync_profile_weight
+                    latest = max(fitness_data.weight, key=lambda w: w.end_datetime)
+                    await sync_profile_weight(patient_id, float(latest.value))
+                except Exception:
+                    pass
+
+            # Sleep via HealthKit / wearable — completes the "Log your sleep" task
+            # for patients who never open the app's daily check-in.
+            if (fitness_data.sleep_deep or fitness_data.sleep_light
+                    or fitness_data.sleep_rem or fitness_data.sleep_in_bed
+                    or fitness_data.sleep_awake):
+                await handler.on_sleep_logged(_UUID(patient_id))
         except Exception:
             pass
 
         return end_datetime
-
-    @with_postgres_session
-    async def delete_existing_data(
-        self,
-        patient_id: str,
-        start_datetime: datetime,
-        end_datetime: datetime,
-        source_name: Optional[str] = None,
-        *,
-        postgres_session: AsyncSession,
-    ):
-        smbg_query = delete(PatientSMBG).where(
-            PatientSMBG.patient_id == patient_id,
-            PatientSMBG.reading_time.between(start_datetime, end_datetime),
-        )
-
-        if source_name:
-            smbg_query = smbg_query.where(PatientSMBG.source_name == source_name)
-        else:
-            smbg_query = smbg_query.where(PatientSMBG.source_name.notin_(("manual", "app")))
-
-        await postgres_session.execute(smbg_query)
 
     @with_postgres_session
     async def insert_new_data(
@@ -214,20 +207,48 @@ class FitnessUploadService:
 
         if vitals_data_points:
             self.clickhouse_store.write_data("aihealth.vitals_data", vitals_data_points)
+            await self._enqueue_vitals_vector(patient_id, vitals_data_points)
 
-        smbg_records = [
-            PatientSMBG(
-                patient_id=patient_id,
-                glucose_level=item.value,
-                reading_time=parse(item.start_datetime).replace(tzinfo=None),
-                source_name=item.source_name,
-                source_platform=item.source_platform,
-                type="Unspecified",
+        if fitness_data.blood_glucose:
+            values = [
+                {
+                    "patient_id": patient_id,
+                    "glucose_level": item.value,
+                    "reading_time": parse(item.start_datetime).replace(tzinfo=None),
+                    "source_name": item.source_name,
+                    "source_platform": item.source_platform,
+                    "type": "Unspecified",
+                }
+                for item in fitness_data.blood_glucose
+            ]
+            stmt = pg_insert(PatientSMBG).values(values)
+            stmt = stmt.on_conflict_do_update(
+                constraint="uq_smbg_patient_time_source",
+                set_={
+                    "glucose_level": stmt.excluded.glucose_level,
+                    "source_platform": stmt.excluded.source_platform,
+                    "type": stmt.excluded.type,
+                },
             )
-            for item in fitness_data.blood_glucose
-        ]
+            await postgres_session.execute(stmt)
 
-        postgres_session.add_all(smbg_records)
+    async def _enqueue_vitals_vector(self, patient_id: str, points: list[dict]) -> None:
+        latest: dict[str, dict] = {}
+        for p in points:
+            key = _FITNESS_VITAL_KEY.get(p["type"], p["type"])
+            if key in _VECTORIZED_VITALS and (key not in latest or p["time"] > latest[key]["time"]):
+                latest[key] = p
+        if not latest:
+            return
+        newest = max(latest.values(), key=lambda p: p["time"])
+        snapshot: dict = {key: p["value"] for key, p in latest.items()}
+        snapshot.update({
+            "test_time": newest["time"],
+            "source_name": newest.get("source_name") or "wearable",
+            "source_platform": newest.get("source_platform") or "",
+        })
+        vital_id = f"fitness:{patient_id}:{newest['time'].date()}"
+        await enqueue_generate_vital_vector_async(patient_id, vital_id, snapshot)
 
     async def update_last_sync(self, patient_id: str, dateTo: datetime):
         fitness_sync_key = f"fitness_sync:{patient_id}"

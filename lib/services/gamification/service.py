@@ -392,7 +392,28 @@ class GamificationService:
         task_title = task.title
         task_xp_reward = task.xp_reward
 
-        # Update challenge + quest progress + streak (same as event_handler auto-completion path)
+        # Grant XP first; roll the task back to pending if it fails so it can be
+        # retried instead of sticking as completed-but-unrewarded.
+        try:
+            xp_granted, new_level, leveled_up = await self.xp_service.grant_xp(
+                patient_id=patient_id,
+                amount=task_xp_reward,
+                source_type="task",
+                source_id=task_id_str,
+                description=f"Task: {task_title}",
+            )
+        except Exception:
+            task.status = TaskStatus.PENDING.value
+            task.completed_at = None
+            await postgres_session.commit()
+            raise
+
+        newly_earned = await self.achievement_evaluator.evaluate_all(
+            patient_id=patient_id
+        )
+
+        # Challenge + quest + streak + feed/notifications (same as the
+        # event_handler auto-completion path, which manual completion otherwise skips).
         try:
             from lib.core.container import container
             from lib.services.gamification.event_handler import GamificationEventHandler
@@ -400,21 +421,20 @@ class GamificationService:
             await handler._update_challenge_progress(patient_id, task_type)
             await handler._update_quest_progress(patient_id, task_type)
             await handler._try_process_streak(patient_id)
+            if leveled_up:
+                from lib.schemas.gamification import title_for_level
+                await handler._post_feed_event(
+                    patient_id, "level_up",
+                    {"new_level": new_level, "title": title_for_level(new_level)},
+                )
+            for a in newly_earned:
+                await handler._post_feed_event(
+                    patient_id, "achievement_earned",
+                    {"slug": a.slug, "title": a.title, "tier": a.tier},
+                )
         except Exception:
             from loguru import logger
-            logger.warning(f"Challenge/quest/streak progress update failed for {patient_id}")
-
-        xp_granted, new_level, leveled_up = await self.xp_service.grant_xp(
-            patient_id=patient_id,
-            amount=task_xp_reward,
-            source_type="task",
-            source_id=task_id_str,
-            description=f"Task: {task_title}",
-        )
-
-        newly_earned = await self.achievement_evaluator.evaluate_all(
-            patient_id=patient_id
-        )
+            logger.warning(f"Post-completion side effects failed for {patient_id}")
 
         # Refresh profile from DB to get updated XP (grant_xp used a separate session)
         postgres_session.expire_all()
@@ -664,6 +684,27 @@ class GamificationService:
     # ── AI Context ───────────────────────────────────────────────────────
 
     @with_postgres_session
+    @with_postgres_session
+    async def get_active_nudges(
+        self,
+        patient_id: str,
+        *,
+        postgres_session: AsyncSession,
+    ) -> list[str]:
+        """Today's still-pending task titles — the gamification nudges the
+        patient will already receive today. The proactive brain reads these
+        so its coaching complements them instead of becoming a third voice
+        about the same thing. Duck-typed reader for ai_foundation."""
+        today = await self._patient_today(UUID(patient_id), postgres_session)
+        result = await postgres_session.execute(
+            select(DailyTask.title).where(
+                DailyTask.patient_id == UUID(patient_id),
+                DailyTask.task_date == today,
+                DailyTask.status == TaskStatus.PENDING.value,
+            )
+        )
+        return [t for (t,) in result.all()]
+
     async def get_gamification_context(
         self,
         patient_id: UUID,
@@ -707,6 +748,7 @@ class GamificationService:
         )
         tasks = task_result.scalars().all()
         completed = sum(1 for t in tasks if t.status == TaskStatus.COMPLETED.value)
+        pending_task_titles = [t.title for t in tasks if t.status == TaskStatus.PENDING.value]
 
         # Weekly quest
         week_start = today - timedelta(days=today.weekday())
@@ -795,6 +837,7 @@ class GamificationService:
             streak_freezes=profile.streak_freezes,
             recent_achievements=recent,
             tasks_today={"completed": completed, "total": len(tasks)},
+            pending_task_titles=pending_task_titles,
             weekly_quest=quest_data,
             active_challenges=active_challenges,
             buddy_streak=buddy_streak,

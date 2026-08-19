@@ -28,13 +28,23 @@ _AI_LANGUAGE_OVERRIDES: dict[str, str] = {
 # Universal register rule for any generated or translated patient-facing text.
 # Language-agnostic on purpose: every language with a T–V distinction (Hindi
 # aap/tu, Bengali apni/tui, Urdu aap/tum, ...) must land on the respectful
-# form, including languages nobody on the team can review. "casual" wording
-# in prompts previously pushed models to the intimate form.
+# form, including languages nobody on the team can review — models read
+# "casual" in a prompt as license for the intimate form.
 RESPECTFUL_REGISTER_INSTRUCTION = (
     "Address the patient in the language's RESPECTFUL second-person register "
     "— the polite form used with someone you respect (e.g. a client or an "
     "elder) — while staying warm and friendly. NEVER use the intimate or "
     "overly familiar form, in any language."
+)
+
+# Medical fidelity rule for any generated or translated patient-facing text.
+# One wording, every surface — hand-copies of this rule drift (and a drifted
+# copy is how numbers get converted or [[BUBBLE]] markers get translated).
+NUMBER_FIDELITY_INSTRUCTION = (
+    "Every number stays EXACTLY as written: values, units (mg/dL, g, kcal, "
+    "hours, %), dates, times, medication names. Never convert, round, or "
+    "spell out numbers. Any [[BUBBLE]] or [[AWAIT:...]] token is copied "
+    "through unchanged."
 )
 
 
@@ -100,26 +110,6 @@ NotificationCategoryLiteral = Literal[
 ]
 
 NotificationSeverityLiteral = Literal["info", "warning", "alert"]
-
-AiConversationRoleLiteral = Literal["system", "human", "ai"]
-
-
-AiConversationMessageTypeLiteral = Literal[
-    "text", "image", "file", "audio", "custom", "markdown"
-]
-
-AiConversationTypeLiteral = Literal[
-    "smbg",
-    "meal",
-    "prescription",
-    "report",
-    "sleep",
-    "health-tip",
-    "other",
-    "patient",
-    "care-provider",
-    "weight-loss-agent",
-]
 
 OpenAIModelLiteral = Literal[
     "gpt-5.1",

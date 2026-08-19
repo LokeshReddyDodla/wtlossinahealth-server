@@ -178,14 +178,22 @@ class ChatManagementService(BaseChatService):
             logger.info(f"MongoDB Error: {e}")
             raise
 
-    async def fetch_chat_messages(self, chat_id: str, user_id: str):
+    async def fetch_chat_messages(
+        self, chat_id: str, user_id: str, before=None, limit: int = 50
+    ):
         try:
-            pipeline = get_chat_messages_pipeline(chat_id)
-            return (
+            pipeline = get_chat_messages_pipeline(
+                chat_id, before=before, limit=limit
+            )
+            docs = (
                 await self.mongo_store.db["chat_messages"]
                 .aggregate(pipeline)
-                .to_list(length=None)
+                .to_list(length=limit)
             )
+            # Pipeline returns newest-first for the limit; flip to ascending so
+            # the page renders oldest → newest.
+            docs.reverse()
+            return docs
         except PyMongoError as e:
             logger.info(f"MongoDB Error: {e}")
             raise
@@ -195,6 +203,20 @@ class ChatManagementService(BaseChatService):
         existence + access check in a single query."""
         chat = await self.mongo_store.db["chats"].find_one(
             {"_id": chat_id, "participants.id": user_id},
+            {"_id": 1},
+        )
+        return chat is not None
+
+    async def can_user_write_to_chat(self, chat_id: str, user_id: str) -> bool:
+        """True if the user is a participant who is not read-only — a disabled
+        or archived chat marks its participants read_only and must reject writes."""
+        chat = await self.mongo_store.db["chats"].find_one(
+            {
+                "_id": chat_id,
+                "participants": {
+                    "$elemMatch": {"id": user_id, "is_read_only": {"$ne": True}}
+                },
+            },
             {"_id": 1},
         )
         return chat is not None

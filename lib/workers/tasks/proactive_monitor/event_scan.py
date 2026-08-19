@@ -21,7 +21,6 @@ from lib.ai_foundation.agents.proactive_monitor.contracts import (
     MealLoggedAnchor,
     SMBGLoggedAnchor,
     SymptomLoggedAnchor,
-    MedicationMissedAnchor,
     SEVERITY_RANK,
     TRIGGER_DATA_TYPES,
     TriggerAnchor,
@@ -31,6 +30,7 @@ from lib.ai_foundation.agents.proactive_monitor.notify import (
     send_top_insight_notification,
 )
 from lib.core.container import container
+from lib.ai_foundation.config import settings
 from lib.services.fcm_service import FCMService
 from lib.workers.tasks.base import TaskResult, task_with_logging
 
@@ -43,9 +43,26 @@ def _extract_entity(anchor: TriggerAnchor) -> tuple[str | None, str | None]:
         return "smbg", anchor.reading_id
     if isinstance(anchor, SymptomLoggedAnchor):
         return "symptom", anchor.symptom_entry_id
-    if isinstance(anchor, MedicationMissedAnchor):
-        return "medication_task", anchor.daily_task_id
     return None, None
+
+
+def _is_stale_event(anchor: Any) -> bool:
+    """True if the anchor's source event is older than the freshness window
+    (a backfilled log, not something that just happened). Unknown/unparseable
+    time → False (fresh) so we never suppress on uncertainty."""
+    from datetime import datetime, timezone
+
+    raw = getattr(anchor, "event_time", None)
+    if not raw:
+        return False
+    try:
+        ts = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        age_h = (datetime.now(timezone.utc) - ts).total_seconds() / 3600
+        return age_h > settings.EVENT_FRESHNESS_HOURS
+    except Exception:
+        return False
 
 
 @task_with_logging
@@ -81,6 +98,16 @@ async def handle_proactive_event(
             success=False,
             error=f"Invalid anchor for trigger {trigger}",
             data={"patient_id": patient_id, "trigger": trigger},
+        )
+
+    # Freshness gate: a patient backfilling an old meal/reading is NOT a live
+    # moment — react only to events that actually just happened, so a bulk
+    # catch-up doesn't fire a burst of "just now" pushes. Missing/unparseable
+    # event_time → treat as fresh (don't suppress on uncertainty).
+    if _is_stale_event(typed_anchor):
+        logger.info("handle_proactive_event: stale %s for %s — skipping push", trigger, patient_id[:8])
+        return TaskResult(
+            success=True, data={"patient_id": patient_id, "trigger": trigger, "skipped": "stale_event"},
         )
 
     try:

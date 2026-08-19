@@ -13,27 +13,55 @@ from typing import Any, Optional
 from uuid import UUID
 
 from lib.core.container import container
-from lib.core.postgres_store import PostgresStore
 from lib.core.types import (
     FCMNotificationChannelKeyLiteral,
     FCMNotificationGroupKeyLiteral,
     NotificationCategoryLiteral,
     NotificationSeverityLiteral,
 )
-from lib.models.patient_notification import PatientNotification
 
 logger = logging.getLogger(__name__)
 
 
-_CATEGORY_CHANNEL: dict[
+async def localize_for_patient(patient_id: str, title: str, body: str) -> tuple[str, str]:
+    """Translate title/body into the patient's preferred AI language.
+
+    Titles are near-fixed strings (cached translation); bodies carry
+    patient-specific content (uncached). Any failure returns the English
+    originals.
+    """
+    try:
+        import asyncio
+
+        from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
+        from lib.ai_foundation.translation import TranslationService
+        from lib.core.types import DEFAULT_AI_LANGUAGE
+
+        resolver = container.resolve(PatientNameResolver)
+        language = await resolver.resolve_language(patient_id)
+        if language == DEFAULT_AI_LANGUAGE:
+            return title, body
+        translator = container.resolve(TranslationService)
+        return tuple(await asyncio.gather(
+            translator.translate_cached(title, language),
+            translator.translate(body, language),
+        ))
+    except Exception as exc:
+        logger.warning("Notification translation failed for %s: %s", patient_id, exc)
+        return title, body
+
+
+# (channel, group, broker-category) for each legacy sender category. The
+# broker's policy.py decides tier/limit/mute from the broker-category.
+_CATEGORY_ROUTE: dict[
     NotificationCategoryLiteral,
-    tuple[FCMNotificationChannelKeyLiteral, FCMNotificationGroupKeyLiteral],
+    tuple[FCMNotificationChannelKeyLiteral, FCMNotificationGroupKeyLiteral, str],
 ] = {
-    "gamification": ("gamification", "gamification_group"),
-    "medication_lifecycle": ("reminders", "reminder_group"),
-    "medication_refill": ("reminders", "reminder_group"),
-    "medication_dose": ("reminders", "reminder_group"),
-    "follow_up": ("reminders", "reminder_group"),
+    "gamification": ("gamification", "gamification_group", "gamification"),
+    "medication_lifecycle": ("reminders", "reminder_group", "medication_lifecycle"),
+    "medication_refill": ("reminders", "reminder_group", "refill_reminder"),
+    "medication_dose": ("reminders", "reminder_group", "medication_dose"),
+    "follow_up": ("reminders", "reminder_group", "follow_up_reminder"),
 }
 
 
@@ -47,60 +75,27 @@ async def record_and_send_notification(
     deeplink: Optional[str] = None,
     data: Optional[dict[str, Any]] = None,
     skip_permission_check: bool = False,
-) -> UUID:
-    """Persist the notification then fire FCM.
+) -> UUID | None:
+    """Send a reminder/gamification push through the notification broker.
 
-    Returns the ``patient_notifications.id`` so callers can reference it
-    (e.g. for deeplink construction). FCM failures are logged but don't
-    raise — the inbox row is the user's source of truth.
+    Thin adapter kept for the existing callers — the broker now owns the
+    delivery decision (tier policy, per-category budget, mute, quiet hours,
+    translation, inbox row, FCM). Returns the inbox row id, or None if the
+    broker suppressed or failed to persist.
     """
-    data = data or {}
-    channel_key, group_key = _CATEGORY_CHANNEL[category]
+    from lib.services.notifications.broker import deliver
 
-    store = container.resolve(PostgresStore)
-
-    notif = PatientNotification(
-        patient_id=UUID(patient_id),
-        category=category,
+    channel_key, group_key, broker_category = _CATEGORY_ROUTE[category]
+    result = await deliver(
+        patient_id,
+        category=broker_category,
         title=title,
         body=body,
+        channel_key=channel_key,
+        group_key=group_key,
+        data=data or {},
         severity=severity,
         deeplink=deeplink,
-        data=data,
+        force=skip_permission_check,
     )
-
-    # created_at is set by Postgres server_default=now() — single clock source
-    # so timestamps stay consistent across worker processes and containers.
-    async with store.get_session() as session:
-        session.add(notif)
-        await session.commit()
-        await session.refresh(notif)
-
-    fcm_data = {
-        "notification_id": str(notif.id),
-        "category": category,
-        **data,
-    }
-
-    try:
-        from lib.services.fcm_service import FCMService
-
-        await FCMService().send_fcm_notification_to_user_devices(
-            user_id=patient_id,
-            title=title,
-            body=body,
-            channel_key=channel_key,
-            group_key=group_key,
-            data=fcm_data,
-            skip_permission_check=skip_permission_check,
-        )
-    except Exception as exc:
-        logger.warning(
-            "FCM send failed for notification %s (patient %s, category %s): %s",
-            notif.id,
-            patient_id,
-            category,
-            exc,
-        )
-
-    return notif.id
+    return result.notification_id

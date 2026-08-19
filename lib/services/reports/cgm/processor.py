@@ -2,8 +2,15 @@ import hashlib
 from datetime import datetime
 from typing import Dict, List, Optional
 
-from lib.schemas.cgm_stats import CGMStats, CGMReading, DateRange, ReportMetadata
+from lib.schemas.cgm_stats import (
+    CGMStats,
+    CGMReading,
+    CGMTrend,
+    DateRange,
+    ReportMetadata,
+)
 from lib.utils.date.periods import DayWisePeriod, WeekWisePeriod
+from lib.utils.validation_utils import validate_float
 
 from .hyper_stats import HyperglycemiaStatistics
 from .hypo_stats import HypoglycemiaStatistics
@@ -11,7 +18,9 @@ from .queries import (
     generate_hourly_avg_query,
     generate_readings_around_meal_query,
     generate_readings_in_range_query,
+    generate_sensor_active_query,
     generate_total_readings_count_query,
+    generate_trend_prev_window_query,
 )
 from .range_stats import CGMRangeStatistics
 from .statistics import CGMStatistics
@@ -30,11 +39,13 @@ class CGMStatsProcessor:
         clickhouse_store,
         meal_service,
         fitness_stats_processor,
+        sleep_stats_processor,
         meal_report_service,
     ):
         self.clickhouse_store = clickhouse_store
         self.meal_service = meal_service
         self.fitness_stats_processor = fitness_stats_processor
+        self.sleep_stats_processor = sleep_stats_processor
         self.meal_report_service = meal_report_service
 
     def get_readings_in_range(
@@ -148,6 +159,29 @@ class CGMStatsProcessor:
         cgm_range_stats = CGMRangeStatistics.fetch(
             self.clickhouse_store, patient_id, start_date_str, end_date_str
         )
+        cgm_summary_stats.gri = CGMRangeStatistics.compute_gri(cgm_range_stats)
+
+        prev_start = start_date - (end_date - start_date)
+        trend_result = self.clickhouse_store.client.execute(
+            generate_trend_prev_window_query(
+                patient_id,
+                prev_start.strftime("%Y-%m-%dT%H:%M:%S"),
+                start_date_str,
+            )
+        )
+        trend: Optional[CGMTrend] = None
+        if trend_result and trend_result[0][2]:  # previous window has readings
+            prev_avg = validate_float(trend_result[0][0])
+            prev_tir = validate_float((trend_result[0][1] / trend_result[0][2]) * 100)
+            cur_avg = cgm_summary_stats.average_glucose_mgdl
+            cur_tir = cgm_range_stats.in_target_70_180_percent
+            trend = CGMTrend(
+                previous_average_glucose_mgdl=prev_avg,
+                previous_time_in_range_percent=prev_tir,
+                delta_average_glucose_mgdl=validate_float(cur_avg - prev_avg),
+                delta_time_in_range_percent=validate_float(cur_tir - prev_tir),
+                delta_gmi=validate_float(0.02392 * (cur_avg - prev_avg)),
+            )
         hyper_stats = HyperglycemiaStatistics().fetch(
             self.clickhouse_store, patient_id, start_date_str, end_date_str
         )
@@ -158,7 +192,14 @@ class CGMStatsProcessor:
             self.clickhouse_store, patient_id, start_date_str, end_date_str
         )
 
-        fitness_report = self.fitness_stats_processor.generate_custom_report(
+        fitness_report = await self.fitness_stats_processor.generate_custom_report(
+            patient_id,
+            start_date,
+            end_date,
+            report_type=report_type,
+        )
+
+        sleep_report = await self.sleep_stats_processor.generate_custom_report(
             patient_id,
             start_date,
             end_date,
@@ -184,6 +225,23 @@ class CGMStatsProcessor:
         total_readings_result = self.clickhouse_store.client.execute(total_readings_query)
         total_readings = total_readings_result[0][0] if total_readings_result else 0
 
+        # Sensor-active %: scored against the sensor's own cadence (median gap
+        # between readings), so 5-min and 15-min devices are both correct.
+        median_gap_result = self.clickhouse_store.client.execute(
+            generate_sensor_active_query(patient_id, start_date_str, end_date_str)
+        )
+        median_gap_s = (
+            median_gap_result[0][0]
+            if median_gap_result and median_gap_result[0][0]
+            else 0
+        )
+        window_seconds = (end_date - start_date).total_seconds()
+        sensor_active_percent = (
+            round(min(100.0, total_readings * median_gap_s / window_seconds * 100), 1)
+            if median_gap_s and window_seconds
+            else 0.0
+        )
+
         return CGMStats(
             metadata=ReportMetadata(
                 date_range=DateRange(
@@ -193,6 +251,7 @@ class CGMStatsProcessor:
                 total_readings=total_readings,
                 days_covered=days_covered,
                 report_type=report_type,
+                sensor_active_percent=sensor_active_percent,
             ),
             cgm_readings=cgm_readings,
             cgm_summary_stats=cgm_summary_stats,
@@ -200,7 +259,9 @@ class CGMStatsProcessor:
             hyper_stats=hyper_stats,
             hypo_stats=hypo_stats,
             time_period_stats=time_period_stats,
+            trend=trend,
             fitness_report=fitness_report,
+            sleep_report=sleep_report,
             meal_report_id=meal_report_id,
         )
 

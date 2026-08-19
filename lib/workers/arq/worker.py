@@ -16,6 +16,8 @@ def _get_all_cron_jobs():
     """Aggregate cron jobs from all task modules."""
     cron_jobs = []
 
+    from lib.workers.tasks.cgm import get_cron_jobs as get_cgm_cron_jobs
+    from lib.workers.tasks.patient_panel import get_cron_jobs as get_panel_cron_jobs
     from lib.workers.tasks.device import get_cron_jobs as get_device_cron_jobs
     from lib.workers.tasks.librelink_up import (
         get_cron_jobs as get_librelink_up_cron_jobs,
@@ -28,12 +30,14 @@ def _get_all_cron_jobs():
     from lib.workers.tasks.patient_export import (
         get_cron_jobs as get_patient_export_cron_jobs,
     )
-    from lib.workers.tasks.weightloss_agent_tasks import get_cron_jobs as get_weightloss_agent_cron_jobs
     from lib.workers.tasks.proactive_monitor import get_cron_jobs as get_proactive_monitor_cron_jobs
     from lib.workers.tasks.reengagement import get_cron_jobs as get_reengagement_cron_jobs
+    from lib.workers.tasks.plans import get_cron_jobs as get_plans_cron_jobs
     from lib.workers.tasks.gamification.cron import GAMIFICATION_CRON_JOBS
     from lib.workers.tasks.platform.cron import PLATFORM_CRON_JOBS
 
+    cron_jobs.extend(get_cgm_cron_jobs())
+    cron_jobs.extend(get_panel_cron_jobs())
     cron_jobs.extend(get_device_cron_jobs())
     cron_jobs.extend(get_librelink_up_cron_jobs())
     cron_jobs.extend(get_inbody_cron_jobs())
@@ -42,9 +46,9 @@ def _get_all_cron_jobs():
     cron_jobs.extend(get_package_cron_jobs())
     cron_jobs.extend(get_patient_summary_cron_jobs())
     cron_jobs.extend(get_patient_export_cron_jobs())
-    cron_jobs.extend(get_weightloss_agent_cron_jobs())
     cron_jobs.extend(get_proactive_monitor_cron_jobs())
     cron_jobs.extend(get_reengagement_cron_jobs())
+    cron_jobs.extend(get_plans_cron_jobs())
     cron_jobs.extend(GAMIFICATION_CRON_JOBS)
     cron_jobs.extend(PLATFORM_CRON_JOBS)
 

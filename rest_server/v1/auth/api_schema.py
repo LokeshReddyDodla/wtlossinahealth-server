@@ -7,13 +7,12 @@ from rest_server.response_models import SuccessResponse
 
 
 # Request Models
-class SendOtpRequest(BaseModel):
-    phone_number: str = Field(..., description="Phone number to send OTP to")
-
-
-class VerifyOtpRequest(BaseModel):
-    phone_number: str = Field(..., description="Phone number to verify")
-    otp: str = Field(..., description="OTP code to verify")
+class FirebaseLoginRequest(BaseModel):
+    id_token: str = Field(
+        ...,
+        description="Firebase ID token obtained after phone sign-in; the "
+        "verified phone number is read from this token, never from the client",
+    )
     fcm_token: Optional[str] = Field(
         None, description="FCM token of the user's device"
     )
@@ -114,8 +113,7 @@ class UserDevicesListResponse(BaseModel):
 
 
 # Typed Success Responses
-SendOtpResponse = SuccessResponse[None]  # Only message, no data
-VerifyOtpResponse = SuccessResponse[AuthTokenResponse]
+FirebaseLoginResponse = SuccessResponse[AuthTokenResponse]
 CareProviderLoginResponse = SuccessResponse[AuthTokenResponse]
 LogoutResponse = SuccessResponse[None]  # Only message, no data
 ListDevicesResponse = SuccessResponse[UserDevicesListResponse]

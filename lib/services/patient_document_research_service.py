@@ -1,5 +1,4 @@
 from datetime import datetime
-import inspect as py_inspect
 from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
 
@@ -9,22 +8,14 @@ from fastapi import HTTPException
 from sqlalchemy import asc, desc, inspect, select
 
 from lib.schemas.patient_document_research import (
-    PatientDocumentResearchChatRequest,
-    PatientDocumentResearchChatResponse,
     PatientDocumentResearchDocument,
     PatientDocumentResearchSelectionItem,
     PatientDocumentResearchSelectionResponse,
     PatientDocumentResearchSource,
-    PatientDocumentResearchSummaryRequest,
-    PatientDocumentResearchSummaryResponse,
-)
-from lib.services.ai_conversation_service.ai_conversation_service import (
-    AiConversationService,
 )
 from lib.services.patient_document_service import PatientDocumentService
 from lib.services.medication_service import MedicationService
 from lib.services.token_usage_service import TokenUsageService
-from lib.services.weight_loss_agent_service import WeightLossAgentService
 from lib.utils.http_exceptions import raise_http_exception
 from lib.models.patient_prescription import PatientPrescription as PatientPrescriptionModel
 
@@ -41,7 +32,6 @@ class PatientDocumentResearchService:
         patient_document_summary_interactions_collection: Any,
         patient_document_service: PatientDocumentService,
         medication_service: MedicationService,
-        weight_loss_agent_service: WeightLossAgentService,
         token_usage_service: TokenUsageService,
     ):
         self.patient_document_collection = patient_document_collection
@@ -50,7 +40,6 @@ class PatientDocumentResearchService:
         )
         self.patient_document_service = patient_document_service
         self.medication_service = medication_service
-        self.weight_loss_agent_service = weight_loss_agent_service
         self.token_usage_service = token_usage_service
 
     # -------------------------------------------------------------------------
@@ -71,90 +60,13 @@ class PatientDocumentResearchService:
         prescriptions = await self._fetch_prescriptions_safe(
             patient_id=patient_id, order=order
         )
-        inbody_item = await self._get_inbody_selection_item(patient_id)
 
         items = [self._map_document_to_selection(d) for d in documents]
         items += [self._map_prescription_to_selection(p) for p in prescriptions]
-        if inbody_item:
-            items.append(inbody_item)
 
         return PatientDocumentResearchSelectionResponse(items=items)
 
-    async def generate_research_summary(
-        self,
-        patient_id: str,
-        care_provider_id: str,
-        request: PatientDocumentResearchSummaryRequest,
-    ) -> PatientDocumentResearchSummaryResponse:
-        """Generate AI research summary from selected documents."""
-        sources = self._normalize_sources(request)
-        documents = await self._fetch_source_documents(patient_id, sources)
-        conversation_id = request.conversation_id or self._generate_conversation_id(
-            patient_id, "research"
-        )
 
-        prompt = (
-            "Provide a clinical research summary for the selected patient records "
-            "(documents, prescriptions, and inbody reports). "
-            "Highlight diagnoses, abnormal values, medications, and follow-up actions."
-        )
-        if request.question:
-            prompt += f"\nDoctor question: {request.question}"
-
-        ai_response = await self._get_ai_response(
-            patient_id,
-            care_provider_id,
-            conversation_id,
-            prompt,
-            documents,
-            api_endpoint="/care_provider/patients/documents/research/summary",
-        )
-
-        await self._record_interaction(
-            "research", patient_id, care_provider_id, conversation_id,
-            sources, request.question, ai_response, documents
-        )
-
-        return PatientDocumentResearchSummaryResponse(
-            conversation_id=conversation_id,
-            summary=ai_response["content"],
-            follow_up_questions=ai_response["follow_up_questions"],
-            source_documents=documents,
-        )
-
-    async def chat_about_documents(
-        self,
-        patient_id: str,
-        care_provider_id: str,
-        request: PatientDocumentResearchChatRequest,
-    ) -> PatientDocumentResearchChatResponse:
-        """Answer questions about selected documents."""
-        sources = self._normalize_sources(request)
-        documents = await self._fetch_source_documents(patient_id, sources)
-        conversation_id = request.conversation_id or self._generate_conversation_id(
-            patient_id, "chat"
-        )
-
-        ai_response = await self._get_ai_response(
-            patient_id,
-            care_provider_id,
-            conversation_id,
-            request.question,
-            documents,
-            api_endpoint="/care_provider/patients/documents/research/chat",
-        )
-
-        await self._record_interaction(
-            "chat", patient_id, care_provider_id, conversation_id,
-            sources, request.question, ai_response, documents
-        )
-
-        return PatientDocumentResearchChatResponse(
-            conversation_id=conversation_id,
-            answer=ai_response["content"],
-            follow_up_questions=ai_response["follow_up_questions"],
-            source_documents=documents,
-        )
 
     # -------------------------------------------------------------------------
     # Selection Item Mappers
@@ -204,44 +116,6 @@ class PatientDocumentResearchService:
             },
         )
 
-    async def _get_inbody_selection_item(
-        self, patient_id: str
-    ) -> Optional[PatientDocumentResearchSelectionItem]:
-        try:
-            patient_uuid = UUID(patient_id)
-        except ValueError:
-            return None
-
-        enrollment = await self.weight_loss_agent_service.get_patient_enrollment_by_patient_id(
-            patient_uuid
-        )
-        if not enrollment or not enrollment.get("enrollment_id"):
-            return None
-
-        enrollment_id = str(enrollment["enrollment_id"])
-        report = await self.weight_loss_agent_service.get_latest_inbody_report_with_details(
-            UUID(enrollment_id)
-        )
-        if not report:
-            return None
-
-        report_data = report.get("report") or {}
-        highlights = report.get("highlights") or {}
-        summary = report_data.get("ai_summary") or ""
-
-        return PatientDocumentResearchSelectionItem(
-            source_type="inbody_report",
-            source_id=enrollment_id,
-            title=report_data.get("original_filename") or "Inbody Report",
-            category="inbody_report",
-            document_date=report_data.get("report_date"),
-            summary_preview=self._truncate(summary, self.PREVIEW_LENGTH) or None,
-            metadata={
-                "report_id": report_data.get("report_id"),
-                "highlights": highlights,
-            },
-        )
-
     # -------------------------------------------------------------------------
     # Document Mappers (for AI context)
     # -------------------------------------------------------------------------
@@ -288,29 +162,6 @@ class PatientDocumentResearchService:
             summary_text=self._truncate(summary, self.MAX_SUMMARY_LENGTH),
         )
 
-    def _map_inbody_to_research(
-        self, report_data: Dict[str, Any]
-    ) -> PatientDocumentResearchDocument:
-        report = report_data.get("report") or {}
-        highlights = report_data.get("highlights") or {}
-        summary = (report.get("ai_summary") or "").strip()
-        if not summary:
-            summary = self._build_inbody_summary(highlights)
-
-        return PatientDocumentResearchDocument(
-            source_type="inbody_report",
-            document_id=str(report.get("report_id") or ""),
-            file_name=report.get("original_filename"),
-            file_url=None,
-            mime_type=report.get("content_type"),
-            category="inbody_report",
-            document_date=report.get("report_date"),
-            uploaded_at=report.get("created_at") or report.get("extracted_at"),
-            uploaded_by_type=None,
-            summary_preview=self._truncate(summary, self.PREVIEW_LENGTH) or None,
-            summary_text=self._truncate(summary, self.MAX_SUMMARY_LENGTH),
-        )
-
     # -------------------------------------------------------------------------
     # Data Fetching
     # -------------------------------------------------------------------------
@@ -352,11 +203,9 @@ class PatientDocumentResearchService:
     ) -> List[PatientDocumentResearchDocument]:
         doc_sources = [s for s in sources if s.source_type == "patient_document"]
         rx_sources = [s for s in sources if s.source_type == "prescription"]
-        inbody_sources = [s for s in sources if s.source_type == "inbody_report"]
 
         doc_map: Dict[str, PatientDocumentResearchDocument] = {}
         rx_map: Dict[str, PatientDocumentResearchDocument] = {}
-        inbody_map: Dict[str, PatientDocumentResearchDocument] = {}
 
         # Fetch patient documents
         if doc_sources:
@@ -380,32 +229,6 @@ class PatientDocumentResearchService:
             if missing:
                 raise_http_exception(404, "Prescriptions not found", {"ids": missing})
 
-        # Fetch inbody reports
-        if inbody_sources:
-            missing = []
-            for source in inbody_sources:
-                try:
-                    enrollment_uuid = UUID(source.source_id)
-                except ValueError:
-                    raise_http_exception(400, f"Invalid enrollment ID: {source.source_id}")
-
-                report = await self.weight_loss_agent_service.get_latest_inbody_report_with_details(
-                    enrollment_uuid
-                )
-                if not report:
-                    missing.append(source.source_id)
-                    continue
-
-                report_patient = report.get("report", {}).get("patient_id")
-                if report_patient and str(report_patient) != patient_id:
-                    missing.append(source.source_id)
-                    continue
-
-                inbody_map[source.source_id] = self._map_inbody_to_research(report)
-
-            if missing:
-                raise_http_exception(404, "Inbody reports not found", {"ids": missing})
-
         # Build ordered result preserving source order
         result = []
         for source in sources:
@@ -414,7 +237,7 @@ class PatientDocumentResearchService:
             elif source.source_type == "prescription":
                 doc = rx_map.get(source.source_id)
             else:
-                doc = inbody_map.get(source.source_id)
+                doc = None
             if doc:
                 result.append(doc)
 
@@ -440,67 +263,6 @@ class PatientDocumentResearchService:
     # AI Integration
     # -------------------------------------------------------------------------
 
-    async def _get_ai_response(
-        self,
-        patient_id: str,
-        care_provider_id: str,
-        conversation_id: str,
-        prompt: str,
-        documents: List[PatientDocumentResearchDocument],
-        api_endpoint: str,
-    ) -> Dict[str, Any]:
-        ai_service = AiConversationService(
-            conversation_type="care-provider",
-            ai_model_provider="openai",
-            selected_ai_model="gpt-4o",
-        )
-
-        generate_kwargs = {
-            "patient_id": patient_id,
-            "user_id": care_provider_id,
-            "conversation_id": conversation_id,
-            "human_input": prompt,
-            "conversation_type": "care-provider",
-            "additional_context": {
-                "context_type": "patient_document_research",
-                "documents": [d.model_dump() for d in documents],
-            },
-        }
-
-        signature = py_inspect.signature(ai_service.generate_response)
-        if "api_endpoint" in signature.parameters:
-            generate_kwargs["api_endpoint"] = api_endpoint
-
-        response = await ai_service.generate_response(**generate_kwargs)
-
-        return {
-            "content": response.get("content", "Unable to generate response."),
-            "follow_up_questions": response.get("follow_up_questions") or [],
-        }
-
-    async def _record_interaction(
-        self,
-        interaction_type: str,
-        patient_id: str,
-        care_provider_id: str,
-        conversation_id: str,
-        sources: List[PatientDocumentResearchSource],
-        question: Optional[str],
-        ai_response: Dict[str, Any],
-        documents: List[PatientDocumentResearchDocument],
-    ):
-        await self.interactions_collection.insert_one({
-            "patient_id": patient_id,
-            "care_provider_id": care_provider_id,
-            "conversation_id": conversation_id,
-            "interaction_type": interaction_type,
-            "sources": [s.model_dump() for s in sources],
-            "question": question,
-            "response": ai_response["content"],
-            "follow_up_questions": ai_response["follow_up_questions"],
-            "source_documents": [d.model_dump() for d in documents],
-            "created_at": datetime.now(),
-        })
 
     # -------------------------------------------------------------------------
     # Helpers
@@ -588,42 +350,6 @@ class PatientDocumentResearchService:
             parts.append("Medications:\n" + "\n".join(lines))
 
         return "\n".join(parts).strip()
-
-    def _build_inbody_summary(self, highlights: Dict[str, Any]) -> str:
-        if not highlights:
-            return ""
-
-        labels = {
-            "skeletal_muscle_mass": "Skeletal muscle mass",
-            "body_fat_percentage": "Body fat percentage",
-            "visceral_fat_level": "Visceral fat level",
-            "basal_metabolic_rate": "Basal metabolic rate",
-        }
-
-        lines = []
-        for key, label in labels.items():
-            if line := self._format_measurement(label, highlights.get(key)):
-                lines.append(line)
-
-        segments = highlights.get("segment_lean_analysis") or []
-        segment_lines = []
-        for seg in segments:
-            if isinstance(seg, dict):
-                if line := self._format_measurement(seg.get("label", "Segment"), seg):
-                    segment_lines.append(line)
-        if segment_lines:
-            lines.append("Segmental lean analysis:\n" + "\n".join(segment_lines))
-
-        return "Inbody report highlights:\n" + "\n".join(lines) if lines else ""
-
-    def _format_measurement(self, label: str, data: Any) -> Optional[str]:
-        if not data or not isinstance(data, dict):
-            return None
-        value = data.get("value")
-        if value is None:
-            return None
-        unit = data.get("unit")
-        return f"{label}: {value} {unit}" if unit else f"{label}: {value}"
 
     def _truncate(self, text: str, length: int) -> str:
         text = text.strip()

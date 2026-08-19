@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -385,6 +385,12 @@ class GroupCreateInput(BaseModel):
     max_members: int = Field(50, ge=2, le=200)
 
 
+class AvatarPreview(BaseModel):
+    patient_id: str
+    name: Optional[str] = None
+    profile_picture: Optional[str] = None
+
+
 class GroupResponse(BaseModel):
     group_id: str
     name: str
@@ -399,6 +405,8 @@ class GroupResponse(BaseModel):
     max_members: int
     is_active: bool
     created_at: datetime
+    top_members: List[AvatarPreview] = []
+    active_challenges: int = 0
 
 
 class GroupMemberPreview(BaseModel):
@@ -481,6 +489,8 @@ class ChallengeResponse(BaseModel):
     is_active: bool
     participant_count: int = 0
     created_at: datetime
+    avg_progress: float = 0.0
+    top_participants: List[AvatarPreview] = []
 
 
 class ChallengeParticipantResponse(BaseModel):
@@ -567,14 +577,35 @@ class PatientEngagementSummary(BaseModel):
     current_streak: int
     last_active_date: Optional[date] = None
     tasks_completed_this_week: int = 0
-    is_at_risk: bool = False
+    is_disengaged: bool = False
 
 
 class CPGamificationOverview(BaseModel):
     total_patients: int
     active_patients: int
-    at_risk_patients: int
-    patients: List[PatientEngagementSummary]
+    disengaged_patients: int
+    avg_streak: float = 0.0
+    task_completion_pct: Optional[float] = None  # None when no tasks this week
+    disengaged: List[PatientEngagementSummary] = []   # preview list, not the full count
+    top_movers: List[PatientEngagementSummary] = []
+
+
+LeaderboardMetric = Literal["streak", "xp", "weekly_xp", "monthly_xp", "weekly_steps"]
+
+
+class CPLeaderboardEntry(BaseModel):
+    rank: int
+    patient_id: str
+    patient_name: Optional[str] = None
+    level: int
+    title: str
+    value: float
+
+
+class CPLeaderboardResponse(BaseModel):
+    metric: LeaderboardMetric
+    total: int
+    entries: List[CPLeaderboardEntry]
 
 
 # ── XP History ───────────────────────────────────────────────────────────────
@@ -604,6 +635,10 @@ class GamificationContext(BaseModel):
     streak_freezes: int
     recent_achievements: List[str] = []
     tasks_today: Dict[str, int] = {}
+    # Titles of today's still-pending tasks — the nudges the patient will already
+    # get today. The proactive brain reads these so it doesn't become a second
+    # voice repeating a nudge already in flight.
+    pending_task_titles: List[str] = []
     weekly_quest: Optional[Dict[str, Any]] = None
     active_challenges: List[Dict[str, Any]] = []
     buddy_streak: Optional[int] = None

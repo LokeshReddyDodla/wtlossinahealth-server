@@ -20,7 +20,7 @@ class TokenUsageLog(Base):
     user_type = Column(Enum(ProfileTypeEnum), nullable=False)
     api_endpoint = Column(
         String, nullable=False
-    )  # e.g., "/get_nutritional_info"
+    )  # e.g., "/v1/meals/preview"
     input_tokens = Column(Integer, nullable=False)
     output_tokens = Column(Integer, nullable=False)
     cached_input_tokens = Column(Integer, nullable=True)

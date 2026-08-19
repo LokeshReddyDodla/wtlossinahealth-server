@@ -140,6 +140,12 @@ class ResearchAgent(BaseAgent):
         """
         start = time.perf_counter()
         trace_id = input.trace_id or str(uuid.uuid4())
+        self.gateway.set_langfuse_context(
+            session_id=f"research:{input.provider_id}", user_id=input.provider_id,
+        )
+        self.gateway.langfuse_trace_input(
+            trace_id=trace_id, name="research", input_text=input.question,
+        )
 
         cohort_ids = await self._resolve_cohort(input.cohort)
 
@@ -167,6 +173,7 @@ class ResearchAgent(BaseAgent):
             responder_meta.get("cost_usd") or 0.0
         )
         total_latency_ms = int((time.perf_counter() - start) * 1000)
+        self.gateway.langfuse_trace_output(trace_id=trace_id, output_text=answer or "")
 
         return ResearchOutput(
             answer=answer,
@@ -199,6 +206,12 @@ class ResearchAgent(BaseAgent):
         """
         start = time.perf_counter()
         trace_id = input.trace_id or str(uuid.uuid4())
+        self.gateway.set_langfuse_context(
+            session_id=f"research:{input.provider_id}", user_id=input.provider_id,
+        )
+        self.gateway.langfuse_trace_input(
+            trace_id=trace_id, name="research", input_text=input.question,
+        )
 
         try:
             yield sse_status(PipelineStage.UNDERSTANDING_QUERY)

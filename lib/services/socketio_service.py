@@ -110,12 +110,18 @@ async def sendMessage(sid, data):
     reply_to = data.get("reply_to")
     metadata = data.get("metadata", {})
 
-    # Ensure that required fields are present
-    if not all([chat_id, sender_id, content]):
+    # A message needs a chat, a sender, and either text or media — a media-only
+    # message carries no content but is still valid.
+    if not chat_id or not sender_id or not (content or media):
         return {"status": "error", "message": "Missing required fields"}
 
     if not await _authorize_chat_access(sid, chat_id, sender_id):
         return {"status": "error", "message": "Unauthorized"}
+
+    if not await chat_management_service.can_user_write_to_chat(
+        chat_id, sender_id
+    ):
+        return {"status": "error", "message": "This chat is read-only."}
 
     timestamp = datetime.datetime.now(datetime.timezone.utc)
 
@@ -194,6 +200,13 @@ async def markAsRead(sid, data):
             await chat_messaging_service.mark_all_messages_as_read(
                 chat_id, user_id
             )
+            # Notify the reader's own clients so their unread badge clears —
+            # the DB write alone never reaches the socket layer otherwise.
+            await sio.emit(
+                EmitMessageKeyEnum.ALL_MESSAGES_MARKED_AS_READ.value,
+                {"chat_id": chat_id, "user_id": user_id},
+                room=user_id,
+            )
         else:
             # Mark specific message as read
             await chat_messaging_service.mark_message_as_read(
@@ -232,7 +245,7 @@ async def toggleReaction(sid, data):
             message_id
         )
 
-        # Emit the updated reaction event to all participants in the chat
+        # Actor already applied the reaction optimistically — echo to everyone else.
         await chat_notification_service.notify_participants(
             message_key=EmitMessageKeyEnum.MESSAGE_UPDATED.value,
             data={
@@ -240,6 +253,7 @@ async def toggleReaction(sid, data):
                 "message": updated_message,
             },
             chat_id=chat_id,
+            exclude_user_id=user_id,
         )
 
         return {

@@ -19,7 +19,7 @@ class HyperglycemiaStatistics(CGMEventsProcessor):
             time AS device_timestamp,
             glucose_level AS glucose_mgdl
         FROM
-            aihealth.cgm_data
+            aihealth.cgm_data FINAL
         WHERE
             patient_id = '{patient_id}'
             AND time >= '{start_date_str}'

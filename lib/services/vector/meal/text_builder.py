@@ -17,8 +17,8 @@ class MealTextReprBuilder:
         Returns:
             Text representation string
         """
-        macros = meal.get("macros", {}) or {}
-        micros = meal.get("micros", {}) or {}
+        macros = meal.get("total_macro_nutritional_value", {}) or {}
+        micros = meal.get("total_micro_nutritional_value", {}) or {}
         items = meal.get("items", []) or []
 
         # 1️⃣ — Base info
@@ -55,7 +55,7 @@ class MealTextReprBuilder:
 
         # 3️⃣ — Individual food items (concise facts)
         for item in items:
-            name = (item.get("item_name") or "").strip()
+            name = (item.get("name") or "").strip()
             quantity = item.get("serving_quantity", "")
             unit = item.get("serving_unit", "")
             size = item.get("serving_size", "")

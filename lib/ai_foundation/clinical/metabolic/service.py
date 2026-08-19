@@ -45,6 +45,8 @@ class MetabolicService:
         self._assembler = DataAssembler(retriever=retriever, postgres_store=postgres_store)
         self._outcome = OutcomeRepository(postgres_store)
         self._clickhouse = clickhouse_store
+        # Strong refs for fire-and-forget bookkeeping (loop only weak-refs tasks)
+        self._bg_tasks: set = set()
 
     async def assess(
         self,
@@ -68,9 +70,11 @@ class MetabolicService:
         contract = enrich(contract, patient_state, meal, live_pre=live_pre)
         contract["lenses"] = apply_lenses(patient_state)
 
-        # -- outcome loop: process follow-ups + log advice --
-        await self._process_followups(patient_id)
-        await self._log_advice_if_suggest(patient_id, contract, meal)
+        # -- outcome loop: follow-ups of PAST advice + audit of this one are
+        # independent of this result — never block the interactive
+        # meal-preview response on them.
+        self._spawn_bookkeeping(self._process_followups(patient_id))
+        self._spawn_bookkeeping(self._log_advice_if_suggest(patient_id, contract, meal))
 
         # -- clinical decision audit (append-only, never fails the request) --
         try:
@@ -272,6 +276,19 @@ class MetabolicService:
                 await self._outcome.log_advice(event)
         except Exception:
             logger.warning("advice logging failed for %s, continuing", patient_id, exc_info=True)
+
+    def _spawn_bookkeeping(self, coro) -> None:
+        import asyncio
+
+        async def _guarded():
+            try:
+                await coro
+            except Exception:
+                logger.warning("metabolic bookkeeping task failed", exc_info=True)
+
+        task = asyncio.create_task(_guarded())
+        self._bg_tasks.add(task)
+        task.add_done_callback(self._bg_tasks.discard)
 
     async def _process_followups(self, patient_id: str) -> None:
         """Check for pending advice events and follow up with CGM data if available."""

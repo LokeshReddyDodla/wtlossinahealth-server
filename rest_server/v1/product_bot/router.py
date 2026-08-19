@@ -15,6 +15,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from lib.ai_foundation.agents.product_bot import ProductBotAgent
+from lib.core.constants import AIFeatureEnum
+from lib.services.ai_feature_toggle_service import ai_feature_toggle_service
 from lib.ai_foundation.agents.state import AgentContext, AgentInput
 from lib.ai_foundation.rate_limit.public_limiter import PublicRateLimiter
 from lib.ai_foundation.streaming.sse import SSE_RESPONSE_HEADERS
@@ -101,6 +103,7 @@ async def product_bot_stream(
     """Stream a product-knowledge answer via SSE. No auth required."""
     ip = _resolve_ip(request)
     await _check_rate_limit(limiter, ip, payload.session_id)
+    await ai_feature_toggle_service.require_system(AIFeatureEnum.PRODUCT_BOT)
 
     agent_input = AgentInput(
         message=payload.message,
@@ -128,6 +131,7 @@ async def product_bot_query(
     """Non-streaming product-bot response. No auth required."""
     ip = _resolve_ip(request)
     await _check_rate_limit(limiter, ip, payload.session_id)
+    await ai_feature_toggle_service.require_system(AIFeatureEnum.PRODUCT_BOT)
 
     agent_input = AgentInput(
         message=payload.message,

@@ -4,6 +4,7 @@ from typing import Dict, List, Optional, Union
 from pydantic import BaseModel, Field
 
 from lib.schemas.fitness_stats import FitnessStats
+from lib.schemas.sleep_stats import SleepStats
 
 
 class DateRange(BaseModel):
@@ -16,6 +17,8 @@ class ReportMetadata(BaseModel):
     total_readings: int = Field(..., description="Total number of CGM readings")
     days_covered: int = Field(..., description="Number of days covered in the report")
     report_type: str = Field(..., description="Type of report (daily, weekly, custom)")
+    # % of expected 15-min sampling intervals that have data.
+    sensor_active_percent: float = 0.0
 
 
 class CGMRangeStats(BaseModel):
@@ -24,6 +27,13 @@ class CGMRangeStats(BaseModel):
     in_target_70_180_percent: float
     above_180_below_250_percent: float
     above_250_percent: float
+    # Tight range, additive to the canonical 70-180 TIR (not a replacement).
+    in_tight_target_70_140_percent: float = 0.0
+    # Pregnancy targets (63-140 range), 2019 consensus. None when the report has
+    # not computed these bands — a missing value, distinct from a real 0%.
+    in_target_63_140_percent: Optional[float] = None
+    below_63_above_54_percent: Optional[float] = None
+    above_140_percent: Optional[float] = None
 
 
 class CGMEvent(BaseModel):
@@ -53,6 +63,8 @@ class CGMSummaryStats(BaseModel):
     average_glucose_mgdl: float
     gmi: float
     gmi_mmol: float
+    # Glycemia Risk Index (Klonoff 2022), 0-100.
+    gri: float = 0.0
     glucose_variability_percent: float
     coefficient_of_variation_percent: float
     std_dev_glucose_mgdl: float
@@ -60,6 +72,10 @@ class CGMSummaryStats(BaseModel):
     highest_glucose_date: datetime
     lowest_glucose_mgdl: float
     lowest_glucose_date: datetime
+    # % of overnight (00:00-05:59) readings below 70.
+    nocturnal_time_below_70_percent: float = 0.0
+    # Dawn phenomenon: avg(03:00-05:59) - avg(00:00-02:59), positive = pre-wake rise.
+    dawn_rise_mgdl: float = 0.0
     agp_points: Optional[List[AGPPoint]] = None
 
 
@@ -111,6 +127,16 @@ class HypoStats(BaseModel):
     rapid_drop_stats: RapidDropStats
 
 
+class CGMTrend(BaseModel):
+    """This period vs the immediately-preceding equal-length window."""
+
+    previous_average_glucose_mgdl: float
+    previous_time_in_range_percent: float
+    delta_average_glucose_mgdl: float
+    delta_time_in_range_percent: float
+    delta_gmi: float
+
+
 class CGMReading(BaseModel):
     device_timestamp: Union[datetime, str]
     glucose_mgdl: float
@@ -133,8 +159,10 @@ class CGMStats(BaseModel):
     hyper_stats: Optional[HyperStats]
     hypo_stats: Optional[HypoStats]
     time_period_stats: Optional[Dict[str, CGMTimePeriodStats]]
+    trend: Optional[CGMTrend] = None
 
     fitness_report: Optional[FitnessStats] = None
+    sleep_report: Optional[SleepStats] = None
     meal_report_id: Optional[str] = None
 
     @property

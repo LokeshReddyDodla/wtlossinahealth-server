@@ -1,6 +1,6 @@
 """CGM Upload Service - handles file parsing and data ingestion."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from io import BytesIO, StringIO
 from typing import List
 import zipfile
@@ -22,6 +22,10 @@ from lib.utils.postgres_session_decorator import with_postgres_session
 from lib.workers.arq.config import Queues
 from lib.workers.arq.redis import enqueue_job
 from lib.workers.tasks.cgm.enqueue import enqueue_cgm_report_generation_async
+
+# First CGM connect has no prior reading frontier; cap the meal-report backfill
+# to the recent meal-history window instead of the patient's entire history.
+_FIRST_CONNECT_BACKFILL_DAYS = 90
 
 
 class CGMUploadService:
@@ -55,6 +59,9 @@ class CGMUploadService:
 
             self.clickhouse_store.write_data("aihealth.cgm_data", data_points)
 
+            await self._enqueue_meal_report_refresh(
+                postgres_session, patient_id, "libreview", end_time
+            )
             await self._update_last_sync(postgres_session, patient_id, "libreview", end_time)
 
             await enqueue_cgm_report_generation_async(patient_id, report_periods)
@@ -105,6 +112,9 @@ class CGMUploadService:
         self.clickhouse_store.write_data("aihealth.cgm_data", rows)
 
         latest_reading_time = max(r["time"] for r in rows)
+        await self._enqueue_meal_report_refresh(
+            postgres_session, patient_id, source, latest_reading_time
+        )
         await self._update_last_sync(
             postgres_session, patient_id, source, latest_reading_time
         )
@@ -167,6 +177,10 @@ class CGMUploadService:
 
             self.clickhouse_store.write_data("aihealth.cgm_data", data_points)
 
+            await self._enqueue_meal_report_refresh(
+                postgres_session, patient_id, "sinocare", end_time
+            )
+
             lifecycle_df = pd.DataFrame(
                 {
                     "Device Timestamp": df["timestamp"],
@@ -217,6 +231,10 @@ class CGMUploadService:
 
             data_points = self._extract_linx_data_points(df, patient_id)
             self.clickhouse_store.write_data("aihealth.cgm_data", data_points)
+
+            await self._enqueue_meal_report_refresh(
+                postgres_session, patient_id, "linx", end_time
+            )
 
             lifecycle_df = pd.DataFrame(
                 {
@@ -296,7 +314,9 @@ class CGMUploadService:
 
         df = df_raw[required_cols].copy()
         df["timestamp"] = pd.to_datetime(
-            df["time point"], dayfirst=True, errors="coerce"
+            df["time point"],
+            dayfirst=self._infer_dayfirst(df["time point"]),
+            errors="coerce",
         ).dt.tz_localize(None)
         df = df.dropna(subset=["timestamp"])
 
@@ -309,6 +329,19 @@ class CGMUploadService:
         df["glucose_mgdl"] = df["glucose_mgdl"].astype(int)
 
         return df
+
+    @staticmethod
+    def _infer_dayfirst(col: pd.Series) -> bool:
+        """A CGM export uses one date order throughout. A value >12 in the
+        first field marks it as the day (day-first); a value >12 in the
+        second field marks that as the day (month-first).
+        ponytail: heuristic fails only if every row is ambiguous (all
+        fields <= 12); month-first is Sinocare's known default in that case.
+        """
+        s = col.astype(str)
+        first = s.str.extract(r"^(\d{1,2})[/-]")[0].dropna().astype(int)
+        second = s.str.extract(r"^\d{1,2}[/-](\d{1,2})")[0].dropna().astype(int)
+        return (first > 12).any() and not (second > 12).any()
 
     def _parse_linx_file(self, file_contents: bytes) -> pd.DataFrame:
         """Parse Linx CSV file and normalize data."""
@@ -394,6 +427,90 @@ class CGMUploadService:
         generator = SensorLifecycleReportGenerator(df)
         reports = generator.generate_reports()
         return reports
+
+    async def _enqueue_meal_report_refresh(
+        self, session: AsyncSession, patient_id: str, source: str, end_time
+    ) -> None:
+        """Regenerate meal reports only for the days that received new CGM.
+
+        The window runs from one day before the prior CGM frontier
+        (`last_cgm_reading_at` — the newest reading already processed) up to the
+        newest reading in this upload. The one-day lead-in catches a late-night
+        meal whose ~2-3h excursion bled into the next morning. First connect (no
+        frontier) is capped to the recent meal-history window, not all of history.
+        Deduped per (patient, date, 30-min bucket) so overlapping live syncs
+        (~5 min apart) collapse.
+        """
+        prior = await self._prior_cgm_frontier(session, patient_id, source)
+        window = self._meal_refresh_window(prior, end_time)
+        if window is None:
+            return
+        start, end = window
+
+        now = datetime.now()
+        bucket = f"{now:%Y%m%d%H}{now.minute // 30}"
+        d = start
+        while d <= end:
+            try:
+                await enqueue_job(
+                    "generate_daily_meal_report",
+                    patient_id,
+                    d,
+                    _job_id=f"meal:report:cgmsync:{patient_id}:{d.isoformat()}:{bucket}",
+                    _queue_name=Queues.REPORTS,
+                )
+            except Exception as exc:
+                logger.warning(
+                    f"Failed to enqueue meal refresh for {patient_id} on {d}: {exc}"
+                )
+            d += timedelta(days=1)
+
+    @staticmethod
+    def _meal_refresh_window(prior, end_time):
+        """Days to refresh as (start_date, end_date), or None if nothing to do.
+
+        `end` is the newest reading in this upload. `start` is one day before the
+        prior frontier (excursion lead-in), or capped to the recent window on
+        first connect (`prior` is None).
+        """
+        if end_time is None or pd.isna(end_time):
+            return None
+        end = end_time.date()
+        if prior is not None:
+            start = (prior - timedelta(days=1)).date()
+        else:
+            start = (end_time - timedelta(days=_FIRST_CONNECT_BACKFILL_DAYS)).date()
+        if start > end:
+            return None
+        return start, end
+
+    async def _prior_cgm_frontier(
+        self, session: AsyncSession, patient_id: str, source: str
+    ):
+        """Newest CGM reading time already stored for this source, or None.
+
+        This is the frontier the meal reports were last built up to; a delta sync
+        only refreshes days past it. Sources with no connected-app row (e.g. linx)
+        return None and fall back to the capped first-connect window.
+        """
+        attr_map = {
+            "libreview": "libreview",
+            "librelinkup": "libreview",
+            "sinocare": "sinocare",
+        }
+        attr_name = attr_map.get(source)
+        if not attr_name:
+            return None
+        result = await session.execute(
+            select(PatientConnectedApp)
+            .where(PatientConnectedApp.patient_id == patient_id)
+            .options(selectinload(getattr(PatientConnectedApp, attr_name)))
+        )
+        connected_app = result.scalars().first()
+        if not connected_app:
+            return None
+        source_app = getattr(connected_app, attr_name, None)
+        return getattr(source_app, "last_cgm_reading_at", None) if source_app else None
 
     async def _update_last_sync(
         self,

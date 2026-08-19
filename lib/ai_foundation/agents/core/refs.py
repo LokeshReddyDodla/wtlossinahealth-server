@@ -148,7 +148,7 @@ async def _retrieve_simple(
                 with_payload=True,
             )
     except Exception as exc:
-        logger.debug("Qdrant retrieve failed for ref %s: %s", ref_id, exc)
+        logger.warning("Qdrant retrieve failed for ref %s: %s", ref_id, exc)
         return None
 
     if not points:
@@ -242,7 +242,7 @@ async def _resolve_cgm_report(
                 with_vectors=False,
             )
     except Exception as exc:
-        logger.debug("Qdrant scroll failed for cgm_report %s: %s", ref_id, exc)
+        logger.warning("Qdrant scroll failed for cgm_report %s: %s", ref_id, exc)
         return None
 
     if not points:
@@ -305,7 +305,7 @@ async def _resolve_insight(
     try:
         doc = await insight_tracker.get_by_insight_id(ref_id)
     except Exception as exc:
-        logger.debug("Insight lookup failed for %s: %s", ref_id, exc)
+        logger.warning("Insight lookup failed for %s: %s", ref_id, exc)
         return None
     if not doc:
         return None

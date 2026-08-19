@@ -34,9 +34,6 @@ _DEDUP_HOURS = 24
 # 48 hours ago we still count it as consecutive.
 _CONSECUTIVE_TOLERANCE_HOURS = 48
 
-# TTL — auto-delete records older than 30 days
-_TTL_SECONDS = 30 * 24 * 3600
-
 
 class InsightTracker:
     """Tracks sent insights to prevent spam and enable escalation."""
@@ -185,6 +182,33 @@ class InsightTracker:
 
         await self._collection.insert_one(doc)
 
+    async def record_feedback(self, insight_id: str, thumbs_up: bool) -> bool:
+        """Persist thumbs feedback on the insight row; True if a row matched.
+
+        A re-vote overwrites — never double-counts the same insight.
+        """
+        await self._maybe_ensure_indexes()
+        result = await self._collection.update_one(
+            {"insight_id": insight_id},
+            {"$set": {"feedback": {"thumbs_up": thumbs_up, "at": datetime.now(timezone.utc)}}},
+        )
+        return result.matched_count > 0
+
+    async def get_disliked_categories(self, patient_id: str, *, since_days: int = 30) -> set[str]:
+        """Categories whose thumbs-downs outweigh their thumbs-ups within the window."""
+        await self._maybe_ensure_indexes()
+        since = datetime.now(timezone.utc) - timedelta(days=since_days)
+        pipeline = [
+            {"$match": {"patient_id": patient_id, "created_at": {"$gte": since}, "feedback": {"$exists": True}}},
+            {"$group": {"_id": "$category", "score": {"$sum": {"$cond": ["$feedback.thumbs_up", 1, -1]}}}},
+            {"$match": {"score": {"$lt": 0}}},
+        ]
+        disliked: set[str] = set()
+        async for row in self._collection.aggregate(pipeline):
+            if row.get("_id"):
+                disliked.add(row["_id"])
+        return disliked
+
     async def get_by_insight_id(self, insight_id: str) -> dict | None:
         """Look up a recorded proactive insight by its public insight id."""
         await self._maybe_ensure_indexes()
@@ -296,14 +320,16 @@ class InsightTracker:
 
     async def ensure_indexes(self) -> None:
         """Create indexes for efficient lookups. Safe to call multiple times."""
+        # Insights are kept forever; drop the legacy 30-day TTL index that
+        # earlier deployments created so Mongo stops expiring records. Ignored
+        # when it's already gone.
+        try:
+            await self._collection.drop_index("insight_ttl_idx")
+        except Exception:
+            pass
         await self._collection.create_index(
             [("patient_id", 1), ("category", 1), ("created_at", -1)],
             name="insight_patient_category_idx",
-        )
-        await self._collection.create_index(
-            "created_at",
-            name="insight_ttl_idx",
-            expireAfterSeconds=_TTL_SECONDS,
         )
         await self._collection.create_index(
             "insight_id",

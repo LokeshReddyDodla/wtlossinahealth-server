@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import List, Optional
 from uuid import UUID
 
@@ -106,11 +106,15 @@ class TaskGeneratorService:
 
         tasks: List[DailyTask] = []
 
-        # Check if patient is diabetic (has diabetic history record)
+        # Diabetic = a history row whose type is a real diabetes type. Onboarding
+        # writes a row for everyone, defaulting non-diabetics to "NONE", so mere
+        # row existence is not diabetes — the type must be set and not "NONE".
         is_diabetic = (
             await postgres_session.execute(
                 select(PatientDiabeticHistory.patient_id).where(
-                    PatientDiabeticHistory.patient_id == patient_id
+                    PatientDiabeticHistory.patient_id == patient_id,
+                    PatientDiabeticHistory.type_of_diabetes.isnot(None),
+                    PatientDiabeticHistory.type_of_diabetes != "NONE",
                 )
             )
         ).scalar_one_or_none() is not None
@@ -212,12 +216,21 @@ class TaskGeneratorService:
         *,
         postgres_session: AsyncSession,
     ) -> int:
-        """Mark all pending tasks before the given date as expired."""
+        """Mark all pending tasks before the given date as expired.
+
+        The weekly weigh-in (Monday-dated, completable all week) is spared until
+        its week is over, so it doesn't vanish the day after it's created.
+        """
+        week_start = before_date - timedelta(days=before_date.weekday())
         result = await postgres_session.execute(
             select(DailyTask).where(
                 DailyTask.patient_id == patient_id,
                 DailyTask.task_date < before_date,
                 DailyTask.status == TaskStatus.PENDING.value,
+                or_(
+                    DailyTask.task_type != TaskType.LOG_WEIGHT.value,
+                    DailyTask.task_date < week_start,
+                ),
             )
         )
         tasks = result.scalars().all()

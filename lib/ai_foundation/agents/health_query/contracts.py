@@ -279,6 +279,19 @@ class QueryIntent(BaseModel):
     memory_value: str | None = Field(
         None, description="For add: the memory value (e.g. 'vegetarian').",
     )
+    # Entity types must stay in sync with bubbles.AWAIT_ENTITY_TYPES — the
+    # reply-side [[AWAIT]] marker and this query-side signal register the same
+    # pending request, and only entities with a proactive-event producer can
+    # be honored.
+    awaits_log: Literal["meal", "smbg", "symptom"] | None = Field(
+        None,
+        description=(
+            "Set when the user names a health entry they intend to log for "
+            "analysis but haven't yet ('just ate lunch but haven't logged it "
+            "— can you check it?'). That entity's eventual log continues this "
+            "conversation. Null for normal queries and past-tense lookups."
+        ),
+    )
 
 
 
@@ -308,3 +321,49 @@ class QueryResponse(BaseModel):
     trace_id: str | None = None
     cost_usd: float | None = None
     latency_ms: int | None = None
+
+
+class ProactiveNarration(BaseModel):
+    """The brain's decision + copy for a proactive push.
+
+    ``notify`` is the brain's own judgment that the event is worth an unprompted
+    interruption; when False the other fields are ignored and nothing is sent.
+    The brain writes only the words — category and severity are decided
+    deterministically by the caller from the trigger, never invented here.
+    """
+
+    notify: bool = Field(description="Whether this event warrants a proactive push at all.")
+    title: str = Field(default="", max_length=50, description="Push title. English; translated on delivery.")
+    body: str = Field(default="", max_length=180, description="Push body, grounded in investigated data. English.")
+    suggested_query: str | None = Field(
+        default=None, description="One follow-up the patient could tap to open the chat."
+    )
+
+
+class PatientBrief(BaseModel):
+    """Provider-facing clinical synthesis — an at-a-glance read of the patient's
+    overall recent state, not a data surface. Every field is grounded in the
+    investigated data; the structuring step never adds a claim or number the
+    analysis didn't state. When the record is too sparse to judge, assessment is
+    'insufficient_data'."""
+
+    assessment: Literal["responding", "watch", "at_risk", "insufficient_data"] = Field(
+        description=(
+            "Overall read, matching the verdict's lead — responding when it leads "
+            "positive (even with a watch-item in the tail), watch when genuinely "
+            "mixed, at_risk when deteriorating/high-risk, insufficient_data when a "
+            "response can't be judged at all. Drives the status spine."
+        ),
+    )
+    verdict: str = Field(
+        max_length=120,
+        description="One-line headline leading with the read, e.g. 'Responding well — holding steady across recent weeks'.",
+    )
+    narrative: str = Field(
+        description=(
+            "1-2 sentences: what's driving the read and the single thing to watch, "
+            "naming the key figures in context within the prose (never as standalone "
+            "tiles); honest about data gaps. Bold (**…**) only the single most "
+            "important phrase — not every figure. English."
+        ),
+    )

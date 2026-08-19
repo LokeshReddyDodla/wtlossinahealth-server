@@ -16,11 +16,13 @@ class CGMReportService:
         cgm_report_collection,
         meal_report_service,
         fitness_report_service,
+        sleep_report_service,
         patient_summary_service=None,
     ):
         self.cgm_report_collection = cgm_report_collection
         self.meal_report_service = meal_report_service
         self.fitness_report_service = fitness_report_service
+        self.sleep_report_service = sleep_report_service
         self.patient_summary_service = patient_summary_service
 
     async def _mark_summaries_stale_for_range(
@@ -41,6 +43,34 @@ class CGMReportService:
                 current_date += timedelta(days=1)
         except Exception as e:
             logging.warning(f"Failed to mark summaries as stale for {patient_id}: {e}")
+
+    async def latest_daily_report_ends(
+        self, patient_ids: list[str]
+    ) -> dict[str, datetime]:
+        """Newest daily-report end per patient, in one aggregation.
+
+        Used by the reconciler to find the gap between a patient's newest
+        reading and their newest daily report. date_range.end is stored as an
+        ISO string, so $max sorts it lexicographically (valid for ISO).
+        """
+        if not patient_ids:
+            return {}
+        pipeline = [
+            {
+                "$match": {
+                    "patient_id": {"$in": patient_ids},
+                    "metadata.report_type": CGMReportType.DAILY,
+                }
+            },
+            {"$group": {"_id": "$patient_id", "end": {"$max": "$metadata.date_range.end"}}},
+        ]
+        out: dict[str, datetime] = {}
+        async for row in self.cgm_report_collection.aggregate(pipeline):
+            end = row.get("end")
+            parsed = parse_datetime(end) if isinstance(end, str) else end
+            if parsed:
+                out[row["_id"]] = parsed
+        return out
 
     async def fetch_reports(self, patient_id: str):
         try:
@@ -128,6 +158,14 @@ class CGMReportService:
                     }
                 },
                 {
+                    "$lookup": {
+                        "from": "sleep_reports",
+                        "localField": "sleep_report_id",
+                        "foreignField": "_id",
+                        "as": "sleep_report",
+                    }
+                },
+                {
                     "$unwind": {
                         "path": "$meal_report",
                         "preserveNullAndEmptyArrays": True,
@@ -140,9 +178,16 @@ class CGMReportService:
                     }
                 },
                 {
+                    "$unwind": {
+                        "path": "$sleep_report",
+                        "preserveNullAndEmptyArrays": True,
+                    }
+                },
+                {
                     "$project": {
                         "meal_report_id": 0,
                         "fitness_report_id": 0,
+                        "sleep_report_id": 0,
                     }
                 },
             ]
@@ -189,6 +234,14 @@ class CGMReportService:
                         }
                     },
                     {
+                        "$lookup": {
+                            "from": "sleep_reports",
+                            "localField": "sleep_report_id",
+                            "foreignField": "_id",
+                            "as": "sleep_report",
+                        }
+                    },
+                    {
                         "$unwind": {
                             "path": "$meal_report",
                             "preserveNullAndEmptyArrays": True,
@@ -201,9 +254,16 @@ class CGMReportService:
                         }
                     },
                     {
+                        "$unwind": {
+                            "path": "$sleep_report",
+                            "preserveNullAndEmptyArrays": True,
+                        }
+                    },
+                    {
                         "$project": {
                             "meal_report_id": 0,
                             "fitness_report_id": 0,
+                            "sleep_report_id": 0,
                         }
                     },
                 ]
@@ -307,6 +367,14 @@ class CGMReportService:
                         }
                     },
                     {
+                        "$lookup": {
+                            "from": "sleep_reports",
+                            "localField": "sleep_report_id",
+                            "foreignField": "_id",
+                            "as": "sleep_report",
+                        }
+                    },
+                    {
                         "$unwind": {
                             "path": "$meal_report",
                             "preserveNullAndEmptyArrays": True,
@@ -319,9 +387,16 @@ class CGMReportService:
                         }
                     },
                     {
+                        "$unwind": {
+                            "path": "$sleep_report",
+                            "preserveNullAndEmptyArrays": True,
+                        }
+                    },
+                    {
                         "$project": {
                             "meal_report_id": 0,
                             "fitness_report_id": 0,
+                            "sleep_report_id": 0,
                         }
                     },
                     {"$limit": 1},
@@ -356,6 +431,7 @@ class CGMReportService:
                     "$project": {
                         "meal_report_id": 0,
                         "fitness_report_id": 0,
+                        "sleep_report_id": 0,
                     }
                 },
             ]
@@ -465,7 +541,7 @@ class CGMReportService:
         sensor_status: Optional[str] = None,
         termination_reason: Optional[str] = None,
     ):
-        from pymongo import UpdateOne  # type: ignore
+        from pymongo import ReplaceOne  # type: ignore
 
         if not reports:
             logging.warning("No CGM reports to save")
@@ -481,8 +557,13 @@ class CGMReportService:
 
             if report.fitness_report:
                 fitness_metadata = report.fitness_report.metadata
-                fitness_report_id = self._compute_report_id_from_metadata(
-                    patient_id, fitness_metadata
+                # Match by the fitness service's own id scheme so the stored
+                # fitness_report_id equals the doc's _id for every report type.
+                fitness_report_id = self.fitness_report_service._generate_report_id(
+                    patient_id,
+                    fitness_metadata.report_type,
+                    fitness_metadata.date_range.start,
+                    fitness_metadata.date_range.end,
                 )
                 existing_fitness_report = (
                     await self.fitness_report_service.fetch_report_by_id(
@@ -497,6 +578,30 @@ class CGMReportService:
 
                 report_dict["fitness_report_id"] = fitness_report_id
                 report_dict.pop("fitness_report", None)
+
+            if report.sleep_report:
+                sleep_metadata = report.sleep_report.metadata
+                # Match by the sleep service's own id scheme so the stored
+                # sleep_report_id equals the doc's _id for every report type.
+                sleep_report_id = self.sleep_report_service._generate_report_id(
+                    patient_id,
+                    sleep_metadata.report_type,
+                    sleep_metadata.date_range.start,
+                    sleep_metadata.date_range.end,
+                )
+                existing_sleep_report = (
+                    await self.sleep_report_service.fetch_report_by_id(
+                        sleep_report_id
+                    )
+                )
+
+                if not existing_sleep_report:
+                    sleep_report_id = await self.sleep_report_service.save_report(
+                        patient_id, report.sleep_report
+                    )
+
+                report_dict["sleep_report_id"] = sleep_report_id
+                report_dict.pop("sleep_report", None)
 
             report_dict.update(
                 {
@@ -513,8 +618,10 @@ class CGMReportService:
                 if termination_reason:
                     report_dict["termination_reason"] = termination_reason
 
+            # Full replace: a regenerated report must not inherit fields that
+            # exclude_none omits this time but a prior version had set.
             ops.append(
-                UpdateOne({"_id": report_id}, {"$set": report_dict}, upsert=True)
+                ReplaceOne({"_id": report_id}, report_dict, upsert=True)
             )
 
         await self.cgm_report_collection.bulk_write(ops)

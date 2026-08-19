@@ -36,6 +36,11 @@ from lib.ai_foundation.agents.research_agent import (
     ResearchInput,
 )
 from lib.ai_foundation.agents.health_query.provider_panel_utils import has_partial_access
+from lib.core.constants import AIFeatureEnum
+from lib.services.ai_feature_toggle_service import (
+    actor_facility_id,
+    ai_feature_toggle_service,
+)
 from lib.ai_foundation.streaming.sse import SSE_RESPONSE_HEADERS
 from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.actor import Actor, get_current_actor
@@ -123,6 +128,9 @@ async def post_research_query(
     Phase 1: only ``cohort.kind == 'ids'`` is supported. Saved cohorts
     and panel-wide queries return 501.
     """
+    await ai_feature_toggle_service.require_facility(
+        AIFeatureEnum.RESEARCH_AGENT, actor_facility_id(current_actor)
+    )
     cohort_kind = payload.cohort.kind.strip().lower()
 
     if cohort_kind == "ids":

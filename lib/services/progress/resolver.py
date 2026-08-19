@@ -1,0 +1,348 @@
+"""Progress resolver — compose on read, no materialized doc.
+
+Mirrors the day-view resolver: one `asyncio.gather` over the sources (ClickHouse
+vitals summary, stored daily CGM reports, Postgres engagement), then bucket each
+daily series to the range's resolution and assemble the typed `ProgressView`.
+
+Extending: add a `(category, label, unit, dir, target, extractor)` row to a
+registry below — sleep/meal/fitness reports and the efficacy/care-intent blocks
+slot in the same way, no resolver changes.
+"""
+
+import asyncio
+import logging
+from datetime import date, datetime, time, timedelta, timezone
+from uuid import UUID
+from zoneinfo import ZoneInfo
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from lib.core.clickhouse_store import ClickHouseStore
+from lib.core.postgres_store import PostgresStore
+from lib.schemas.progress import (
+    Engagement,
+    IntentAdherence,
+    MetricSeries,
+    Outcome,
+    ProgressView,
+    TrendPoint,
+)
+from lib.services.gamification.time_utils import (
+    get_patient_timezone,
+    resolve_timezone_name,
+)
+from lib.services.progress.bucketing import bucketize, months_ago, window_for
+from lib.services.progress.repository import ProgressRepository
+from lib.services.reports.cgm.service import CGMReportService
+from lib.services.reports.fitness.service import FitnessReportService
+from lib.services.reports.meal.service import MealReportService
+from lib.services.reports.sleep.service import SleepReportService
+from lib.utils.postgres_session_decorator import with_postgres_session
+
+logger = logging.getLogger(__name__)
+
+# clickhouse vital type → (category, label, unit, improvement direction, target)
+_VITALS: dict[str, tuple[str, str, str, str, float | None]] = {
+    "weight": ("Labs & vitals", "Weight", "kg", "down", None),
+    "a1c": ("Labs & vitals", "HbA1c", "%", "down", 7.0),
+    "systolic_bp": ("Labs & vitals", "Systolic BP", "mmHg", "down", 130.0),
+    "diastolic_bp": ("Labs & vitals", "Diastolic BP", "mmHg", "down", 80.0),
+    "heart_rate": ("Labs & vitals", "Heart rate", "bpm", "down", None),
+    "resting_heart_rate": ("Labs & vitals", "Resting HR", "bpm", "down", None),
+    "spo2": ("Labs & vitals", "SpO₂", "%", "up", None),
+    "blood_oxygen": ("Labs & vitals", "SpO₂", "%", "up", None),
+    "creatinine": ("Labs & vitals", "Creatinine", "mg/dL", "flat", None),
+    "ketones": ("Labs & vitals", "Ketones", "mmol/L", "down", None),
+}
+
+
+def _nested(path: list[str]):
+    def get(report: dict):
+        cur = report
+        for k in path:
+            if not isinstance(cur, dict):
+                return None
+            cur = cur.get(k)
+        return cur
+    return get
+
+
+def _flat(key: str):
+    return lambda r: r.get(key) if isinstance(r, dict) else None
+
+
+def _minutes_to_hours(get):
+    def wrapped(r):
+        v = get(r)
+        return round(v / 60, 2) if v is not None else None
+    return wrapped
+
+
+def _workout_count(r):
+    # session_count can exceed 1 (type-aggregated rows), so sum, don't count.
+    return sum((w.get("session_count") or 1) for w in (r.get("workouts") or []))
+
+
+# key, label, unit, direction, target, extractor(report_dict)
+_GLUCOSE = [
+    ("tir", "Time in range", "%", "up", 70.0,
+     _nested(["cgm_range_stats", "in_target_70_180_percent"])),
+    ("gmi", "Est. A1c (GMI)", "%", "down", 7.0,
+     _nested(["cgm_summary_stats", "gmi"])),
+    ("avg_glucose", "Avg glucose", "mg/dL", "down", None,
+     _nested(["cgm_summary_stats", "average_glucose_mgdl"])),
+    ("cv", "Variability (CV)", "%", "down", 36.0,
+     _nested(["cgm_summary_stats", "coefficient_of_variation_percent"])),
+]
+
+_SLEEP = [
+    ("sleep_duration", "Sleep duration", "h", "up", 7.0,
+     _minutes_to_hours(_nested(["duration", "per_day_average_duration"]))),
+    ("sleep_efficiency", "Efficiency", "%", "up", 85.0,
+     _nested(["quality", "sleep_efficiency"])),
+    ("deep_sleep", "Deep sleep", "%", "up", None,
+     _nested(["quality", "deep_sleep_percentage"])),
+    ("rem_sleep", "REM sleep", "%", "up", None,
+     _nested(["quality", "rem_sleep_percentage"])),
+    ("awakenings", "Awakenings /night", "", "down", None,
+     _nested(["quality", "average_awakenings"])),
+    ("sleep_debt", "Sleep debt", "min", "down", None,
+     _nested(["consistency", "sleep_debt_minutes"])),
+]
+
+# Weight-loss / T2D framing: fewer calories & carbs = improving, more fiber &
+# protein = improving.
+_MEAL = [
+    ("calories", "Calories", "kcal", "down", None, _flat("calories")),
+    ("carbs", "Carbs", "g", "down", None, _flat("carbohydrates")),
+    ("fiber", "Fiber", "g", "up", 25.0, _flat("fiber")),
+    ("protein", "Protein", "g", "up", None, _flat("proteins")),
+    ("fat", "Fat", "g", "flat", None, _flat("fats")),
+]
+
+_FITNESS = [
+    ("steps", "Steps /day", "", "up", 8000.0, _flat("steps")),
+    ("active_energy", "Active energy", "kcal", "up", None, _flat("active_energy")),
+    # exercise_time is the Apple exercise-ring minute count; active_duration sums
+    # raw session spans and over-counts, so it's not the "active minutes" a provider means.
+    ("active_minutes", "Active minutes", "min", "up", 30.0, _flat("exercise_time")),
+    ("workouts", "Workouts /period", "", "up", None, _workout_count),
+]
+
+
+# A daily report is written even for a day with no synced data; skip those so an
+# unsynced day doesn't count as a zero and tank the baseline.
+def _empty_sleep(r):
+    return ((r.get("metadata") or {}).get("total_sessions") or 0) == 0
+
+
+def _empty_meal(r):
+    return not r.get("meal_count")
+
+
+def _empty_fitness(r):
+    return ((r.get("metadata") or {}).get("days_with_data") or 0) == 0
+
+
+def _improved(direction: str, delta: float | None) -> bool | None:
+    if delta is None:
+        return None
+    if abs(delta) < 1e-9:
+        return None  # no change reads neutral, not bad
+    if direction == "up":
+        return delta > 0
+    if direction == "down":
+        return delta < 0
+    return abs(delta) < 0.1  # flat: stable is good
+
+
+def _report_date(report: dict) -> date | None:
+    # Meal reports key the day at top-level `date`; the rest use metadata.date_range.
+    r = report or {}
+    raw = r.get("date") or ((r.get("metadata") or {}).get("date_range") or {}).get("start")
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(str(raw).replace("Z", "+00:00")).date()
+    except ValueError:
+        return None
+
+
+class ProgressService:
+    def __init__(
+        self,
+        postgres_store: PostgresStore,
+        clickhouse_store: ClickHouseStore,
+        cgm_report_service: CGMReportService,
+        sleep_report_service: SleepReportService,
+        meal_report_service: MealReportService,
+        fitness_report_service: FitnessReportService,
+    ):
+        self.postgres_store = postgres_store
+        self.repo = ProgressRepository(clickhouse_store)
+        self.cgm_report_service = cgm_report_service
+        self.sleep_report_service = sleep_report_service
+        self.meal_report_service = meal_report_service
+        self.fitness_report_service = fitness_report_service
+
+    @with_postgres_session
+    async def resolve(
+        self, patient_id: str, range_key: str, *, postgres_session: AsyncSession
+    ) -> ProgressView:
+        months, resolution = window_for(range_key)
+        tz_name = resolve_timezone_name(
+            await get_patient_timezone(patient_id, postgres_session)
+        )
+        try:
+            tz = ZoneInfo(tz_name)
+        except Exception:
+            tz = timezone.utc
+        end = datetime.now(tz).date()
+        start = months_ago(end, months)
+        start_dt = datetime.combine(start, time.min)
+        end_dt = datetime.combine(end + timedelta(days=1), time.min)
+        pid = UUID(patient_id)
+
+        # Only the session coroutine touches the AsyncSession; the report/vitals
+        # sources use ClickHouse/Mongo, so all fan out concurrently. Sleep/meal/
+        # fitness range-fetches take dates; CGM takes datetimes.
+        (
+            vitals_rows, glucose_reports, sleep_reports, meal_reports,
+            fitness_reports, session_bundle,
+        ) = await asyncio.gather(
+            self.repo.vitals_daily(patient_id, start_dt, end_dt),
+            self._safe(self.cgm_report_service.fetch_daily_reports, patient_id, start_dt, end_dt),
+            self._safe(self.sleep_report_service.fetch_daily_reports_in_range, patient_id, start, end),
+            self._safe(self.meal_report_service.fetch_daily_reports_in_range, patient_id, start, end),
+            self._safe(self.fitness_report_service.fetch_daily_reports_in_range, patient_id, start, end),
+            self._session_bundle(pid, start_dt, end_dt, start, end, postgres_session),
+        )
+        completion, (cur_streak, longest_streak), adherence, smbg = session_bundle
+
+        metrics: list[MetricSeries] = []
+
+        # ── vitals & labs (ClickHouse daily summary) ─────────────────────────
+        vitals_points: dict[str, list[tuple[date, float]]] = {}
+        for row in vitals_rows or []:
+            vtype = row.get("type")
+            if vtype not in _VITALS:
+                continue
+            try:
+                d = date.fromisoformat(str(row["date"]))
+            except (ValueError, KeyError):
+                continue
+            vitals_points.setdefault(vtype, []).append((d, row["avg"]))
+        for vtype, (cat, label, unit, direction, target) in _VITALS.items():
+            s = self._build(cat, vtype, label, unit, direction, target,
+                            vitals_points.get(vtype, []), resolution)
+            if s:
+                metrics.append(s)
+
+        # ── report-backed categories (stored daily reports) ──────────────────
+        metrics += self._collect(glucose_reports, "Glucose", _GLUCOSE, resolution)
+        metrics += self._collect(sleep_reports, "Sleep", _SLEEP, resolution, _empty_sleep)
+        metrics += self._collect(meal_reports, "Nutrition", _MEAL, resolution, _empty_meal)
+        metrics += self._collect(fitness_reports, "Activity", _FITNESS, resolution, _empty_fitness)
+
+        # ── SMBG (finger-stick glucose, Postgres — for non-CGM patients) ─────
+        smbg_series = self._build("SMBG", "smbg_avg", "Avg glucose (SMBG)", "mg/dL",
+                                  "down", None, smbg, resolution)
+        if smbg_series:
+            metrics.append(smbg_series)
+
+        engagement = Engagement(
+            current_streak=cur_streak,
+            longest_streak=longest_streak,
+            completion_points=[TrendPoint(t=t, value=v)
+                               for t, v in bucketize(completion, resolution)],
+        )
+        if engagement.completion_points:
+            engagement.completion_pct = engagement.completion_points[-1].value
+
+        return ProgressView(
+            range=range_key, resolution=resolution, start=start, end=end,
+            outcomes=self._outcomes(metrics, engagement),
+            metrics=metrics, engagement=engagement,
+            care_intents=[IntentAdherence(**a) for a in adherence],
+        )
+
+    # ── internals ────────────────────────────────────────────────────────────
+
+    async def _session_bundle(self, pid, start_dt, end_dt, start, end, session):
+        # One AsyncSession can't run concurrent queries — sequential by design.
+        completion = await self.repo.task_completion_daily(pid, start, end, session)
+        streak = await self.repo.streak(pid, session)
+        adherence = await self.repo.care_intent_adherence(pid, start, end, session)
+        smbg = await self.repo.smbg_daily(pid, start_dt, end_dt, session)
+        return completion, streak, adherence, smbg
+
+    @staticmethod
+    def _collect(reports, category, defs, resolution, empty=None) -> list[MetricSeries]:
+        """Group each metric's daily points across a report stream, then build.
+        `empty(report)` drops no-data days so they don't count as zeros."""
+        points: dict[str, list[tuple[date, float]]] = {}
+        for report in reports or []:
+            d = _report_date(report)
+            if d is None or (empty and empty(report)):
+                continue
+            for key, _l, _u, _dir, _t, extract in defs:
+                val = extract(report)
+                if val is not None:
+                    points.setdefault(key, []).append((d, val))
+        out: list[MetricSeries] = []
+        for key, label, unit, direction, target, _ex in defs:
+            s = ProgressService._build(category, key, label, unit, direction, target,
+                                       points.get(key, []), resolution)
+            if s:
+                out.append(s)
+        return out
+
+    @staticmethod
+    def _build(category, key, label, unit, direction, target, daily_points, resolution):
+        pts = bucketize(daily_points, resolution)
+        if not pts or not any(v != 0 for _, v in pts):
+            return None  # no data, or an all-zero series that was never synced
+        points = [TrendPoint(t=t, value=v) for t, v in pts]
+        baseline, current = points[0].value, points[-1].value
+        # A single bucket is a lone reading, not a trend — no baseline to diff, so
+        # no delta (the frontend shows the value without a misleading "vs start").
+        delta = round(current - baseline, 2) if len(points) >= 2 else None
+        return MetricSeries(
+            category=category, key=key, label=label, unit=unit, dir=direction,
+            target=target, points=points, current=current, baseline=baseline,
+            delta=delta,
+        )
+
+    @staticmethod
+    def _outcomes(metrics: list[MetricSeries], engagement: Engagement) -> list[Outcome]:
+        by_key = {m.key: m for m in metrics}
+        out: list[Outcome] = []
+
+        def add(key: str, label: str, unit: str, delta_unit: str):
+            m = by_key.get(key)
+            if not m or m.current is None:
+                return
+            delta_txt = None
+            if m.delta is not None:
+                sign = "+" if m.delta > 0 else ""
+                delta_txt = f"{sign}{round(m.delta, 1):g}{delta_unit}"
+            out.append(Outcome(key=key, label=label, value=f"{m.current:g}{unit}",
+                               delta=delta_txt, good=_improved(m.dir, m.delta)))
+
+        add("weight", "Weight", " kg", " kg")
+        add("tir", "Time in range", "%", " pts")
+        add("a1c", "HbA1c", "%", "")
+        streak_delta = f"{engagement.completion_pct:g}% tasks" if engagement.completion_pct is not None else None
+        out.append(Outcome(key="engagement", label="Engagement",
+                           value=f"{engagement.current_streak}-day streak",
+                           delta=streak_delta,
+                           good=engagement.current_streak > 0))
+        return out
+
+    @staticmethod
+    async def _safe(fetch_fn, *args):
+        try:
+            return await fetch_fn(*args)
+        except Exception:
+            logger.exception("progress report fetch failed")
+            return []

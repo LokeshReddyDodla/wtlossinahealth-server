@@ -1,6 +1,5 @@
 """Unified Profile Agent service.
 
-Replaces `ProfileUpdateAgentService` and `PatientOnboardingAgentService`.
 Schema-driven field discovery, mode-aware conversation, single Postgres
 transaction apply.
 
@@ -426,7 +425,7 @@ class ProfileAgentService:
             for k in (
                 "permissions", "connected_apps", "care_providers",
                 "package_assignments", "current_package", "smbgs",
-                "weight_loss_enrollment", "diet_plans", "fitness_plans",
+                "diet_plans", "fitness_plans",
             ):
                 data.pop(k, None)
             return json.dumps(data, indent=2, default=str)

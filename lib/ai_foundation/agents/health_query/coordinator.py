@@ -329,6 +329,7 @@ class Coordinator:
                     tier_cfg=tier_cfg,
                     patient_ids=patient_ids,
                     patient_names=patient_names,
+                    trace_id=trace_id,
                 )
                 if synthesis["findings"]:
                     combined_data += f"\n\n---\n\n## CROSS-DOMAIN ANALYSIS\n\n{synthesis['findings']}"
@@ -367,6 +368,7 @@ class Coordinator:
                     task=ModelTask.RESPONSE_GENERATION,
                     model_id=tier_cfg.responder_model,
                     timeout=settings.RESPONDER_TIMEOUT_SECONDS,
+                    trace_id=trace_id,
                 ):
                     if chunk.delta:
                         full_response_parts.append(chunk.delta)
@@ -421,6 +423,7 @@ class Coordinator:
                 task=ModelTask.RESPONSE_GENERATION,
                 model_id=tier_cfg.responder_model,
                 timeout=settings.RESPONDER_TIMEOUT_SECONDS,
+                trace_id=trace_id,
             )
             total_cost += safe_cost(final_response)
 
@@ -524,6 +527,7 @@ class Coordinator:
         tier_cfg: Any,
         patient_ids: list[str],
         patient_names: dict[str, str] | None = None,
+        trace_id: str | None = None,
     ) -> dict[str, Any]:
         """LLM-driven cross-domain follow-up after specialists complete.
 
@@ -594,6 +598,7 @@ class Coordinator:
                 task=ModelTask.CLASSIFICATION,
                 model_id=tier_cfg.thinker_model,
                 timeout=settings.REASONING_TIMEOUT_SECONDS,
+                trace_id=trace_id,
             )
             cost += safe_cost(response)
 

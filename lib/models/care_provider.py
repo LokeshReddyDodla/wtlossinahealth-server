@@ -112,11 +112,6 @@ class CareProvider(Base):
 
     
 
-    weight_loss_enrollments = relationship(
-        "WeightLossAgentEnrollment",
-        back_populates="enrolled_by",
-        cascade="all, delete-orphan",
-    )
 
     @hybrid_property
     def full_name(self):  # type: ignore

@@ -69,12 +69,18 @@ NOT violations (never list these):
 - Arithmetic derived from evidence numbers (sums, averages, ranges, differences).
 - Hedged inferences that cite evidence ("the peanuts likely slowed absorption").
 - The patient's SUBJECTIVE experience (how they felt, what they say they did) — only a specific NUMBER or logged EVENT must match the evidence.
+- Anything stated in PRE-LOADED PATIENT CONTEXT or EARLIER CONVERSATION sections below — care-team instructions, medications, memory facts, and the assistant's own earlier statements are all grounded sources, exactly like tool evidence.
+
+CRITICAL: statements the assistant made in EARLIER turns were grounded in evidence gathered at that time. A reply that retracts, apologizes for, or calls fabricated its own earlier statements is a wrongly_denied violation — the assistant must never disavow its prior turns just because this turn's tool evidence doesn't repeat that data.
+
+The reply may be written in a language other than English (e.g. Hinglish) while the evidence is English — verify the FACTS (numbers, events, dates), not the wording or language. A correct number expressed in another language's sentence is grounded.
 
 Be literal and conservative: only list a claim you are confident is false-about-the-data or a denial of data that is genuinely present. If the reply is faithful, return empty lists."""
 
 
 async def verify_grounding(
     gateway: ModelGateway, *, response: str, evidence_text: str,
+    trace_id: str | None = None,
 ) -> GroundingVerdict:
     """Check ``response`` against ``evidence_text``; empty lists = grounded."""
     if not response.strip() or not evidence_text.strip():
@@ -89,14 +95,23 @@ async def verify_grounding(
         ],
         response_model=GroundingVerdict,
         task=ModelTask.QUALITY_JUDGE,
+        trace_id=trace_id,
     )
     return verdict
 
 
-def build_correction(verdict: GroundingVerdict) -> str:
+def build_correction(verdict: GroundingVerdict, *, draft: str | None = None) -> str:
     """A system instruction telling the responder exactly what to fix, for a
     single regeneration. Only called when the verdict is not grounded."""
-    parts = ["Your draft reply had grounding errors. Rewrite it, same intent and tone, fixing ONLY these:"]
+    parts = []
+    if draft:
+        parts.append(
+            "Your DRAFT reply (never sent to the patient — you are rewriting "
+            "it, NOT correcting a previous message; no apologies, no "
+            "references to earlier statements):\n<<<DRAFT>>>\n"
+            + draft + "\n<<<END DRAFT>>>"
+        )
+    parts.append("The draft had grounding errors. Rewrite it as a fresh reply, same intent and tone, fixing ONLY these:")
     if verdict.ungrounded_claims:
         parts.append(
             "- Remove or correct these claims — they are NOT in the patient's data "

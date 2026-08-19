@@ -73,6 +73,7 @@ class InvestigationPlanner:
         tool_schemas: list[dict[str, Any]],
         planning_prompt: str,
         model_id: str,
+        trace_id: str | None = None,
     ) -> tuple[InvestigationPlan, float]:
         """Generate an investigation plan.
 
@@ -101,6 +102,7 @@ class InvestigationPlanner:
             task=ModelTask.CLASSIFICATION,
             model_id=model_id,
             timeout=settings.PLANNING_TIMEOUT_SECONDS,
+            trace_id=trace_id,
         )
 
         cost = safe_cost(meta)

@@ -78,8 +78,13 @@ class ThreadListResponse(BaseModel):
 async def get_conversation_history_v3(
     thread_id: str | None = Query(
         None,
-        description="Thread ID — required for providers/admins (from /history/v3/threads), "
-        "optional for patients (auto-resolved to their single thread)",
+        description="Thread ID (from /history/v3/threads). Optional when patient_id is "
+        "given, or for patients (auto-resolved to their single thread).",
+    ),
+    patient_id: str | None = Query(
+        None,
+        description="Derive the thread for this patient instead of passing thread_id — "
+        "symmetric with query/v3. The thread is always the caller's own about this patient.",
     ),
     limit: int = Query(50, ge=1, le=500, description="Number of turns to return"),
     current_actor: Actor = Depends(
@@ -96,22 +101,28 @@ async def get_conversation_history_v3(
 ):
     """Retrieve conversation turns for a thread.
 
-    Patients: thread_id is optional — auto-resolved to bot:patient:{patient_id}.
-    Providers/Admins: thread_id required (GET /history/v3/threads → pick → pass here).
+    Patients: no params — auto-resolved to bot:patient:{patient_id}.
+    Providers/Admins: pass patient_id (thread derived to the caller's own thread
+    about that patient) or an explicit thread_id from /history/v3/threads.
 
     Security: users can only access threads that belong to them
     (thread_id starts with their role:id prefix). Admin can access any thread.
     """
-    # Auto-resolve thread_id for patients
+    # Resolve the thread from the caller's identity when no explicit id is given.
+    # patient_id derives the caller's OWN thread, so the prefix check below still holds.
     if thread_id is None:
         if current_actor.role == ProfileTypeEnum.PATIENT:
+            thread_id = resolve_thread_id(role="patient", actor_id=current_actor.id)
+        elif patient_id:
             thread_id = resolve_thread_id(
-                role="patient", actor_id=current_actor.id,
+                role=current_actor.role.value,
+                actor_id=current_actor.id,
+                patient_ids=[patient_id],
             )
         else:
             raise HTTPException(
                 status_code=400,
-                detail="thread_id is required for care providers and admins",
+                detail="thread_id or patient_id is required for care providers and admins",
             )
 
     resolved_thread_id: str = thread_id

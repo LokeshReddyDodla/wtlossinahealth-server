@@ -659,7 +659,7 @@ class ToolExecutor:
                 tzs = await self._patient_resolver.resolve_timezones(patient_ids[:1])
                 tz_name = tzs.get(patient_ids[0], tz_name)
             except Exception:
-                logger.debug("Timezone resolution failed for %s", patient_ids, exc_info=True)
+                logger.warning("Timezone resolution failed for %s", patient_ids, exc_info=True)
         try:
             tz = ZoneInfo(tz_name)
         except Exception:

@@ -167,6 +167,11 @@ async def _generate_monthly_reports(
         processor = get_sleep_stats_processor()
         service = get_sleep_report_service()
 
+        checkins = await processor._fetch_sleep_checkins(
+            patient_id, start_date, end_date
+        )
+        recommended_min = await processor._recommended_sleep_minimum(patient_id)
+
         reports = processor.generate_report(
             patient_id,
             start_date,
@@ -176,6 +181,8 @@ async def _generate_monthly_reports(
                 SleepReportType.WEEKLY,
                 SleepReportType.DAILY,
             ],
+            sleep_checkins=checkins,
+            recommended_min_minutes=recommended_min,
         )
 
         if not reports:
@@ -186,6 +193,10 @@ async def _generate_monthly_reports(
             }
 
         await service.save_reports_bulk(patient_id, reports)
+
+        from lib.workers.tasks.sleep.vector_generation import _trigger_vector_generation
+
+        await _trigger_vector_generation(patient_id, start_date, end_date)
 
         logger.info(
             f"Generated {len(reports)} sleep reports for {patient_id}: "

@@ -14,20 +14,9 @@ class ReportMetadata(BaseModel):
     date_range: DateRange
     days_covered: int
     report_type: str
-
-
-class SummaryMetrics(BaseModel):
-    steps: int
-    active_energy: float
-    active_duration: float
-    average_active_session_duration: float
-    distance: float = 0
-    flights_climbed: int = 0
-    exercise_time: float = 0
-
-
-class FitnessSummary(BaseModel):
-    metrics: SummaryMetrics
+    # Distinct days with any fitness sample; separates a sedentary day from a
+    # day the device wasn't worn.
+    days_with_data: int = 0
 
 
 class ActivityDistribution(BaseModel):
@@ -37,12 +26,6 @@ class ActivityDistribution(BaseModel):
     active_duration: float
     distance: float = 0
     flights_climbed: int = 0
-
-
-class ActivityDistributionBreakdown(BaseModel):
-    by_time_of_day: Dict[str, ActivityDistribution] = Field(
-        default_factory=dict, description="Activity distribution by time of day"
-    )
 
 
 class PeakActivityTime(BaseModel):
@@ -67,32 +50,26 @@ class HourlyStats(BaseModel):
     flights_climbed: int = 0
 
 
-class ActivityBreakdown(BaseModel):
-    peak_activity_time: Optional[PeakActivityTime] = None
-    inactive_periods: Optional[List[InactivePeriod]] = None
-    hourly_stats: Optional[List[HourlyStats]] = None
+class FitnessTrend(BaseModel):
+    """This period vs the immediately-preceding equal-length window."""
 
-
-class FitnessReport(BaseModel):
-    metadata: ReportMetadata
-    summary: FitnessSummary
-    breakdowns: ActivityDistributionBreakdown
-    activity: ActivityBreakdown
-
-
-class FitnessWeekOverWeekComparison(BaseModel):
-    steps_diff: int
-    active_energy_diff: float
-    active_duration_diff: float
+    previous_steps: int
+    previous_active_energy: float
+    previous_active_duration: float
+    delta_steps: int
+    delta_active_energy: float
+    delta_active_duration: float
 
 
 class WorkoutSummary(BaseModel):
     type: str
-    session_count: int
-    total_duration: float
-    total_energy: float
-    source: str = "app"  # actual source_platform from sync, or "app" for manual
-    workout_id: Optional[str] = None  # UUID for manual workouts, None for synced
+    session_count: int = 1
+    total_duration: float                    # minutes (this session)
+    total_energy: float                      # kcal (this session)
+    source: str = "app"                      # source_platform from sync, or "app" for manual
+    workout_id: Optional[str] = None         # UUID for manual workouts, None for synced
+    start_time: Optional[str] = None         # ISO datetime; one entry per session
+    end_time: Optional[str] = None           # ISO datetime
 
 
 class FitnessStats(BaseModel):
@@ -109,6 +86,7 @@ class FitnessStats(BaseModel):
     peak_activity_time: Optional[PeakActivityTime] = None
     inactive_periods: Optional[List[InactivePeriod]] = None
     hourly_stats: Optional[List[HourlyStats]] = None
+    trend: Optional[FitnessTrend] = None
 
     @property
     def start_date(self):

@@ -16,10 +16,15 @@ async def generate_meal_vector(
     ctx: Dict[str, Any],
     patient_id: str,
     meal_id: str,
-    meal_data: Dict[str, Any],
 ) -> TaskResult:
-    """Generate and store meal vector embedding."""
+    """Generate and store meal vector embedding.
+
+    The meal is re-read from Postgres here (not passed in) so the Qdrant
+    point always reflects the committed row — including macros the report
+    shows — regardless of the caller's session state.
+    """
     from lib.dependencies.service_dependencies import (
+        get_meal_service,
         get_meal_vector_service,
         get_patient_profile_service,
     )
@@ -27,6 +32,24 @@ async def generate_meal_vector(
     try:
         vector_service = get_meal_vector_service()
         patient_service = get_patient_profile_service()
+        meal_service = get_meal_service()
+
+        meal_data = await meal_service.get_meal_vector_data(meal_id)
+        if meal_data is None:
+            logger.warning(f"Meal {meal_id} gone before vectorization ({patient_id})")
+            return TaskResult(
+                success=False,
+                error="Meal not found",
+                data={"patient_id": patient_id, "meal_id": meal_id},
+            )
+
+        # An analyzed meal with no macros means the write path stored a row
+        # the report can render but the monitor would read as "macros
+        # missing" — surface it loudly instead of poisoning Qdrant silently.
+        if meal_data.get("analyzed") and not meal_data.get("total_macro_nutritional_value"):
+            logger.error(
+                f"Analyzed meal {meal_id} has no macros at vectorization ({patient_id})"
+            )
 
         patient_profile = await patient_service.fetch_patient_profile(patient_id)
         if not patient_profile:
@@ -99,9 +122,7 @@ async def delete_meal_vector_task(
         raise  # idempotent — let arq retry
 
 
-async def _enqueue_meal_vector(
-    patient_id: str, meal_id: str, meal_data: Dict[str, Any]
-) -> str | None:
+async def _enqueue_meal_vector(patient_id: str, meal_id: str) -> str | None:
     """Internal: Enqueue meal vector generation."""
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
     job_id = f"meal:vector:{patient_id}:{meal_id}:{timestamp}"
@@ -110,7 +131,6 @@ async def _enqueue_meal_vector(
         "generate_meal_vector",
         patient_id,
         meal_id,
-        meal_data,
         _job_id=job_id,
         _queue_name=Queues.VECTORS,
     )

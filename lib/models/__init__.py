@@ -4,6 +4,10 @@ Base = declarative_base()
 
 # Import all models to ensure they are registered with the base
 from .admin import Admin
+from .ai_feature_toggle import AIFeatureToggle
+from .care_intent import CareIntent
+from .care_intent_event import CareIntentEvent
+from .patient_notification_preference import PatientNotificationPreference
 from .care_provider import CareProvider
 from .health_facility import HealthFacility
 from .package import Package
@@ -46,7 +50,6 @@ from .patient_smoking_habit import PatientSmokingHabit
 from .token_usage_log import TokenUsageLog
 from .user_device import UserDevice
 from .patient_package_assignment import PatientPackageAssignment
-from .weight_loss_agent import WeightLossAgentEnrollment
 from .user_activity_log import UserActivityLog
 from .patient_notification import PatientNotification
 from .patient_report import PatientReport

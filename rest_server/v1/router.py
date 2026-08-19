@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 from .auth.router import router as auth_router
 from .packages.router import router as packages_router
+from .care_intents.router import router as care_intents_router
 from .care_providers.router import router as care_providers_router
 from .patients.router import router as patients_router
 from .health_facilities.router import router as health_facilities_router
@@ -29,6 +30,7 @@ from .admin.support_tickets.router import (
 )
 from .admin.notifications.router import router as admin_notifications_router
 from .admin.system.router import router as admin_system_router
+from .admin.ai_features.router import router as admin_ai_features_router
 from .product_bot.router import router as product_bot_router
 from .dashboard_help_agent.router import router as dashboard_help_router
 from .whatsapp.router import router as whatsapp_router
@@ -38,6 +40,7 @@ router = APIRouter(prefix="/v1", tags=["V1"])
 
 router.include_router(auth_router)
 router.include_router(packages_router)
+router.include_router(care_intents_router)
 router.include_router(care_providers_router)
 router.include_router(patients_router)
 router.include_router(health_facilities_router)
@@ -63,6 +66,7 @@ router.include_router(documents_router)
 router.include_router(admin_support_tickets_router)
 router.include_router(admin_notifications_router)
 router.include_router(admin_system_router)
+router.include_router(admin_ai_features_router)
 router.include_router(share_router)
 router.include_router(product_bot_router)
 router.include_router(dashboard_help_router)

@@ -258,7 +258,13 @@ class PatientDietPlanService:
                 )
 
             for field, value in update_data.items():
-                if hasattr(diet_plan, field):
+                if not hasattr(diet_plan, field):
+                    continue
+                # Merge JSONB content so sub-fields the caller didn't send (e.g.
+                # micronutrients) survive — the request already dropped unset keys.
+                if field == "content" and isinstance(value, dict) and isinstance(diet_plan.content, dict):
+                    setattr(diet_plan, field, {**diet_plan.content, **value})
+                else:
                     setattr(diet_plan, field, value)
 
             await postgres_session.commit()
@@ -315,6 +321,29 @@ class PatientDietPlanService:
                 message="Unable to update diet plan status. Please try again.",
                 detail=str(e),
             )
+
+    @with_postgres_session
+    async def expire_ended_plans(self, *, postgres_session: AsyncSession) -> int:
+        """Flip ACTIVE diet plans whose end_date has passed to EXPIRED and
+        re-vectorize them (syncs plan_status into Qdrant). Ongoing plans
+        (end_date NULL) never expire. Returns the number expired. Idempotent."""
+        today = datetime_date.today()
+        plans = (await postgres_session.execute(
+            select(PatientDietPlanModel).where(
+                PatientDietPlanModel.status == "ACTIVE",
+                PatientDietPlanModel.end_date.isnot(None),
+                PatientDietPlanModel.end_date < today,
+            )
+        )).scalars().all()
+        if not plans:
+            return 0
+        for plan in plans:
+            plan.status = "EXPIRED"
+        await postgres_session.commit()
+        for plan in plans:
+            await postgres_session.refresh(plan)
+            await self._vectorize_diet_plan(plan)
+        return len(plans)
 
     @with_postgres_session
     async def delete_diet_plan(

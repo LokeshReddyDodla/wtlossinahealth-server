@@ -9,14 +9,8 @@ from uuid import UUID
 from loguru import logger
 from sqlalchemy import select
 
-from lib.ai_foundation.agents.proactive_monitor.contracts import EventTrigger
 from lib.services.gamification.time_utils import local_today, matches_local_hour
-from lib.services.medication_missed_detector import (
-    MEDICATION_SLOTS,
-    find_overdue_doses,
-)
-from lib.workers.arq.config import Queues
-from lib.workers.arq.redis import enqueue_job
+from lib.services.medication_schedule import MEDICATION_SLOTS
 from lib.workers.tasks.base import task_with_logging
 
 
@@ -228,7 +222,6 @@ async def send_streak_reminders(ctx: Dict[str, Any]) -> None:
     from lib.services.gamification.notifications import send_gamification_notification
     from lib.services.gamification.streak_service import ACTIVITY_TASK_TYPES, ACTIVITY_THRESHOLD
     from lib.schemas.gamification import TaskStatus
-    from lib.services.notification_budget import can_send, record_sent
 
     store = container.resolve(PostgresStore)
     resolver = container.resolve(PatientNameResolver)
@@ -274,15 +267,12 @@ async def send_streak_reminders(ctx: Dict[str, Any]) -> None:
                 continue
 
             streak = streak_map[pid]
-            if not can_send(str(pid), "streak_reminder"):
-                continue
             await send_gamification_notification(
                 str(pid),
                 title="Don't lose your streak!",
                 body=f"You're on a {streak}-day streak. Complete a task to keep it going!",
                 data={"event_type": "streak_reminder", "current_streak": streak},
             )
-            record_sent(str(pid))
             sent += 1
         except Exception:
             logger.opt(exception=True).warning(f"Streak reminder failed for {pid}")
@@ -324,7 +314,6 @@ async def _send_medication_notification(
     """Persist an inbox row and fire FCM on the 'reminders' channel."""
     try:
         from lib.services.notifications import record_and_send_notification
-        from lib.services.notification_budget import record_sent
 
         await record_and_send_notification(
             patient_id,
@@ -333,7 +322,6 @@ async def _send_medication_notification(
             body=body,
             data=data or {},
         )
-        record_sent(patient_id)
     except Exception as exc:
         logger.warning("Failed medication notification for %s: %s", patient_id, exc)
 
@@ -342,9 +330,8 @@ async def _send_medication_notification(
 async def send_medication_reminders(ctx: Dict[str, Any]) -> None:
     """Medication reminder — nudge patients to take their meds.
 
-    Runs hourly: each tick fires reminders for the slot whose hour matches
-    patient-local now, and enqueues MEDICATION_MISSED proactive events for
-    any earlier slot that's still PENDING past the grace window.
+    Runs hourly: each tick fires a reminder for the slot whose hour matches
+    patient-local now while its DailyTask is still PENDING.
     """
     from lib.core.container import container
     from lib.core.postgres_store import PostgresStore
@@ -410,20 +397,6 @@ async def send_medication_reminders(ctx: Dict[str, Any]) -> None:
                         },
                     )
                     sent += 1
-
-            # MEDICATION_MISSED proactive events for any earlier-slot tasks
-            # still PENDING past the grace window. job_id is keyed on
-            # task_id so later hourly ticks don't refire for the same miss.
-            for missed in await find_overdue_doses(pid, tz_name, store):
-                await enqueue_job(
-                    "handle_proactive_event",
-                    str(pid),
-                    EventTrigger.MEDICATION_MISSED.value,
-                    missed.model_dump(),
-                    _job_id=f"insight:{EventTrigger.MEDICATION_MISSED.value}:{pid}:{missed.daily_task_id}",
-                    _defer_by=0,
-                    _queue_name=Queues.INSTANT,
-                )
         except Exception:
             logger.opt(exception=True).warning(f"Medication reminder failed for {pid}")
 

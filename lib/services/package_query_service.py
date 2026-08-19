@@ -87,33 +87,28 @@ class PackageQueryService:
         return stmt
 
     def _apply_search_filter(self, stmt: Select, query: PackageQuery) -> Select:
-        """Apply search filter across name, code, duration_days, and price."""
+        """Search across name, code, package_id; numeric terms also match an
+        exact duration_days or price."""
         if not query.search:
             return stmt
 
-        search_pattern = f"%{query.search}%"
-        
-        # Build conditions for text fields (name, code)
-        text_conditions = [
-            PackageModel.name.ilike(search_pattern),
-            PackageModel.code.ilike(search_pattern),
-            cast(PackageModel.package_id, String).ilike(search_pattern),
-        ]
-        
-        # Try to parse search as number for duration_days and price
-        try:
-            search_num = float(query.search)
-            # Add numeric conditions
-            numeric_conditions = [
-                PackageModel.duration_days == int(search_num),
-                PackageModel.price == int(search_num),
+        for term in query.search.split():
+            pattern = f"%{term}%"
+            conditions = [
+                PackageModel.name.ilike(pattern),
+                PackageModel.code.ilike(pattern),
+                cast(PackageModel.package_id, String).ilike(pattern),
             ]
-            conditions = text_conditions + numeric_conditions
-        except (ValueError, TypeError):
-            # If search is not a number, only use text conditions
-            conditions = text_conditions
-
-        return stmt.where(or_(*conditions))
+            try:
+                n = int(float(term))
+                conditions += [
+                    PackageModel.duration_days == n,
+                    PackageModel.price == n,
+                ]
+            except (ValueError, TypeError):
+                pass
+            stmt = stmt.where(or_(*conditions))
+        return stmt
 
     def _apply_status_filter(self, stmt: Select, query: PackageQuery) -> Select:
         """Apply status filter."""

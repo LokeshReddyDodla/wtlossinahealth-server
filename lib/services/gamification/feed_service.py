@@ -120,18 +120,19 @@ class FeedService:
         patient_id: UUID,
         *,
         limit: int = 30,
+        enforce_membership: bool = True,
         postgres_session: AsyncSession,
     ) -> List[FeedEventResponse]:
-        # Verify membership
-        member_check = await postgres_session.execute(
-            select(GroupMember).where(
-                GroupMember.group_id == group_id,
-                GroupMember.patient_id == patient_id,
-                GroupMember.is_active == True,
+        if enforce_membership:
+            member_check = await postgres_session.execute(
+                select(GroupMember).where(
+                    GroupMember.group_id == group_id,
+                    GroupMember.patient_id == patient_id,
+                    GroupMember.is_active == True,
+                )
             )
-        )
-        if not member_check.scalars().first():
-            raise ValueError("Not a member of this group")
+            if not member_check.scalars().first():
+                raise ValueError("Not a member of this group")
 
         # Get all member IDs
         members_result = await postgres_session.execute(

@@ -23,7 +23,6 @@ class MongoStore:
 
     # --- Index setup ---
     async def init_indexes(self):
-        await self._init_ai_conversation_message_indexes()
         await self._init_support_ticket_indexes()
         await self._init_chat_indexes()
         await self._init_consultation_indexes()
@@ -89,40 +88,6 @@ class MongoStore:
                 ("last_message_at", -1),
             ],
             name="support_facility_queue_idx",
-        )
-
-    async def _init_ai_conversation_message_indexes(self):
-        collection = self.db["ai_conversation_messages"]
-
-        await collection.create_index(
-            [("conversation_id", 1), ("created_at", 1)],
-            name="conversation_createdAt_idx",
-        )
-        await collection.create_index(
-            [("sender_id", 1), ("sender_type", 1)],
-            name="sender_idx",
-            sparse=True,
-        )
-        await collection.create_index(
-            [("conversation_type", 1)], name="conversationType_idx"
-        )
-        await collection.create_index(
-            [("status", 1)],
-            name="status_idx",
-            sparse=True,
-        )
-        await collection.create_index(
-            [("hidden_from_ui", 1)],
-            name="hiddenFromUI_idx",
-            sparse=True,
-        )
-        await collection.create_index(
-            [("model", 1)],
-            name="model_idx",
-            sparse=True,
-        )
-        await collection.create_index(
-            [("created_at", -1)], name="createdAt_desc_idx"
         )
 
     async def _init_task_run_indexes(self):

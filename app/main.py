@@ -105,9 +105,35 @@ async def on_startup() -> None:
         import logging
         logging.getLogger(__name__).warning(f"Failed profile_agent init: {e}")
 
+    # Patient Brief — ensure the patient_id lookup index.
+    try:
+        from lib.core.container import container
+        from lib.services.patient_brief.service import PatientBriefService
+        await container.resolve(PatientBriefService).ensure_indexes()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Failed patient_brief init: {e}")
+
+    # Patient Panel — ensure the scope/sort indexes on the signal read model.
+    try:
+        from lib.core.container import container
+        from lib.services.patient_panel.service import PatientPanelService
+        await container.resolve(PatientPanelService).ensure_indexes()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Failed patient_panel init: {e}")
+
 
 @app.on_event("shutdown")
 async def on_shutdown() -> None:
+    # Flush buffered Langfuse events before exit, or the last batch is lost.
+    try:
+        import logging
+        from lib.ai_foundation.models.gateway import ModelGateway
+        from lib.core.container import container
+        container.resolve(ModelGateway).flush()
+    except Exception:
+        logging.getLogger(__name__).warning("Langfuse flush on shutdown failed", exc_info=True)
     await app.state.postgres_store.close()
     app.state.mongo_store.client.close()
     await app.state.qdrant_store.close()

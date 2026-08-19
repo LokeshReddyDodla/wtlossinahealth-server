@@ -134,6 +134,16 @@ class FitnessVectorService(BaseVectorService):
                     "peak_active_energy": report_data.get(
                         "peak_activity_time", {}
                     ).get("max_active_energy", 0.0),
+                    "days_with_data": report_data.get("metadata", {}).get(
+                        "days_with_data", 0
+                    ),
+                    "delta_steps": (report_data.get("trend") or {}).get("delta_steps"),
+                    "delta_active_energy": (report_data.get("trend") or {}).get(
+                        "delta_active_energy"
+                    ),
+                    "delta_active_duration": (report_data.get("trend") or {}).get(
+                        "delta_active_duration"
+                    ),
                 }
 
             elif name == "fitness_activity_distribution":

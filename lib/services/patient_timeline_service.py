@@ -18,6 +18,7 @@ from lib.models.patient_workout import PatientWorkout
 from lib.models.sleep_checkin import SleepCheckin
 from lib.models.symptom_entry import SymptomEntry
 from lib.schemas.patient_timeline import (
+    DaySummary,
     TimelineEvent,
     TimelineEventType,
     TimelineResponse,
@@ -58,26 +59,53 @@ class PatientTimelineService:
         *,
         postgres_session: AsyncSession,
     ) -> TimelineResponse:
+        # Fetch each raw source once; events and the summary both derive from
+        # the same fetches, so the strip can't disagree with the feed.
         (
             pg_events,
-            vital_events,
+            vitals_rows,
             insight_events,
-            cgm_events,
-            report_enrichments,
+            cgm_report,
+            meal_report,
+            sleep_report,
+            fitness_report,
         ) = await asyncio.gather(
             self._get_postgres_events(patient_id, selected_date, postgres_session),
-            self._get_vital_events(patient_id, selected_date),
+            self._fetch_vitals_rows(patient_id, selected_date),
             self._get_insight_events(patient_id, selected_date),
-            self._get_cgm_events(patient_id, selected_date),
-            self._get_report_enrichments(patient_id, selected_date),
+            self._safe_fetch(self.cgm_report_service.fetch_daily_report, patient_id, selected_date),
+            self._safe_fetch(self.meal_report_service.fetch_daily_report, patient_id, selected_date),
+            self._safe_fetch(self.sleep_report_service.fetch_daily_report, patient_id, selected_date),
+            self._safe_fetch(self.fitness_report_service.fetch_daily_report, patient_id, selected_date),
         )
 
-        data_events = pg_events + vital_events + cgm_events
+        data_events = (
+            pg_events
+            + self._build_vital_events(vitals_rows)
+            + self._build_cgm_events(cgm_report)
+        )
 
-        meal_glucose, sleep_quality, inactive_periods = report_enrichments
-        self._enrich_meals(data_events, meal_glucose)
+        sleep_quality = self._extract_sleep_quality(sleep_report)
+        self._enrich_meals(data_events, self._extract_meal_glucose(meal_report))
         self._enrich_sleep(data_events, sleep_quality)
-        data_events.extend(inactive_periods)
+        data_events.extend(self._extract_inactive_periods(fitness_report, selected_date))
+
+        summary = self._build_summary(vitals_rows, fitness_report, cgm_report)
+
+        # Sleep on the strip uses the checkin's self-rating, matching the feed —
+        # not the device classification, which can disagree with it.
+        sleep_evt = next(
+            (e for e in data_events if e.type == TimelineEventType.SLEEP), None
+        )
+        if sleep_evt:
+            hrs = sleep_evt.data.get("hours_slept")
+            rated = sleep_evt.data.get("quality")
+            if isinstance(hrs, (int, float)) and hrs > 0:
+                summary.sleep_hours = round(hrs, 1)
+            if rated:
+                summary.sleep_quality = f"Quality {rated}/5"
+            elif sleep_quality.get("classification"):
+                summary.sleep_quality = sleep_quality["classification"].title()
 
         self._anchor_insights(insight_events, data_events)
         events = data_events + insight_events
@@ -87,24 +115,10 @@ class PatientTimelineService:
             patient_id=patient_id,
             event_count=len(events),
             events=events,
+            summary=summary,
         )
 
     # ── Report enrichments (MongoDB) ─────────────────────────────────────
-
-    async def _get_report_enrichments(
-        self, patient_id: str, selected_date: date,
-    ) -> tuple[dict, dict, list[TimelineEvent]]:
-        meal_report, sleep_report, fitness_report = await asyncio.gather(
-            self._safe_fetch(self.meal_report_service.fetch_daily_report, patient_id, selected_date),
-            self._safe_fetch(self.sleep_report_service.fetch_daily_report, patient_id, selected_date),
-            self._safe_fetch(self.fitness_report_service.fetch_daily_report, patient_id, selected_date),
-        )
-
-        meal_glucose = self._extract_meal_glucose(meal_report)
-        sleep_quality = self._extract_sleep_quality(sleep_report)
-        inactive_periods = self._extract_inactive_periods(fitness_report, selected_date)
-
-        return meal_glucose, sleep_quality, inactive_periods
 
     @staticmethod
     async def _safe_fetch(fetch_fn, *args):
@@ -196,34 +210,18 @@ class PatientTimelineService:
 
     @staticmethod
     def _enrich_sleep(events: list[TimelineEvent], sleep_quality: dict) -> None:
+        # Stash the device analysis on the event (for the detail screen) but
+        # DON'T touch the subtitle — the device label and the user's self-rating
+        # can disagree, and showing both reads as a contradiction.
         if not sleep_quality:
             return
         for event in events:
-            if event.type != TimelineEventType.SLEEP:
-                continue
-            event.data.update(sleep_quality)
-            parts = []
-            if event.data.get("hours_slept"):
-                parts.append(f"{event.data['hours_slept']:.1f} hrs")
-            if sleep_quality.get("classification"):
-                parts.append(sleep_quality["classification"].title())
-            if sleep_quality.get("efficiency"):
-                parts.append(f"Efficiency {sleep_quality['efficiency']:.0f}%")
-            if parts:
-                event.subtitle = " · ".join(parts)
+            if event.type == TimelineEventType.SLEEP:
+                event.data.update(sleep_quality)
 
     # ── CGM events from daily report (MongoDB) ───────────────────────────
 
-    async def _get_cgm_events(
-        self, patient_id: str, selected_date: date,
-    ) -> list[TimelineEvent]:
-        try:
-            report = await self.cgm_report_service.fetch_daily_report(
-                patient_id, selected_date,
-            )
-        except Exception:
-            return []
-
+    def _build_cgm_events(self, report: dict | None) -> list[TimelineEvent]:
         if not report:
             return []
 
@@ -433,9 +431,8 @@ class PatientTimelineService:
         if row.wake_time:
             data["wake_time"] = row.wake_time
 
-        quality_label = f"Quality {row.quality}/5" if row.quality else ""
-        hours_label = f"{row.hours_slept:.1f} hrs" if row.hours_slept else ""
-        subtitle_parts = [p for p in (hours_label, quality_label) if p]
+        # Hours only; quality renders as its own chip from data["quality"].
+        subtitle_parts = [f"{row.hours_slept:.1f} hrs"] if row.hours_slept else []
 
         ts = datetime.combine(selected_date, time.min)
         if row.wake_time:
@@ -632,9 +629,11 @@ class PatientTimelineService:
 
     # ── ClickHouse (vitals) ──────────────────────────────────────────────
 
-    async def _get_vital_events(
+    async def _fetch_vitals_rows(
         self, patient_id: str, selected_date: date,
-    ) -> list[TimelineEvent]:
+    ) -> list[tuple]:
+        """All of the day's vitals rows, fetched once. Feeds both the vital
+        events and the HR/SpO2 summary — no second query for the aggregates."""
         query = f"""
         SELECT type, value, time
         FROM aihealth.vitals_data FINAL
@@ -643,17 +642,19 @@ class PatientTimelineService:
         ORDER BY time
         """
         try:
-            rows = self.clickhouse_store.client.execute(query)
+            return self.clickhouse_store.client.execute(query)
         except Exception:
             return []
 
+    def _build_vital_events(self, rows: list[tuple]) -> list[TimelineEvent]:
+        # Keys are the `type` strings fitness_upload_service writes
+        # (blood_oxygen / body_temperature, not spo2 / temperature) — mismatch
+        # here silently drops the unit.
         VITAL_LABELS = {
-            "heart_rate": ("Heart Rate", "bpm"),
-            "resting_heart_rate": ("Resting Heart Rate", "bpm"),
             "systolic_bp": ("Systolic BP", "mmHg"),
             "diastolic_bp": ("Diastolic BP", "mmHg"),
-            "spo2": ("SpO2", "%"),
-            "temperature": ("Temperature", "°F"),
+            "blood_oxygen": ("SpO2", "%"),
+            "body_temperature": ("Temperature", "°F"),
             "respiratory_rate": ("Respiratory Rate", "breaths/min"),
             "weight": ("Weight", "kg"),
         }
@@ -662,6 +663,11 @@ class PatientTimelineService:
         events: list[TimelineEvent] = []
 
         for vital_type, value, ts in rows:
+            # HR is a continuous stream (~300 samples/day) — it goes to the
+            # summary, not one feed event per reading.
+            if vital_type in ("heart_rate", "resting_heart_rate"):
+                continue
+
             if vital_type in ("systolic_bp", "diastolic_bp"):
                 bp_by_time.setdefault(ts, {})[vital_type] = value
                 continue
@@ -692,6 +698,56 @@ class PatientTimelineService:
             ))
 
         return events
+
+    # ── Ambient day summary (the dashboard strip) ────────────────────────
+
+    def _build_summary(
+        self,
+        vitals_rows: list[tuple],
+        fitness_report: dict | None,
+        cgm_report: dict | None,
+    ) -> DaySummary:
+        """Derive the strip from sources already fetched — no query of its own.
+
+        Steps/active come from the fitness report, NOT a raw fitness_data sum:
+        the raw sum double-counts overlapping syncs and disagrees with Home.
+        Sleep is set by the caller from the checkin (self-rating).
+        """
+        summary = DaySummary()
+
+        if fitness_report:
+            steps = fitness_report.get("steps")
+            active = fitness_report.get("active_energy")
+            if isinstance(steps, (int, float)) and steps > 0:
+                summary.steps = int(steps)
+            if isinstance(active, (int, float)) and active > 0:
+                summary.active_energy_kcal = round(float(active), 1)
+
+        hr_vals: list[float] = []
+        spo2_vals: list[float] = []
+        for vital_type, value, _ts in vitals_rows:
+            if vital_type == "heart_rate":
+                hr_vals.append(value)
+            elif vital_type == "resting_heart_rate":
+                summary.resting_hr = round(value)  # rows are time-ordered; last wins
+            elif vital_type == "blood_oxygen":
+                spo2_vals.append(value)
+        if hr_vals:
+            summary.avg_hr = round(sum(hr_vals) / len(hr_vals))
+            summary.min_hr = round(min(hr_vals))
+            summary.max_hr = round(max(hr_vals))
+        if spo2_vals:
+            summary.avg_spo2 = round(sum(spo2_vals) / len(spo2_vals), 1)
+
+        if cgm_report:
+            avg = (cgm_report.get("cgm_summary_stats") or {}).get("average_glucose_mgdl")
+            tir = (cgm_report.get("cgm_range_stats") or {}).get("in_target_70_180_percent")
+            if isinstance(avg, (int, float)) and avg > 0:
+                summary.avg_glucose = round(avg)
+            if isinstance(tir, (int, float)):
+                summary.time_in_range = round(tir, 1)
+
+        return summary
 
     # ── MongoDB (proactive insights) ─────────────────────────────────────
 

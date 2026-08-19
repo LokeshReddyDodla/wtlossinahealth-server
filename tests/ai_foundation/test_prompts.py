@@ -80,16 +80,6 @@ class TestPromptLoader:
         t2 = load_prompt_file(f)
         assert t1.content_hash != t2.content_hash
 
-    def test_load_existing_health_query_prompts(self):
-        prompts_dir = Path("lib/services/health_query_agent/prompts")
-        if prompts_dir.exists():
-            templates = load_prompt_directory(prompts_dir)
-            assert len(templates) >= 1
-            for t in templates:
-                assert t.meta.name
-                assert t.body
-
-
 class TestPromptRegistry:
     def test_register_and_get(self, prompt_registry):
         t = PromptTemplate(

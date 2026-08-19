@@ -9,6 +9,7 @@ from lib.utils.validation_utils import validate_float
 from .queries import (
     generate_daily_avg_query,
     generate_hourly_agp_points_query,
+    generate_nocturnal_dawn_query,
     generate_summary_stats_query,
 )
 
@@ -47,6 +48,19 @@ class CGMStatistics:
             clickhouse_store, patient_id, start_date_str, end_date_str
         )
 
+        nocturnal_result = clickhouse_store.client.execute(
+            generate_nocturnal_dawn_query(patient_id, start_date_str, end_date_str)
+        )
+        nocturnal_below, nocturnal_total, dawn_avg, predawn_avg = (
+            nocturnal_result[0] if nocturnal_result else (0, 0, None, None)
+        )
+        nocturnal_time_below_70_percent = validate_float(
+            (nocturnal_below / nocturnal_total) * 100 if nocturnal_total else 0.0
+        )
+        dawn_rise_mgdl = validate_float(
+            (dawn_avg - predawn_avg) if dawn_avg is not None and predawn_avg is not None else 0.0
+        )
+
         return CGMSummaryStats(
             average_glucose_mgdl=average_glucose,
             gmi=gmi,
@@ -58,6 +72,8 @@ class CGMStatistics:
             highest_glucose_date=highest_glucose_date,
             lowest_glucose_mgdl=lowest_glucose,
             lowest_glucose_date=lowest_glucose_date,
+            nocturnal_time_below_70_percent=nocturnal_time_below_70_percent,
+            dawn_rise_mgdl=dawn_rise_mgdl,
             agp_points=agp_points,
         )
 

@@ -6,13 +6,22 @@ class FitnessSectionTemplates:
 
     @staticmethod
     def fitness_overview(start_str: str, end_str: str, data: dict) -> str:
+        trend = ""
+        if data.get("delta_steps") is not None:
+            trend = (
+                f" trend vs previous period: {data.get('delta_steps'):+d} steps, "
+                f"{data.get('delta_active_energy', 0):+.0f} active_energy, "
+                f"{data.get('delta_active_duration', 0):+.0f} min active."
+            )
         return (
             f"Fitness summary from {start_str} to {end_str}: "
+            f"days_with_data: {data.get('days_with_data')}, "
             f"steps: {data.get('steps')}, "
             f"active_duration: {data.get('active_duration')} min, "
             f"active_energy: {data.get('active_energy')}, "
             f"average_active_session_duration: {data.get('average_active_session_duration')}, "
             f"peak activity hour: {data.get('peak_hour')} with {data.get('peak_steps')} steps."
+            f"{trend}"
         )
 
     @staticmethod

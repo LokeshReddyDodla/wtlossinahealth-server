@@ -253,7 +253,7 @@ class FitnessReportService:
 
     async def save_reports_bulk(self, patient_id: str, reports: List[FitnessStats]):
         try:
-            from pymongo import UpdateOne
+            from pymongo import ReplaceOne
 
             if not reports:
                 logging.warning("No Fitness reports to save")
@@ -281,8 +281,10 @@ class FitnessReportService:
                     }
                 )
 
+                # Full replace: a regenerated report must not inherit fields that
+                # exclude_none omits this time but a prior version had set.
                 ops.append(
-                    UpdateOne({"_id": report_id}, {"$set": report_dict}, upsert=True)
+                    ReplaceOne({"_id": report_id}, report_dict, upsert=True)
                 )
 
             await self.fitness_report_collection.bulk_write(ops)

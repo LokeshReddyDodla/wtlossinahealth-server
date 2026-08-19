@@ -13,6 +13,8 @@ from __future__ import annotations
 import io
 import logging
 import wave
+
+import litellm
 from abc import ABC, abstractmethod
 from typing import Literal
 
@@ -29,6 +31,10 @@ logger = logging.getLogger(__name__)
 
 
 AudioFormat = Literal["pcm", "wav", "mp3", "mp4", "mpeg", "mpga", "m4a", "webm", "ogg", "flac"]
+
+# Labels STT generations in Langfuse by feature (else: anonymous "litellm-completion").
+# ponytail: no user/session id — STT layer has no caller context; thread it if needed.
+_STT_TRACE_META = {"trace_name": "voice-stt", "generation_name": "stt-transcription"}
 
 
 class TranscriptionResult(BaseModel):
@@ -60,8 +66,6 @@ class OpenAISpeechToText(BaseSpeechToText):
     """Async OpenAI Whisper STT client."""
 
     def __init__(self, settings: VoiceSettings) -> None:
-        from openai import AsyncOpenAI
-        self._client = AsyncOpenAI()
         self._settings = settings
 
     async def transcribe_file(
@@ -84,6 +88,7 @@ class OpenAISpeechToText(BaseSpeechToText):
             "model": self._settings.STT_MODEL,
             "file": audio_file,
             "response_format": "verbose_json",
+            "metadata": _STT_TRACE_META,
         }
         lang = language or self._settings.STT_LANGUAGE
         if lang:
@@ -96,7 +101,10 @@ class OpenAISpeechToText(BaseSpeechToText):
             lang,
         )
 
-        response = await self._client.audio.transcriptions.create(**kwargs)
+        # Explicit timeout: a hung provider call must not stall a live voice turn.
+        response = await litellm.atranscription(
+            **kwargs, timeout=self._settings.PROVIDER_TIMEOUT_SECONDS,
+        )
 
         result = TranscriptionResult(
             text=response.text,
@@ -140,6 +148,7 @@ class OpenAISpeechToText(BaseSpeechToText):
             "model": self._settings.STT_MODEL,
             "file": audio_file,
             "response_format": "verbose_json",
+            "metadata": _STT_TRACE_META,
         }
         lang = language or self._settings.STT_LANGUAGE
         if lang:
@@ -152,7 +161,10 @@ class OpenAISpeechToText(BaseSpeechToText):
             len(audio_bytes), audio_format, filename, len(upload_bytes), lang or "auto",
         )
 
-        response = await self._client.audio.transcriptions.create(**kwargs)
+        # Explicit timeout: a hung provider call must not stall a live voice turn.
+        response = await litellm.atranscription(
+            **kwargs, timeout=self._settings.PROVIDER_TIMEOUT_SECONDS,
+        )
 
         result = TranscriptionResult(
             text=response.text,
@@ -175,7 +187,7 @@ class SarvamSpeechToText(BaseSpeechToText):
 
     def __init__(self, settings: VoiceSettings) -> None:
         from sarvamai import AsyncSarvamAI
-        self._client = AsyncSarvamAI(api_subscription_key=settings.SARVAM_API_KEY)
+        self._client = AsyncSarvamAI(api_subscription_key=settings.SARVAM_API_KEY, timeout=settings.PROVIDER_TIMEOUT_SECONDS)
         self._settings = settings
 
     async def transcribe(

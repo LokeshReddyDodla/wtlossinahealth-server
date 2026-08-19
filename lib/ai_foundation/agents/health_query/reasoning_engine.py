@@ -212,6 +212,7 @@ class ReasoningEngine:
         intent_data_types: list[str] | None = None,
         patient_names: dict[str, str] | None = None,
         user_role: str = "patient",
+        trace_id: str | None = None,
     ) -> ReasoningResult:
         """Run the full reasoning loop and return the result."""
         async for item in self._reason_core(
@@ -225,6 +226,7 @@ class ReasoningEngine:
             intent_data_types=intent_data_types,
             patient_names=patient_names,
             user_role=user_role,
+            trace_id=trace_id,
             emit_events=False,
         ):
             if isinstance(item, ReasoningResult):
@@ -245,6 +247,7 @@ class ReasoningEngine:
         intent_data_types: list[str] | None = None,
         patient_names: dict[str, str] | None = None,
         user_role: str = "patient",
+        trace_id: str | None = None,
         delta_sink: list[str] | None = None,
     ) -> AsyncIterator[str | SSEDonePayload]:
         """Run the reasoning loop, yielding SSE events as the doctor thinks.
@@ -263,6 +266,7 @@ class ReasoningEngine:
             intent_data_types=intent_data_types,
             patient_names=patient_names,
             user_role=user_role,
+            trace_id=trace_id,
             emit_events=True,
             delta_sink=delta_sink,
         ):
@@ -284,6 +288,7 @@ class ReasoningEngine:
         intent_data_types: list[str] | None = None,
         patient_names: dict[str, str] | None = None,
         user_role: str = "patient",
+        trace_id: str | None = None,
         emit_events: bool = False,
         delta_sink: list[str] | None = None,
     ) -> AsyncIterator[str | ReasoningResult]:
@@ -331,6 +336,7 @@ class ReasoningEngine:
                     seen_calls=seen_calls,
                     patient_names=patient_names,
                     is_voice=is_voice,
+                    trace_id=trace_id,
                 )
             total_cost += plan["cost"]
             total_tools += plan["tools_called"]
@@ -346,6 +352,37 @@ class ReasoningEngine:
                     len(plan["plan_obj"].steps),
                     plan["plan_obj"].domains_involved,
                 )
+
+        # ── Base fetch ──
+        # Seed the intent extractor's data_types once before the thinker
+        # loop: it reliably tags every domain a question needs, including
+        # both sides of a compound query. Left to decide the base fetch
+        # itself the thinker under-fetches compound queries, so from here it
+        # only follows the trail (investigate_day, compare_baseline).
+        if intent_data_types and "look_up:seed" not in seen_calls:
+            if emit_events and tier_cfg.show_reasoning:
+                yield sse_tool_call("look_up", {"data_types": intent_data_types})
+            seed_args = {"data_types": intent_data_types, "limit": settings.LOOKUP_DEFAULT_LIMIT}
+            with _track_perf(perf, "tool_exec_ms"):
+                seed_result = await self._tools.execute(
+                    "look_up", seed_args, patient_ids, patient_names=patient_names,
+                )
+            seen_calls.add("look_up:seed")
+            total_tools += 1
+            evidence_ledger.append(extract_evidence_from_fallback("look_up", seed_args, seed_result))
+            steps.append(ReasoningStep(
+                round=0,
+                thought="Fetching the data the question requires.",
+                tool_calls=[{"tool": "look_up", "args": {"data_types": intent_data_types}}],
+                tool_results=[{"tool": "look_up", "result": seed_result[:settings.STEP_LOG_TRUNCATION_CHARS]}],
+            ))
+            if emit_events and tier_cfg.show_reasoning:
+                yield sse_tool_result("look_up", self._summarize_result("look_up", seed_result))
+            messages.append({
+                "role": "system",
+                "content": f"Health data retrieved:\n\n{seed_result}",
+                "_meta": {"type": "tool_result", "round": 0, "tool": "look_up"},
+            })
 
         for round_num in range(1, budget_remaining + 1):
             # Prune before thinker call
@@ -363,44 +400,11 @@ class ReasoningEngine:
                     task=ModelTask.CLASSIFICATION,
                     model_id=tier_cfg.thinker_model,
                     timeout=settings.REASONING_TIMEOUT_SECONDS,
+                    trace_id=trace_id,
                 )
             total_cost += safe_cost(response)
 
             if not response.has_tool_calls:
-                # Round 1 with no tool calls = lazy LLM. Force a lookup.
-                if round_num == 1 and intent_data_types and not seen_calls:
-                    if emit_events and tier_cfg.show_reasoning:
-                        yield sse_tool_call("look_up", {"data_types": intent_data_types})
-                    with _track_perf(perf, "tool_exec_ms"):
-                        fallback_result = await self._tools.execute(
-                            "look_up",
-                            {"data_types": intent_data_types, "limit": settings.LOOKUP_DEFAULT_LIMIT},
-                            patient_ids,
-                            patient_names=patient_names,
-                        )
-                    seen_calls.add("look_up:fallback")
-                    total_tools += 1
-                    evidence_ledger.append(extract_evidence_from_fallback(
-                        "look_up",
-                        {"data_types": intent_data_types, "limit": settings.LOOKUP_DEFAULT_LIMIT},
-                        fallback_result,
-                    ))
-                    steps.append(ReasoningStep(
-                        round=round_num,
-                        thought="Fetching data based on query intent.",
-                        tool_calls=[{"tool": "look_up", "args": {"data_types": intent_data_types}}],
-                        tool_results=[{"tool": "look_up", "result": fallback_result[:settings.STEP_LOG_TRUNCATION_CHARS]}],
-                    ))
-                    if emit_events and tier_cfg.show_reasoning:
-                        summary = self._summarize_result("look_up", fallback_result)
-                        yield sse_tool_result("look_up", summary)
-                    messages.append({
-                        "role": "system",
-                        "content": f"Health data retrieved:\n\n{fallback_result}",
-                        "_meta": {"type": "tool_result", "round": round_num, "tool": "look_up"},
-                    })
-                    continue  # Let the thinker see the data and try again
-
                 if response.content:
                     steps.append(ReasoningStep(
                         round=round_num, thought=response.content,
@@ -496,6 +500,7 @@ class ReasoningEngine:
                     total_tools=total_tools,
                     patient_names=patient_names,
                     evidence_ledger=evidence_ledger,
+                    trace_id=trace_id,
                 )
             total_cost = reflection["total_cost"]
             total_tools = reflection["total_tools"]
@@ -537,6 +542,7 @@ class ReasoningEngine:
                     task=ModelTask.RESPONSE_GENERATION,
                     model_id=tier_cfg.responder_model,
                     timeout=settings.RESPONDER_TIMEOUT_SECONDS,
+                    trace_id=trace_id,
                 ):
                     if chunk.delta:
                         full_response_parts.append(chunk.delta)
@@ -574,6 +580,7 @@ class ReasoningEngine:
                     model_id=tier_cfg.responder_model,
                     user_role=user_role,
                     evidence_ledger=evidence_ledger,
+                    trace_id=trace_id,
                 )
             total_cost += safe_cost(final_response)
 
@@ -656,6 +663,7 @@ class ReasoningEngine:
         seen_calls: set[str],
         patient_names: dict[str, str] | None = None,
         is_voice: bool = False,
+        trace_id: str | None = None,
     ) -> dict[str, Any]:
         """Generate an investigation plan and add it as context for the thinker.
 
@@ -678,6 +686,7 @@ class ReasoningEngine:
                 tool_schemas=tool_schemas,
                 planning_prompt=planning_prompt,
                 model_id=tier_cfg.thinker_model,
+                trace_id=trace_id,
             )
 
             # Add plan as context — the thinker reads this and executes with proper tool calls
@@ -722,6 +731,7 @@ class ReasoningEngine:
         total_tools: int,
         patient_names: dict[str, str] | None = None,
         evidence_ledger: list | None = None,
+        trace_id: str | None = None,
     ) -> dict[str, Any]:
         """Run reflection and optional gap-filling follow-up.
 
@@ -738,6 +748,7 @@ class ReasoningEngine:
                 user_question=user_message,
                 reflection_prompt=reflection_prompt,
                 model_id=tier_cfg.thinker_model,
+                trace_id=trace_id,
             )
 
             # If gaps found, do targeted follow-up (budget permitting)
@@ -770,6 +781,7 @@ class ReasoningEngine:
                     task=ModelTask.CLASSIFICATION,
                     model_id=tier_cfg.thinker_model,
                     timeout=settings.REASONING_TIMEOUT_SECONDS,
+                    trace_id=trace_id,
                 )
                 total_cost += safe_cost(response)
 
@@ -799,6 +811,7 @@ class ReasoningEngine:
                         user_question=user_message,
                         reflection_prompt=reflection_prompt,
                         model_id=tier_cfg.thinker_model,
+                        trace_id=trace_id,
                     )
 
             # Add safety concerns to context if found
@@ -913,6 +926,7 @@ class ReasoningEngine:
         model_id: str,
         user_role: str = "patient",
         evidence_ledger: list | None = None,
+        trace_id: str | None = None,
     ) -> Any:
         """Generate the final polished response from the responder model."""
         responder_messages = self._build_responder_messages(
@@ -934,22 +948,28 @@ class ReasoningEngine:
             # explicit model_id also disables fallback, so a timeout here
             # would fail the whole query.
             timeout=settings.RESPONDER_TIMEOUT_SECONDS,
+            trace_id=trace_id,
         )
         # Grounding gate: a health reply must not fabricate patient data, confirm
         # a false patient claim, or disavow real data. Verify against the same
-        # evidence it was built from and correct once on a violation.
+        # evidence it was built from and correct once on a violation. Runs
+        # even with an empty ledger: no-tool turns are exactly where the
+        # responder spontaneously retracts its own prior-turn data, and the
+        # verifier sees history/context as grounded sources.
         if (
-            settings.GROUNDING_VERIFY_ENABLED and evidence_ledger
+            settings.GROUNDING_VERIFY_ENABLED and evidence_ledger is not None
             and (getattr(resp, "content", "") or "").strip()
         ):
             resp = await self._verify_and_correct(
                 resp, responder_messages, evidence_ledger, user_role, model_id,
+                trace_id=trace_id,
             )
         return resp
 
     async def _verify_and_correct(
         self, resp: Any, responder_messages: list[dict[str, Any]],
         evidence_ledger: list, user_role: str, model_id: str,
+        *, trace_id: str | None = None,
     ) -> Any:
         """Verify the draft against evidence; regenerate once with a targeted
         correction if it fabricates / confirms-a-false-claim / disavows real
@@ -962,8 +982,35 @@ class ReasoningEngine:
         )
         try:
             evidence_text = format_evidence_block(evidence_ledger, user_role)
+            # The responder legitimately grounds on more than this turn's tool
+            # evidence: pre-loaded patient context (care intents, meds, memory
+            # facts) and its OWN earlier turns. Verifying against tool evidence
+            # alone forces false retractions of prior-turn data.
+            context_parts = [
+                m["content"] for m in responder_messages
+                if m.get("_meta", {}).get("type") in (
+                    "context", "gathered_data", "fact", "summary",
+                    "insight", "pinned_ref", "evidence_summary",
+                )
+            ]
+            history_parts = [
+                f"[{m['role']}] {m['content']}" for m in responder_messages
+                if m.get("_meta", {}).get("type") == "history"
+            ]
+            if context_parts:
+                evidence_text += (
+                    "\n\n## PRE-LOADED PATIENT CONTEXT (grounded sources)\n"
+                    + "\n\n".join(context_parts)
+                )
+            if history_parts:
+                evidence_text += (
+                    "\n\n## EARLIER CONVERSATION (assistant statements here were "
+                    "grounded when made — retracting them is a violation)\n"
+                    + "\n".join(history_parts)
+                )
             verdict = await verify_grounding(
                 self._gateway, response=resp.content, evidence_text=evidence_text,
+                trace_id=trace_id,
             )
             if verdict.grounded:
                 return resp
@@ -971,12 +1018,17 @@ class ReasoningEngine:
                 "Grounding gate: correcting (ungrounded=%d, wrongly_denied=%d)",
                 len(verdict.ungrounded_claims), len(verdict.wrongly_denied),
             )
+            # The draft rides INSIDE the correction instruction — appending it
+            # as an assistant message anchors it as an already-sent turn, and
+            # the model then writes a conversational apology ("sorry, those
+            # numbers were wrong") instead of a clean rewrite.
             corrected = await self._gateway.complete(
                 messages=responder_messages
-                + [{"role": "system", "content": build_correction(verdict)}],
+                + [{"role": "system", "content": build_correction(verdict, draft=resp.content)}],
                 task=ModelTask.RESPONSE_GENERATION,
                 model_id=model_id,
                 timeout=settings.RESPONDER_TIMEOUT_SECONDS,
+                trace_id=trace_id,
             )
             return corrected if (corrected.content or "").strip() else resp
         except Exception as exc:

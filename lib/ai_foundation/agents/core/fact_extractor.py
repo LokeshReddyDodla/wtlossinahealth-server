@@ -9,6 +9,7 @@ Cost: ~$0.0002 per call (classification model). Worth it to never miss a fact.
 from __future__ import annotations
 
 import logging
+from uuid import uuid4
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
@@ -150,6 +151,10 @@ class FactExtractor:
             else:
                 user_content = message
 
+            _mem_trace = f"trc_{uuid4().hex[:16]}"
+            self._gateway.langfuse_trace_input(
+                trace_id=_mem_trace, name="memory_fact_extraction", input_text=user_content,
+            )
             result, _ = await self._gateway.extract(
                 messages=[
                     {"role": "system", "content": _EXTRACTION_PROMPT},
@@ -157,6 +162,7 @@ class FactExtractor:
                 ],
                 response_model=ExtractedFacts,
                 task=ModelTask.CLASSIFICATION,
+                trace_id=_mem_trace,
             )
 
             if not result.has_facts or not result.facts:
@@ -216,7 +222,7 @@ class FactExtractor:
             await self._compact_if_needed(patient_id)
 
         except Exception as exc:
-            logger.debug("Memory extraction failed (non-blocking): %s", exc)
+            logger.warning("Memory extraction failed (non-blocking): %s", exc)
 
     # -- Memory compaction --------------------------------------------------
 
@@ -279,6 +285,10 @@ class FactExtractor:
                         + items_text
                     )
                 try:
+                    _mem_trace = f"trc_{uuid4().hex[:16]}"
+                    self._gateway.langfuse_trace_input(
+                        trace_id=_mem_trace, name="memory_summarization", input_text=items_text,
+                    )
                     response = await self._gateway.complete(
                         messages=[
                             {"role": "system", "content": (
@@ -288,6 +298,7 @@ class FactExtractor:
                             {"role": "user", "content": items_text},
                         ],
                         task=ModelTask.SUMMARIZATION,
+                        trace_id=_mem_trace,
                     )
 
                     # Insert summary FIRST — if this fails, individual memories are preserved.

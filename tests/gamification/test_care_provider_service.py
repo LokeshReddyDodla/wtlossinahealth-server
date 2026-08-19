@@ -27,20 +27,19 @@ class TestCPGamificationService:
         service = module.CPGamificationService(postgres_store=None)
         patient_active = uuid4()
         patient_risk = uuid4()
+        # Aggregates run as scalar COUNTs, then two small LIMIT list queries.
         session = FakeSession(
             results=[
-                FakeScalarResult(values=[patient_active, patient_risk]),
-                FakeScalarResult(
+                FakeScalarResult(scalar=2),   # total_patients
+                FakeScalarResult(scalar=1),   # active
+                FakeScalarResult(scalar=5),   # sum_streak -> avg 2.5
+                FakeScalarResult(scalar=5),   # completed tasks this week
+                FakeScalarResult(scalar=10),  # total tasks this week -> 50%
+                FakeScalarResult(             # disengaged preview rows
                     values=[
                         SimpleNamespace(
-                            patient_id=patient_active,
-                            level=8,
-                            current_streak=5,
-                            total_xp=1500,
-                            last_active_date=date(2026, 4, 2),
-                        ),
-                        SimpleNamespace(
                             patient_id=patient_risk,
+                            first_name="Risky",
                             level=3,
                             current_streak=0,
                             total_xp=120,
@@ -48,16 +47,17 @@ class TestCPGamificationService:
                         ),
                     ]
                 ),
-                FakeScalarResult(
+                FakeScalarResult(             # top movers rows
                     values=[
-                        SimpleNamespace(patient_id=patient_active, first_name="Active"),
-                        SimpleNamespace(patient_id=patient_risk, first_name="Risky"),
-                    ]
-                ),
-                FakeScalarResult(
-                    values=[
-                        SimpleNamespace(patient_id=patient_active, cnt=4),
-                        SimpleNamespace(patient_id=patient_risk, cnt=1),
+                        SimpleNamespace(
+                            patient_id=patient_active,
+                            first_name="Active",
+                            level=8,
+                            current_streak=5,
+                            total_xp=1500,
+                            last_active_date=date(2026, 4, 2),
+                            cnt=4,
+                        ),
                     ]
                 ),
             ]
@@ -67,11 +67,44 @@ class TestCPGamificationService:
 
         assert overview.total_patients == 2
         assert overview.active_patients == 1
-        assert overview.at_risk_patients == 1
-        assert [patient.patient_name for patient in overview.patients] == [
-            "Risky",
-            "Active",
-        ]
+        assert overview.disengaged_patients == 1
+        assert overview.avg_streak == 2.5
+        assert overview.task_completion_pct == 50.0
+        assert [p.patient_name for p in overview.disengaged] == ["Risky"]
+        assert overview.disengaged[0].is_disengaged is True
+        assert [p.patient_name for p in overview.top_movers] == ["Active"]
+        assert overview.top_movers[0].tasks_completed_this_week == 4
+
+    @pytest.mark.asyncio
+    async def test_get_leaderboard_ranks_and_paginates(self, monkeypatch):
+        module = load_module(
+            monkeypatch,
+            "lib/services/gamification/care_provider_service.py",
+            "gamification_test_cp_service_leaderboard",
+        )
+        service = module.CPGamificationService(postgres_store=None)
+        p1, p2 = uuid4(), uuid4()
+        session = FakeSession(
+            results=[
+                FakeScalarResult(scalar=57),  # total matching
+                FakeScalarResult(             # this page's rows (already ordered)
+                    values=[
+                        SimpleNamespace(patient_id=p1, first_name="Harish", level=16, value=134),
+                        SimpleNamespace(patient_id=p2, first_name="Sudhir", level=17, value=120),
+                    ]
+                ),
+            ]
+        )
+
+        board = await service.get_leaderboard(
+            uuid4(), metric="streak", limit=50, offset=50, postgres_session=session
+        )
+
+        assert board.metric == "streak"
+        assert board.total == 57
+        assert [e.rank for e in board.entries] == [51, 52]  # offset preserved
+        assert board.entries[0].patient_name == "Harish"
+        assert board.entries[0].value == 134.0
 
     @pytest.mark.asyncio
     async def test_star_achievement_sets_star_fields(self, monkeypatch):
@@ -121,6 +154,8 @@ class TestCPGamificationService:
             results=[
                 FakeScalarResult(values=[group]),
                 FakeScalarResult(scalar=7),
+                FakeScalarResult(values=[]),
+                FakeScalarResult(scalar=2),
             ]
         )
 
@@ -129,6 +164,8 @@ class TestCPGamificationService:
         assert len(groups) == 1
         assert groups[0].name == "Dr. A Team"
         assert groups[0].member_count == 7
+        assert groups[0].active_challenges == 2
+        assert groups[0].top_members == []
 
     @pytest.mark.asyncio
     async def test_get_facility_challenges_returns_facility_challenges(self, monkeypatch):
@@ -181,7 +218,11 @@ class TestCPGamificationService:
             results=[
                 FakeScalarResult(values=[challenge_1, challenge_2]),
                 FakeScalarResult(scalar=5),
+                FakeScalarResult(scalar=8000.0),
+                FakeScalarResult(values=[]),
                 FakeScalarResult(scalar=3),
+                FakeScalarResult(scalar=12000.0),
+                FakeScalarResult(values=[]),
             ]
         )
 
@@ -191,5 +232,7 @@ class TestCPGamificationService:
         assert len(challenges) == 2
         assert challenges[0].title == "April Sprint"
         assert challenges[0].participant_count == 5
+        assert challenges[0].avg_progress == 8000.0
         assert challenges[1].title == "May Sprint"
         assert challenges[1].participant_count == 3
+        assert challenges[1].avg_progress == 12000.0

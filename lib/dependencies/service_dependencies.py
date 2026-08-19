@@ -3,15 +3,6 @@ from typing import cast
 from lib.core.cache_store import CacheStore
 from lib.core.container import container
 from lib.managers.arq_task_manager import ArqTaskManager, get_arq_task_manager
-from lib.services.ai_conversation_service.ai_conversation_service import (
-    AiConversationService,
-)
-from lib.services.ai_conversation_service.ai_conversation_service_v2 import (
-    AiConversationServiceV2,
-)
-from lib.services.ai_conversation_service_v1.ai_conversation_service_v1 import (
-    AIConversationServiceV1,
-)
 from lib.services.care_provider_access_service import (
     CareProviderAccessService,
 )
@@ -20,7 +11,6 @@ from lib.services.notifications.service import PatientNotificationService
 from lib.services.care_provider_profile_service import (
     CareProviderProfileService,
 )
-from lib.services.patient_onboarding_agent.patient_onboarding_agent_service import PatientOnboardingAgentService
 from lib.services.reports import CGMReportService
 
 from lib.services.vector import CGMVectorService
@@ -57,7 +47,7 @@ from lib.services.fitness_upload_service import FitnessUploadService
 from lib.services.vector import FitnessVectorService
 from lib.services.health_facility_service import HealthFacilityService
 from lib.services.libreview_service import LibreViewService
-from lib.services.meal import MealAnalysisService, MealService
+from lib.services.meal import MealService
 from lib.services.reports import MealReportService
 from lib.services.vector import MealVectorService
 from lib.services.package_service import PackageService
@@ -76,17 +66,13 @@ from lib.services.patient_diet_plan_service import PatientDietPlanService
 from lib.services.patient_fitness_plan_service import PatientFitnessPlanService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.services.vector import PatientProfileVectorService
-from lib.services.patient_sleep_service import PatientSleepService
 from lib.services.patient_smbg_service import PatientSmbgService
 from lib.services.patient_vital_service import PatientVitalService
 from lib.services.patient_summary import PatientSummaryService
 from lib.services.active_patient_service import ActivePatientService
 from lib.services.osteoflag_service import OsteoFlagService
-from lib.services.qdrant_search_engine.qdrant_search_engine import (
-    QdrantSearchEngine,
-)
 from lib.services.reports import SleepReportService
-from lib.services.vector import SMBGVectorService, VitalsVectorService, WorkoutVectorService
+from lib.services.vector import SleepVectorService, SMBGVectorService, VitalsVectorService, WorkoutVectorService
 from lib.services.sqs_service import SQSService
 from lib.services.token_usage_service import TokenUsageService
 from lib.services.user_device_service import UserDeviceService
@@ -99,6 +85,7 @@ from lib.services.patient_data_availability_service import (
 )
 from lib.services.patient_daily_overview_service import PatientDailyOverviewService
 from lib.services.patient_timeline_service import PatientTimelineService
+from lib.services.day_view.resolver import DayViewService
 from lib.services.patient_data_export_service import PatientDataExportService
 
 from lib.services.reports import (
@@ -109,37 +96,8 @@ from lib.services.reports import (
     SMBGStatsProcessor,
 )
 
-# Weight Loss Agent Service
-from lib.services.weight_loss_agent_service import WeightLossAgentService
-from lib.services.profile_update_agent import ProfileUpdateAgentService
 from lib.services.profile_agent import ProfileAgentService
-from lib.services.weightloss_agent.analytics_service import AnalyticsService
-from lib.services.weightloss_agent.intake_service import IntakeService
-from lib.services.weightloss_agent.safety_rules_service import (
-    SafetyRulesService,
-)
-from lib.services.weightloss_agent.plan_composer_service import (
-    PlanComposerService,
-)
-from lib.services.weightloss_agent.glp1_symptoms_service import (
-    Glp1SymptomsService,
-)
-from lib.services.weightloss_agent.glp1_injection_service import (
-    Glp1InjectionService,
-)
-from lib.services.weightloss_agent.flow_engine import FlowEngine
-from lib.services.weightloss_agent.task_service import TaskService
-from lib.services.weightloss_agent.agentic_chat_service import (
-    AgenticChatService,
-)
-from lib.services.weightloss_agent.coach_messenger_service import (
-    CoachMessengerService,
-)
-from lib.services.weightloss_agent.agentic_orchestrator import (
-    AgenticOrchestrator,
-)
 
-from lib.services.health_query_agent.service import HealthQueryAgentService
 from lib.ai_foundation.agents.health_query import HealthQueryAgent
 from lib.ai_foundation.agents.research_agent import ResearchAgent
 
@@ -199,14 +157,6 @@ def get_direct_chat_resolver() -> DirectChatResolver:
     return cast(DirectChatResolver, container.resolve(DirectChatResolver))
 
 
-def get_ai_conversation_service() -> AiConversationService:
-    return cast(AiConversationService, container.resolve(AiConversationService))
-
-
-def get_ai_conversation_service_v2() -> AiConversationServiceV2:
-    return cast(AiConversationServiceV2, container.resolve(AiConversationServiceV2))
-
-
 def get_patient_profile_service() -> PatientProfileService:
     return cast(PatientProfileService, container.resolve(PatientProfileService))
 
@@ -228,6 +178,28 @@ def get_patient_timeline_service() -> PatientTimelineService:
     return cast(PatientTimelineService, container.resolve(PatientTimelineService))
 
 
+def get_day_view_service() -> DayViewService:
+    return cast(DayViewService, container.resolve(DayViewService))
+
+
+def get_progress_service():
+    from lib.services.progress.resolver import ProgressService
+
+    return cast(ProgressService, container.resolve(ProgressService))
+
+
+def get_patient_brief_service():
+    from lib.services.patient_brief.service import PatientBriefService
+
+    return cast(PatientBriefService, container.resolve(PatientBriefService))
+
+
+def get_patient_panel_service():
+    from lib.services.patient_panel.service import PatientPanelService
+
+    return cast(PatientPanelService, container.resolve(PatientPanelService))
+
+
 def get_patient_data_export_service() -> PatientDataExportService:
     return cast(
         PatientDataExportService,
@@ -240,6 +212,12 @@ def get_care_provider_profile_service() -> CareProviderProfileService:
         CareProviderProfileService,
         container.resolve(CareProviderProfileService),
     )
+
+
+def get_care_intent_service():
+    from lib.services.care_intent_service import CareIntentService
+
+    return cast(CareIntentService, container.resolve(CareIntentService))
 
 
 def get_care_provider_access_service() -> CareProviderAccessService:
@@ -312,20 +290,6 @@ def get_active_patient_service() -> ActivePatientService:
     )
 
 
-def get_patient_sleep_service() -> PatientSleepService:
-    return cast(
-        PatientSleepService,
-        container.resolve(PatientSleepService),
-    )
-
-
-def get_meal_analysis_service() -> MealAnalysisService:
-    return cast(
-        MealAnalysisService,
-        container.resolve(MealAnalysisService),
-    )
-
-
 def get_meal_service() -> MealService:
     return cast(
         MealService,
@@ -389,45 +353,6 @@ def get_patient_facility_transfer_service():
     from lib.services.patient_facility_transfer_service import PatientFacilityTransferService
     return cast(PatientFacilityTransferService, container.resolve(PatientFacilityTransferService))
 
-
-def get_weightloss_analytics_service() -> AnalyticsService:
-    return cast(AnalyticsService, container.resolve(AnalyticsService))
-
-
-def get_intake_service() -> IntakeService:
-    return cast(IntakeService, container.resolve(IntakeService))
-
-
-def get_safety_rules_service() -> SafetyRulesService:
-    return cast(SafetyRulesService, container.resolve(SafetyRulesService))
-
-
-def get_plan_composer_service() -> PlanComposerService:
-    return cast(PlanComposerService, container.resolve(PlanComposerService))
-
-
-def get_coach_messenger_service() -> CoachMessengerService:
-    return cast(CoachMessengerService, container.resolve(CoachMessengerService))
-
-
-def get_glp1_symptoms_service() -> Glp1SymptomsService:
-    return cast(Glp1SymptomsService, container.resolve(Glp1SymptomsService))
-
-
-def get_glp1_injection_service() -> Glp1InjectionService:
-    return cast(Glp1InjectionService, container.resolve(Glp1InjectionService))
-
-
-def get_flow_engine_service() -> FlowEngine:
-    return cast(FlowEngine, container.resolve(FlowEngine))
-
-
-def get_task_service() -> TaskService:
-    return cast(TaskService, container.resolve(TaskService))
-
-
-def get_agentic_chat_service() -> AgenticChatService:
-    return cast(AgenticChatService, container.resolve(AgenticChatService))
 
 
 def get_inbody_report_service():
@@ -573,20 +498,16 @@ def get_libreview_service() -> LibreViewService:
     return cast(LibreViewService, container.resolve(LibreViewService))
 
 
-def get_ai_conversation_service_v1() -> AIConversationServiceV1:
-    return cast(AIConversationServiceV1, container.resolve(AIConversationServiceV1))
-
-
-def get_qdrant_search_engine() -> QdrantSearchEngine:
-    return cast(QdrantSearchEngine, container.resolve(QdrantSearchEngine))
-
-
 def get_cgm_vector_service() -> CGMVectorService:
     return cast(CGMVectorService, container.resolve(CGMVectorService))
 
 
 def get_fitness_vector_service() -> FitnessVectorService:
     return cast(FitnessVectorService, container.resolve(FitnessVectorService))
+
+
+def get_sleep_vector_service() -> SleepVectorService:
+    return cast(SleepVectorService, container.resolve(SleepVectorService))
 
 
 def get_meal_vector_service() -> MealVectorService:
@@ -612,10 +533,6 @@ def get_workout_vector_service() -> WorkoutVectorService:
     return cast(WorkoutVectorService, container.resolve(WorkoutVectorService))
 
 
-def get_ai_conversation_messages_collection():
-    return container.resolve("ai_conversation_messages_collection")
-
-
 def get_cgm_report_collection():
     return container.resolve("cgm_report_collection")
 
@@ -637,16 +554,6 @@ def get_patient_documents_collection():
 
 
 
-def get_inbody_reports_collection():
-    return container.resolve("inbody_reports_collection")
-
-
-def get_weight_loss_interactions_collection():
-    return container.resolve("weight_loss_interactions_collection")
-
-
-def get_weight_loss_progress_analyses_collection():
-    return container.resolve("weight_loss_progress_analyses_collection")
 
 
 def get_patient_metrics_service() -> PatientMetricsService:
@@ -680,8 +587,6 @@ def get_package_metrics_service() -> PackageMetricsService:
     return cast(PackageMetricsService, container.resolve(PackageMetricsService))
 
 
-def get_weight_loss_agent_service() -> WeightLossAgentService:
-    return cast(WeightLossAgentService, container.resolve(WeightLossAgentService))
 
 
 def get_file_content_extractor_service() -> FileContentExtractorService:
@@ -703,13 +608,6 @@ def get_cgm_sync_cache_store() -> CacheStore:
     return cast(CacheStore, container.resolve("cgm_sync"))
 
 
-def get_health_query_agent_service() -> HealthQueryAgentService:
-    return cast(
-        HealthQueryAgentService,
-        container.resolve(HealthQueryAgentService),
-    )
-
-
 def get_health_query_agent() -> HealthQueryAgent:
     return cast(
         HealthQueryAgent,
@@ -721,19 +619,6 @@ def get_research_agent() -> ResearchAgent:
     return cast(
         ResearchAgent,
         container.resolve(ResearchAgent),
-    )
-
-
-def get_profile_update_agent_service() -> ProfileUpdateAgentService:
-    return cast(
-        ProfileUpdateAgentService,
-        container.resolve(ProfileUpdateAgentService),
-    )
-
-def get_patient_onboarding_agent_service() -> PatientOnboardingAgentService:
-    return cast(
-        PatientOnboardingAgentService,
-        container.resolve(PatientOnboardingAgentService),
     )
 
 
@@ -752,8 +637,6 @@ def get_arq_task_manager_service() -> ArqTaskManager:
     return get_arq_task_manager()
 
 
-def get_agentic_orchestrator_service() -> AgenticOrchestrator:
-    return cast(AgenticOrchestrator, container.resolve(AgenticOrchestrator))
 
 
 # ── Gamification ─────────────────────────────────────────────────────────────

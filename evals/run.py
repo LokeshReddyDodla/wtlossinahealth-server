@@ -170,20 +170,57 @@ async def _run_monitor_case(case: dict[str, Any], *, no_judge: bool) -> dict[str
     from lib.ai_foundation.agents.proactive_monitor.agent import ProactiveMonitorAgent
     from lib.ai_foundation.agents.proactive_monitor.contracts import SEVERITY_RANK
 
-    from .agent_factory import shared_gateway
+    from .agent_factory import build_eval_agent, shared_gateway
     from .checks import run_checks
     from .fixtures import EVAL_PATIENT_ID, EVAL_PATIENT_NAME, FakeMemory, FixtureRetriever
     from .judge import judge_case_voted
-    from .monitor_fixtures import SCENARIOS, pick_afternoon_timezone
+    from .monitor_fixtures import SCENARIOS, pick_afternoon_timezone, pick_morning_timezone
 
-    tz = pick_afternoon_timezone()
+    # `scan_period: morning` forces the DailyBrief path; default is afternoon.
+    tz = pick_morning_timezone() if case.get("scan_period") == "morning" else pick_afternoon_timezone()
     records = SCENARIOS[case["scenario"]](tz)
+    patient_name = case.get("patient_name", EVAL_PATIENT_NAME)
+    # The brain investigates the scenario's fixtures via its own tools.
+    health_agent = build_eval_agent(records, patient_name=patient_name)
     agent = ProactiveMonitorAgent(
         gateway=shared_gateway(),
         qdrant=FixtureRetriever(records, tz_name=tz),
         memory=FakeMemory(),
         insight_tracker=None,  # no dedup — every scenario judged fresh
+        health_agent=health_agent,
     )
+
+    # `care_intents:` on a case injects provider-authored guidance (attributed
+    # dicts, same shape CareIntentService.get_active_context serves).
+    if case.get("care_intents"):
+        class _IntentReader:
+            def __init__(self, intents):
+                self._intents = intents
+
+            async def get_active_context(self, _pid):
+                return self._intents
+
+        reader = _IntentReader(case["care_intents"])
+        agent._care_intents = reader                        # monitor: morning adherence scoring
+        health_agent.context_loader._care_intents = reader  # brain: sees them in its context
+
+    # `active_nudges:` are surfaced to the brain as its gamification context's
+    # pending_task_titles (where the de-dup-against-active-nudges logic reads).
+    if case.get("active_nudges"):
+        from lib.schemas.gamification import GamificationContext
+
+        class _Gamification:
+            def __init__(self, nudges):
+                self._ctx = GamificationContext(
+                    level=1, title="Newcomer", total_xp=0, current_streak=0,
+                    streak_multiplier=1.0, streak_freezes=0,
+                    pending_task_titles=nudges,
+                )
+
+            async def get_gamification_context(self, _pid):
+                return self._ctx
+
+        health_agent.context_loader._gamification_service = _Gamification(case["active_nudges"])
 
     # Event-mode: `trigger: <event>` + `anchor: {...}` in the case runs the
     # event-scan path. Record-backed anchors (meal/smbg/symptom) are served
@@ -204,23 +241,8 @@ async def _run_monitor_case(case: dict[str, Any], *, no_judge: bool) -> dict[str
             raw.setdefault("daily_task_id", "eval-task-1")
             raw.setdefault("task_date", now_local.strftime("%Y-%m-%d"))
         anchor = parse_anchor(trig, raw)
-
-        rec_field = {
-            EventTrigger.MEAL_LOGGED: "meal_id",
-            EventTrigger.SMBG_LOGGED: "reading_id",
-            EventTrigger.SYMPTOM_LOGGED: "symptom_entry_id",
-        }.get(trig)
-        if rec_field:
-            anchor_rec = dict(next(r for r in records if r.get(rec_field) == raw[rec_field]))
-            anchor_rec["patient_id"] = EVAL_PATIENT_ID
-
-            async def _fixture_trigger_record(pid, a, _rec=anchor_rec):
-                return _rec
-
-            agent._fetch_trigger_record = _fixture_trigger_record
         scan_kwargs = {"trigger": trig, "anchor": anchor}
 
-    patient_name = case.get("patient_name", EVAL_PATIENT_NAME)
     start = time.perf_counter()
     try:
         result = await agent.scan_patient(EVAL_PATIENT_ID, patient_name, tz, **scan_kwargs)
@@ -269,6 +291,15 @@ async def _run_monitor_case(case: dict[str, Any], *, no_judge: bool) -> dict[str
                 f"TRIGGER EVENT (ground truth — this event fired the scan): "
                 f"{trig.value} {anchor_dump}"
             )
+        # Injected context the agent legitimately saw is ground truth for the
+        # judge too — otherwise it flags real attributions as fabricated.
+        for ci in case.get("care_intents") or []:
+            judge_evidence.append(
+                f"CARE INTENT (from {ci['author_name']}, {ci['author_role']}): "
+                f"{ci['original_text']}"
+            )
+        for n in case.get("active_nudges") or []:
+            judge_evidence.append(f"ALREADY-ACTIVE NUDGE today: {n}")
         try:
             judgment = await judge_case_voted(
                 shared_gateway(),
@@ -609,8 +640,12 @@ async def _run_suite(
     executor = _EXECUTORS[target]
     sem = asyncio.Semaphore(CONCURRENCY)
 
-    async def bounded(case: dict[str, Any]) -> dict[str, Any]:
+    async def bounded(case: dict[str, Any]) -> dict[str, Any] | None:
         async with sem:
+            if case.get("skip"):
+                # Excluded from the tally — a known, documented gap, not a pass.
+                print(f"  SKIP        {case['id']:<22}  ({case['skip']})")
+                return None
             result = await executor(case, no_judge=no_judge)
             result["flaky"] = False
             # One retry on failure: the agent samples a fresh response each
@@ -637,7 +672,8 @@ async def _run_suite(
                   f"{result['latency_ms']:>6}ms  ${result['cost_usd']:.4f}")
             return result
 
-    return await asyncio.gather(*(bounded(c) for c in cases))
+    results = await asyncio.gather(*(bounded(c) for c in cases))
+    return [r for r in results if r is not None]
 
 
 def main() -> int:

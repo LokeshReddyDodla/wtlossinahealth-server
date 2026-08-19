@@ -246,12 +246,6 @@ class Patient(Base):
 
    
 
-    weight_loss_enrollment = relationship(
-        "WeightLossAgentEnrollment",
-        back_populates="patient",
-        uselist=False,
-        cascade="all, delete-orphan",
-    )
 
     @property
     def current_package(self):
@@ -374,26 +368,6 @@ def create_related_records(mapper, connection, target):
         "patient",
         True,
         group_name="My Care Team Group",
-    )
-
-    # Add initial message to the conversation
-    from lib.services.ai_conversation_service.ai_conversation_service import (
-        AiConversationService,
-    )
-
-    ai_conversation_service = AiConversationService()
-    welcome_message = (
-        "Welcome to AiHealth! We're glad to have you onboard. "
-        "Let us know how we can assist you, or start a conversation with your health assistant."
-    )
-    runner.run(
-        ai_conversation_service.add_message_to_conversation,
-        user_id=str(target.patient_id),
-        conversation_id=f"{target.patient_id}-patient",
-        conversation_type="other",
-        role="system",
-        content=welcome_message,
-        message_type="text",
     )
 
     runner.shutdown()

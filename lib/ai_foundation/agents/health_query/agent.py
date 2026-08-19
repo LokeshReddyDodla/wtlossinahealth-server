@@ -22,11 +22,11 @@ from typing import Any, AsyncIterator
 from uuid import uuid4
 
 from lib.ai_foundation.agents.base import BaseAgent
-from lib.ai_foundation.agents.state import AgentInput, AgentOutput
+from lib.ai_foundation.agents.state import AgentContext, AgentInput, AgentOutput
 from lib.ai_foundation.config import settings
 from lib.ai_foundation.models.registry import ModelTask
 from lib.ai_foundation.agents.core.bubbles import extract_await, split_bubbles, strip_bubbles
-from lib.core.types import RESPECTFUL_REGISTER_INSTRUCTION, ai_language_name, DEFAULT_AI_LANGUAGE
+from lib.core.types import NUMBER_FIDELITY_INSTRUCTION, RESPECTFUL_REGISTER_INSTRUCTION, ai_language_name, DEFAULT_AI_LANGUAGE
 from lib.ai_foundation.streaming.sse import (
     PipelineStage,
     SSEDonePayload,
@@ -39,13 +39,16 @@ from lib.ai_foundation.streaming.sse import (
 
 from lib.ai_foundation.models.gateway import safe_cost
 
-from .contracts import QueryIntent, QueryResponse, expand_to_domain_types, resolve_specialist_domains
+from .contracts import PatientBrief, ProactiveNarration, QueryIntent, QueryResponse, expand_to_domain_types, resolve_specialist_domains
 from .coordinator import Coordinator
 from .reasoning_engine import ReasoningEngine, ReasoningTier
 
 logger = logging.getLogger(__name__)
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
+
+# Canned fallback when the extractor marks not-ready without a clarification.
+_CLARIFY_FALLBACK = "Could you tell me more?"
 
 
 @dataclass
@@ -106,7 +109,7 @@ class HealthQueryAgent(BaseAgent):
 
     # ── Public: Non-streaming ─────────────────────────────────────────────
 
-    async def run(self, input: AgentInput) -> AgentOutput:
+    async def run(self, input: AgentInput, _is_retry: bool = False) -> AgentOutput:
         # Fallbacks in case _init_pipeline fails before assigning the real ones
         # (the exception handlers below reference both).
         trace_id = f"trc_{uuid4().hex[:16]}"
@@ -133,6 +136,13 @@ class HealthQueryAgent(BaseAgent):
 
             if not intent.is_ready:
                 output = self._build_clarification(intent, meta)
+                # A not-yet-logged ask lands here (is_ready=False), so the
+                # await arms in the clarify branch, not only the execution one.
+                if intent.awaits_log:
+                    await self._register_pending_request(
+                        input, intent.awaits_log, output.suggestions,
+                        self._effective_language(input, ctx),
+                    )
                 if not intent.clarification_msg:  # canned fallback needs localizing
                     output.message = await self._localize_text(output.message, ctx, input=input)
                 await _maybe_await(self.gateway.langfuse_trace_output(trace_id=trace_id, output_text=output.message))
@@ -181,12 +191,17 @@ class HealthQueryAgent(BaseAgent):
                     intent_data_types=[dt.value for dt in expand_to_domain_types(intent.data_types)],
                     patient_names=ctx.patient_names,
                     user_role=input.context.user_role,
+                    trace_id=trace_id,
                 )
 
             elapsed = int((time.perf_counter() - pipeline_start) * 1000)
             total_cost = safe_cost(meta) + result.total_cost
 
             clean_response, awaited = extract_await(result.response)
+            # Reasoning responders routinely drop the inline [[AWAIT]] marker;
+            # the query-side signal from intent extraction is the deterministic
+            # fallback so the continuation loop still arms.
+            awaited = awaited or intent.awaits_log
             suggestions = [s.model_dump(exclude_none=True) for s in intent.suggestions]
             if awaited:
                 await self._register_pending_request(input, awaited, suggestions, response_language)
@@ -231,7 +246,20 @@ class HealthQueryAgent(BaseAgent):
             return output
 
         except Exception as exc:
-            logger.exception("HealthQueryAgent.run failed: %s", exc)
+            # One silent retry before any patient-visible error — but ONLY for
+            # transient provider failures (timeouts, rate limits, brownouts).
+            # A deterministic error would just double the spend; and the
+            # memory-command path has side effects, so it must never re-run.
+            from lib.ai_foundation.models.gateway import AllProvidersUnavailableError, _is_retryable
+
+            transient = _is_retryable(exc) or isinstance(exc, AllProvidersUnavailableError)
+            if not _is_retry and transient:
+                logger.warning(
+                    "HealthQueryAgent.run attempt failed, retrying once: %s", exc,
+                )
+                await asyncio.sleep(settings.PIPELINE_RETRY_BACKOFF_SECONDS)
+                return await self.run(input, _is_retry=True)
+            logger.exception("HealthQueryAgent.run failed after retry: %s", exc)
             return AgentOutput(
                 message=await self._localize_text(
                     "I'm having trouble processing your request right now. Please try again.",
@@ -239,6 +267,189 @@ class HealthQueryAgent(BaseAgent):
                 ),
                 is_ready=False, trace_id=trace_id,
             )
+
+    # ── Public: Proactive (event-triggered) ──────────────────────────────
+
+    async def run_proactive(
+        self,
+        *,
+        patient_id: str,
+        event_summary: str,
+        tier: ReasoningTier = ReasoningTier.STANDARD,
+        refs: list[Any] | None = None,
+        trace_id: str | None = None,
+    ) -> ProactiveNarration:
+        """Run the one brain on an event and return a push-shaped narration.
+
+        Same reasoning engine, specialists, and evidence grounding as chat —
+        there is no separate proactive brain. What differs: there is no user to
+        clarify with, so intent triage is skipped; the event is the prompt; and
+        the brain decides for itself whether the event is worth an unprompted
+        push (``notify``). Copy is English (translated on delivery). The brain
+        never sets clinical severity — the caller derives that from the trigger.
+        """
+        self._ensure_prompts()
+        trace_id = trace_id or f"trc_{uuid4().hex[:16]}"
+
+        # Cron/event path carries no request context — open the trace here.
+        await _maybe_await(self.gateway.set_langfuse_context(
+            session_id=f"proactive:{patient_id}",
+            user_id=patient_id,
+        ))
+        await _maybe_await(self.gateway.langfuse_trace_input(
+            trace_id=trace_id,
+            name="proactive",
+            input_text=event_summary,
+            metadata={"mode": "proactive", "tier": getattr(tier, "value", str(tier))},
+        ))
+
+        agent_input = AgentInput(
+            message=event_summary,
+            context=AgentContext(patient_id=patient_id, refs=refs or [],
+                                 metadata={"mode": "proactive"}),
+        )
+        ctx = await self._load_context(agent_input)
+
+        result = await self.reasoning_engine.reason(
+            user_message=event_summary,
+            system_prompt=self._get_system_prompt("patient"),
+            reasoning_prompt=self._render("hq_reasoning"),
+            response_prompt=self._render("hq_proactive_response"),
+            context=ctx,
+            patient_ids=[patient_id],
+            tier=tier,
+            user_role="patient",
+            trace_id=trace_id,
+        )
+        narration = await self._structure_proactive(result.response, trace_id=trace_id)
+        await _maybe_await(self.gateway.langfuse_trace_output(
+            trace_id=trace_id,
+            output_text=getattr(narration, "body", "") or "",
+            metadata={"notify": getattr(narration, "notify", None)},
+        ))
+        return narration
+
+    async def run_provider_brief(
+        self,
+        *,
+        patient_id: str,
+        tier: ReasoningTier = ReasoningTier.STANDARD,
+        trace_id: str | None = None,
+    ) -> PatientBrief:
+        """A grounded, cross-domain clinical brief for the patient's provider.
+
+        Same investigation path as chat (intent extraction + reasoning engine),
+        but with the care-provider persona and a brief-shaped response and a
+        fixed opening question. The brain investigates the domains its intent
+        extraction surfaces from that question and synthesises. English; the
+        provider reads it directly.
+        """
+        self._ensure_prompts()
+        trace_id = trace_id or f"trc_{uuid4().hex[:16]}"
+        question = (
+            "Write a concise clinical brief for this patient's care provider. "
+            "Assess the patient's response to their care plan — what is working, "
+            "what is driving it, and what the provider should watch — grounded "
+            "only in the data this patient actually has. Do not assess or report "
+            "on data types the patient does not have; treat an absent domain as "
+            "out of scope, not a finding. Only call out missing data when there "
+            "is essentially nothing to assess."
+        )
+        await _maybe_await(self.gateway.set_langfuse_context(
+            session_id=f"brief:{patient_id}", user_id=patient_id,
+        ))
+        await _maybe_await(self.gateway.langfuse_trace_input(
+            trace_id=trace_id, name="provider_brief", input_text=question,
+            metadata={"mode": "provider_brief", "tier": getattr(tier, "value", str(tier))},
+        ))
+
+        agent_input = AgentInput(
+            message=question,
+            context=AgentContext(patient_id=patient_id, refs=[],
+                                 metadata={"mode": "provider_brief"}),
+        )
+        ctx = await self._load_context(agent_input)
+        # Seed the base fetch from extracted intent, as chat does; without a seed
+        # the reasoning engine under-fetches a multi-domain question.
+        intent, _ = await self._extract_intent(agent_input, ctx, trace_id=trace_id)
+        result = await self.reasoning_engine.reason(
+            user_message=question,
+            system_prompt=self._get_system_prompt("care_provider"),
+            reasoning_prompt=self._render("hq_reasoning"),
+            response_prompt=self._render("hq_provider_brief_response"),
+            context=ctx,
+            patient_ids=[patient_id],
+            tier=tier,
+            user_role="care_provider",
+            intent_data_types=[dt.value for dt in expand_to_domain_types(intent.data_types)],
+            trace_id=trace_id,
+        )
+        brief = await self._structure_brief(result.response, trace_id=trace_id)
+        await _maybe_await(self.gateway.langfuse_trace_output(
+            trace_id=trace_id, output_text=brief.verdict,
+            metadata={"assessment": brief.assessment},
+        ))
+        return brief
+
+    async def _structure_brief(
+        self, analysis: str, *, trace_id: str | None = None,
+    ) -> PatientBrief:
+        """Structure the grounded prose into assessment + verdict + narrative — a
+        pure formatting step that never introduces a fact the analysis didn't
+        state."""
+        messages = [
+            {"role": "system", "content": (
+                "Convert the clinical analysis into a structured provider brief. "
+                "assessment: responding | watch | at_risk | insufficient_data — "
+                "this MUST match the verdict's leading read, not merely whether a "
+                "watch-item exists. If the verdict leads positive ('Responding' / "
+                "'Responding well'), use responding even when the tail names "
+                "something to watch. Use watch when the verdict leads with caution "
+                "or the read is genuinely mixed, at_risk when clearly deteriorating "
+                "or high-risk, and insufficient_data only when a response cannot be "
+                "judged at all. "
+                "verdict: one line (≤120 chars) leading with the read, e.g. "
+                "'Responding well — holding steady across recent weeks'. "
+                "narrative: 1-2 sentences — what's driving the read and the one "
+                "thing to watch — naming the key figures in context within the "
+                "prose, with dates in short human form (e.g. '6 Aug', not "
+                "'2026-08-06'). Bold (**…**) only the single most important "
+                "phrase; you may italicise a brief caveat; leave the other "
+                "figures unbolded. "
+                "Never introduce a number, claim, or word the analysis did not "
+                "state."
+            )},
+            {"role": "user", "content": analysis},
+        ]
+        brief, _meta = await self.gateway.extract(
+            messages=messages, response_model=PatientBrief,
+            task=ModelTask.STRUCTURED_ANALYSIS, trace_id=trace_id,
+        )
+        return brief
+
+    async def _structure_proactive(
+        self, analysis: str, *, trace_id: str | None = None,
+    ) -> ProactiveNarration:
+        """Turn the brain's grounded prose into the structured push payload.
+
+        A pure formatting step — it must not add facts the analysis didn't
+        state. If the analysis concluded no notification is warranted, notify
+        is False.
+        """
+        messages = [
+            {"role": "system", "content": (
+                "Convert the analysis into a proactive push payload. Set notify=false "
+                "if it concludes no notification is warranted. Never introduce a number, "
+                "claim, or word the analysis did not already state. Keep the title "
+                "≤50 chars and body ≤180 chars."
+            )},
+            {"role": "user", "content": analysis},
+        ]
+        narration, _meta = await self.gateway.extract(
+            messages=messages, response_model=ProactiveNarration,
+            task=ModelTask.STRUCTURED_ANALYSIS, trace_id=trace_id,
+        )
+        return narration
 
     # ── Public: SSE Streaming ─────────────────────────────────────────────
 
@@ -255,7 +466,17 @@ class HealthQueryAgent(BaseAgent):
 
         try:
             yield sse_status(PipelineStage.EXTRACTING_INTENT, "Understanding the question...")
-            pc = await self._init_pipeline(input)
+            try:
+                pc = await self._init_pipeline(input)
+            except Exception as exc:
+                # Pre-content: nothing but a status event has been sent, so a
+                # silent retry is safe. Post-token failures keep the existing
+                # error/salvage path — retrying would duplicate content.
+                logger.warning(
+                    "run_stream init failed pre-content, retrying once: %s", exc,
+                )
+                await asyncio.sleep(settings.PIPELINE_RETRY_BACKOFF_SECONDS)
+                pc = await self._init_pipeline(input)
             pipeline_start = pc.pipeline_start
             user_timestamp = pc.user_timestamp
             trace_id = pc.trace_id
@@ -276,14 +497,21 @@ class HealthQueryAgent(BaseAgent):
 
             if not intent.is_ready:
                 msg = intent.clarification_msg or await self._localize_text(
-                    "Could you tell me more?", ctx, input=input,
+                    _CLARIFY_FALLBACK, ctx, input=input,
                 )
-                output = AgentOutput(message=msg, is_ready=False, trace_id=trace_id)
+                clarify_suggestions = [s.model_dump(exclude_none=True) for s in intent.suggestions]
+                output = AgentOutput(message=msg, is_ready=False, trace_id=trace_id,
+                                     data={"pending_request": intent.awaits_log})
+                if intent.awaits_log:
+                    await self._register_pending_request(
+                        input, intent.awaits_log, clarify_suggestions,
+                        self._effective_language(input, ctx),
+                    )
                 turn_id = await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
                 self._schedule_background(input, ctx, output, turn_id)
                 yield sse_token(msg)
                 yield sse_done(SSEDonePayload(
-                    suggestions=[s.model_dump(exclude_none=True) for s in intent.suggestions],
+                    suggestions=clarify_suggestions,
                     trace_id=trace_id,
                     latency_ms=int((time.perf_counter() - pipeline_start) * 1000),
                 ))
@@ -329,6 +557,7 @@ class HealthQueryAgent(BaseAgent):
                     intent_data_types=[dt.value for dt in expand_to_domain_types(intent.data_types)],
                     patient_names=ctx.patient_names,
                     user_role=input.context.user_role,
+                    trace_id=trace_id,
                     delta_sink=delta_sink,
                 )
 
@@ -341,6 +570,7 @@ class HealthQueryAgent(BaseAgent):
                         engine_data = event.data or {}
                         raw_text = engine_data.get("full_response", "")
                         raw_text, awaited = extract_await(raw_text)
+                        awaited = awaited or intent.awaits_log
                         stream_suggestions = [s.model_dump(exclude_none=True) for s in intent.suggestions]
                         if awaited:
                             await self._register_pending_request(input, awaited, stream_suggestions, response_language)
@@ -468,7 +698,7 @@ class HealthQueryAgent(BaseAgent):
         # Device local time wins; fall back to the server-computed value from
         # the patient's stored timezone so the agent is never time-blind.
         ctx.local_time = (input.context.metadata or {}).get("local_time") or ctx.local_time
-        intent, meta = await self._extract_intent(input, ctx)
+        intent, meta = await self._extract_intent(input, ctx, trace_id=trace_id)
         # Force chips into the patient's language before any path dumps them —
         # the extractor is told to write suggestions in-language but doesn't
         # reliably obey for short labels. One place, so run(), run_stream(), and
@@ -495,7 +725,7 @@ class HealthQueryAgent(BaseAgent):
             refs=input.context.refs,
         )
 
-    async def _extract_intent(self, input: AgentInput, ctx: Any) -> tuple[QueryIntent, Any]:
+    async def _extract_intent(self, input: AgentInput, ctx: Any, *, trace_id: str | None = None) -> tuple[QueryIntent, Any]:
         self._ensure_prompts()
         system_prompt = self._get_system_prompt(input.context.user_role)
         intent_prompt = self._render("hq_intent_extraction")
@@ -567,6 +797,7 @@ class HealthQueryAgent(BaseAgent):
 
         intent, meta = await self.gateway.extract(
             messages=messages, response_model=QueryIntent, task=ModelTask.INTENT_EXTRACTION,
+            trace_id=trace_id,
         )
 
         return intent, meta
@@ -704,7 +935,7 @@ class HealthQueryAgent(BaseAgent):
             )
         label = self._AWAIT_CHIP_LABELS.get(entity_type, f"Log {entity_type}")
         if language != DEFAULT_AI_LANGUAGE and self.translator:
-            label = await self.translator.translate_cached(label, language)
+            label = await self.translator.translate_cached(label, language, terse=True)
         suggestions.insert(0, {
             "action": f"log_{entity_type}",
             "label": label,
@@ -856,8 +1087,9 @@ class HealthQueryAgent(BaseAgent):
                     self.translator.translate_cached(s.label, lang, terse=True),
                     self.translator.translate(s.description, lang, terse=True),
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                # English chip ships (better than none) — but never silently.
+                logger.warning("Suggestion chip translation failed (%s): %s", lang, exc)
 
         await asyncio.gather(*(_one(s) for s in intent.suggestions))
 
@@ -948,8 +1180,7 @@ class HealthQueryAgent(BaseAgent):
             lang_instruction = (
                 f"\n## Response Language\n"
                 f"Write your ENTIRE response in {lang_name} — this is the patient's "
-                f"chosen language. Numbers, units (mg/dL, g, kcal), medication names, "
-                f"and the [[BUBBLE]]/[[AWAIT:...]] markers stay exactly as-is. "
+                f"chosen language. {NUMBER_FIDELITY_INSTRUCTION} "
                 f"Table syntax stays markdown; translate only the cell text. "
                 f"{RESPECTFUL_REGISTER_INSTRUCTION}\n"
             )
@@ -1013,10 +1244,11 @@ class HealthQueryAgent(BaseAgent):
 
     def _build_clarification(self, intent: QueryIntent, meta: Any) -> AgentOutput:
         return AgentOutput(
-            message=intent.clarification_msg or "Could you tell me more?",
+            message=intent.clarification_msg or _CLARIFY_FALLBACK,
             is_ready=False,
             suggestions=[s.model_dump(exclude_none=True) for s in intent.suggestions],
-            data={"data_types": [dt.value for dt in intent.data_types], "confidence": intent.confidence},
+            data={"data_types": [dt.value for dt in intent.data_types], "confidence": intent.confidence,
+                  "pending_request": intent.awaits_log},
             trace_id=meta.trace_id if meta else None,
             cost_usd=safe_cost(meta) or None,
             model_id=meta.model_id if meta else None,

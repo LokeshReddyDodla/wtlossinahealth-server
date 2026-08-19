@@ -11,14 +11,23 @@ class CGMSectionTemplates:
     def cgm_range_stats(
         start_str: str, end_str: str, data: Dict[str, Any]
     ) -> str:
-        return (
+        text = (
             f"CGM range stats from {start_str} to {end_str}: "
             f"time_in_range_70_180_percent: {data.get('in_target_70_180_percent', 0):.2f}%, "
+            f"time_in_tight_range_70_140_percent: {data.get('in_tight_target_70_140_percent', 0):.2f}%, "
             f"time_above_180_250_percent: {data.get('above_180_below_250_percent', 0):.2f}%, "
             f"time_above_250_percent: {data.get('above_250_percent', 0):.2f}%, "
             f"time_below_70_54_percent: {data.get('below_70_above_54_percent', 0):.2f}%, "
             f"time_below_54_percent: {data.get('below_54_percent', 0):.2f}%."
         )
+        # Pregnancy target window (63-140), for pregnant/gestational patients.
+        if data.get("in_target_63_140_percent") is not None:
+            text += (
+                f" Pregnancy target 63-140: "
+                f"pregnancy_time_in_range_63_140_percent: {data['in_target_63_140_percent']:.2f}%, "
+                f"pregnancy_time_above_140_percent: {data.get('above_140_percent', 0):.2f}%."
+            )
+        return text
 
     @staticmethod
     def cgm_summary_stats(start_str: str, end_str: str, data: dict) -> str:
@@ -26,7 +35,10 @@ class CGMSectionTemplates:
             f"CGM summary stats from {start_str} to {end_str}: "
             f"average_glucose_mgdl: {data.get('average_glucose_mgdl', 0):.2f}, "
             f"GMI: {data.get('gmi', 0):.2f}, "
+            f"glycemia_risk_index: {data.get('gri', 0):.1f}, "
             f"glucose_variability_percent: {data.get('glucose_variability_percent', 0):.2f}%, "
+            f"nocturnal_time_below_70_percent: {data.get('nocturnal_time_below_70_percent', 0):.2f}%, "
+            f"dawn_rise_mgdl: {data.get('dawn_rise_mgdl', 0):.1f}, "
             f"std_dev_glucose_mgdl: {data.get('std_dev_glucose_mgdl', 0):.2f}, "
             f"highest_glucose_mgdl: {data.get('highest_glucose_mgdl', 0)} "
             f"on {data.get('highest_glucose_date', 'N/A')}, "

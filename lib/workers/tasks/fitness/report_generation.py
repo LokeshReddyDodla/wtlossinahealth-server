@@ -1,14 +1,10 @@
 """Fitness Report Generation Tasks - Optimized."""
 
-from datetime import date, datetime
+from datetime import datetime
 from typing import Any, Dict, List
-from uuid import UUID
 
 from loguru import logger
-from sqlalchemy import select
 
-from lib.models.patient_workout import PatientWorkout
-from lib.schemas.fitness_stats import WorkoutSummary
 from lib.services.reports import FitnessReportType
 from lib.utils.date_utils import get_month_start_end, get_months_between_dates
 from lib.utils.datetime_utils import normalize_to_date_iso, parse_datetime
@@ -123,9 +119,11 @@ async def process_fitness_upload(
             )
 
         # Filter months that need processing (including updates)
+        # Reverse so the most recent month is processed first
         months_to_process = await _filter_months_needing_reports(
             patient_id, months_between
         )
+        months_to_process.reverse()
 
         if not months_to_process:
             logger.info(f"All fitness reports up to date for {patient_id}")
@@ -187,7 +185,7 @@ async def _generate_monthly_reports(
         processor = get_fitness_stats_processor()
         service = get_fitness_report_service()
 
-        reports = processor.generate_report(
+        reports = await processor.generate_report(
             patient_id,
             start_date,
             end_date,
@@ -204,11 +202,6 @@ async def _generate_monthly_reports(
                 "start": start_date.isoformat(),
                 "reason": "no_data",
             }
-
-        # Merge manual workouts from Postgres into each report
-        await _merge_manual_workouts(
-            patient_id, reports, start_date.date(), end_date.date()
-        )
 
         await service.save_reports_bulk(patient_id, reports)
 
@@ -233,53 +226,55 @@ async def _generate_monthly_reports(
         }
 
 
-async def _merge_manual_workouts(
-    patient_id: str, reports: list, start_date: date, end_date: date
-) -> None:
-    """Fetch manual workouts from Postgres and merge into report workout lists."""
+@task_with_logging
+async def force_regenerate_fitness_reports(
+    ctx: Dict[str, Any],
+    patient_id: str,
+    start_date: datetime,
+    end_date: datetime,
+) -> TaskResult:
+    """Force-regenerate all fitness reports in the date range (skips freshness filter)."""
     try:
-        from lib.core.container import container
-        from lib.core.postgres_store import PostgresStore
+        months_between = get_months_between_dates(start_date, end_date)
 
-        postgres_store = container.resolve(PostgresStore)
-
-        async with postgres_store.get_session() as session:
-            result = await session.execute(
-                select(PatientWorkout).where(
-                    PatientWorkout.patient_id == UUID(patient_id),
-                    PatientWorkout.date >= start_date,
-                    PatientWorkout.date <= end_date,
-                )
+        if not months_between:
+            return TaskResult(
+                success=True,
+                data={"processed": 0, "reason": "no_valid_months"},
             )
-            workouts = result.scalars().all()
 
-        if not workouts:
-            return
+        logger.info(
+            f"Force-regenerating {len(months_between)} months for {patient_id}"
+        )
 
-        for report in reports:
-            r_start = parse_datetime(report.metadata.date_range.start)
-            r_end = parse_datetime(report.metadata.date_range.end)
-            if not r_start or not r_end:
-                continue
+        results = []
+        for year, month in months_between:
+            month_start, month_end = get_month_start_end(year, month)
+            result = await _generate_monthly_reports(patient_id, month_start, month_end)
+            results.append(result)
 
-            matching = [
-                WorkoutSummary(
-                    type=w.type or "other",
-                    session_count=1,
-                    total_duration=float(w.duration_minutes or 0),
-                    total_energy=float(w.calories_burned or 0),
-                    source=w.source or "app",
-                    workout_id=str(w.id),
-                )
-                for w in workouts
-                if r_start.date() <= w.date <= r_end.date()
-            ]
+        successful = sum(1 for r in results if r.get("success"))
 
-            if matching:
-                report.workouts = (report.workouts or []) + matching
+        await _trigger_vector_generation(patient_id, start_date, end_date)
+
+        return TaskResult(
+            success=True,
+            data={
+                "total_months": len(months_between),
+                "processed": successful,
+                "results": results,
+            },
+        )
 
     except Exception as e:
-        logger.warning(f"Failed to merge manual workouts for {patient_id}: {e}")
+        logger.error(
+            f"Failed to force-regenerate fitness reports for {patient_id}: {e}"
+        )
+        return TaskResult(
+            success=False,
+            error=str(e),
+            data={"patient_id": patient_id},
+        )
 
 
 async def _enqueue_fitness_upload(

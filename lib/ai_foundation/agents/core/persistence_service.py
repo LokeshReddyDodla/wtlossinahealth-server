@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from uuid import uuid4
 import time
 
 from pydantic import BaseModel
@@ -165,7 +166,7 @@ class PersistenceService:
                 },
             })
         except Exception as exc:
-            logger.debug("pending-request record failed (thread=%s): %s", thread_id, exc)
+            logger.warning("pending-request record failed (thread=%s): %s", thread_id, exc)
 
     @staticmethod
     def extract_open_question(assistant_message: str) -> str | None:
@@ -205,7 +206,7 @@ class PersistenceService:
                 thread_id, {"last_assistant_question": question},
             )
         except Exception as exc:
-            logger.debug("thread-state update failed (thread=%s): %s", thread_id, exc)
+            logger.warning("thread-state update failed (thread=%s): %s", thread_id, exc)
 
     # -- Thread compaction (non-blocking) ----------------------------------
 
@@ -270,6 +271,10 @@ class PersistenceService:
             turns_for_summary = await self._memory.get_thread_turns(thread_id, limit=settings.COMPACTION_HISTORY_WINDOW)
             conv_text = "\n".join(f"{t.role}: {t.content[:settings.SUMMARY_TRUNCATION_CHARS]}" for t in turns_for_summary)
 
+            _mem_trace = f"trc_{uuid4().hex[:16]}"
+            self._gateway.langfuse_trace_input(
+                trace_id=_mem_trace, name="memory_compaction", input_text=conv_text[:2000],
+            )
             digest, _ = await self._gateway.extract(
                 messages=[
                     {"role": "system", "content": (
@@ -286,6 +291,7 @@ class PersistenceService:
                 ],
                 response_model=ThreadDigest,
                 task=ModelTask.SUMMARIZATION,
+                trace_id=_mem_trace,
             )
 
             # Partial $set of ONLY compaction-owned fields — micro-state
@@ -327,6 +333,10 @@ class PersistenceService:
             return first_user_msg[:50] + ("..." if len(first_user_msg) > 50 else "")
 
         try:
+            _mem_trace = f"trc_{uuid4().hex[:16]}"
+            self._gateway.langfuse_trace_input(
+                trace_id=_mem_trace, name="memory_title", input_text=first_user_msg,
+            )
             response = await self._gateway.complete(
                 messages=[
                     {"role": "system", "content": (
@@ -336,6 +346,7 @@ class PersistenceService:
                     {"role": "user", "content": first_user_msg},
                 ],
                 task=ModelTask.CLASSIFICATION,
+                trace_id=_mem_trace,
             )
             title = response.content.strip().strip('"').strip("'")
             return title[:60] + ("..." if len(title) > 60 else "")

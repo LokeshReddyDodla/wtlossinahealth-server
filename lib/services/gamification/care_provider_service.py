@@ -1,4 +1,4 @@
-"""Care provider gamification views — engagement dashboard, at-risk detection, achievements starring."""
+"""Care provider gamification views — engagement dashboard, disengagement detection, achievements starring."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta
 from typing import List, Optional
 from uuid import UUID
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import Select, and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.core.postgres_store import PostgresStore
@@ -18,151 +18,305 @@ from lib.models.gamification import (
     GroupMember,
     PatientAchievement,
     PlayerProfile,
+    XPLedgerEntry,
 )
 from lib.models.patient import Patient
 from lib.models.associations import patient_care_provider_association
 from lib.schemas.gamification import (
+    AvatarPreview,
     ChallengeResponse,
     CPGamificationOverview,
+    CPLeaderboardEntry,
+    CPLeaderboardResponse,
     CreatorType,
     GroupResponse,
+    LeaderboardMetric,
     PatientEngagementSummary,
     TaskStatus,
+    TaskType,
     title_for_level,
 )
 from lib.utils.postgres_session_decorator import with_postgres_session
 
-AT_RISK_INACTIVE_DAYS = 3
+DISENGAGED_INACTIVE_DAYS = 3
+_DISENGAGED_PREVIEW = 12  # rows shown in the overview panel
+_MOVERS_PREVIEW = 5
 
 
 class CPGamificationService:
     def __init__(self, postgres_store: PostgresStore) -> None:
         self.postgres_store = postgres_store
 
+    def _panel_ids(
+        self,
+        care_provider_id: UUID,
+        health_facility_id: Optional[UUID],
+        is_admin: bool,
+    ) -> Select:
+        """SELECT of the patient_ids in this actor's panel — evaluated in SQL,
+        never materialized in Python. Must mirror the patient-list scope, or
+        gamification and the roster disagree on who's in the panel."""
+        if is_admin and health_facility_id:
+            return select(Patient.patient_id).where(
+                Patient.health_facility_id == health_facility_id
+            )
+        if is_admin:
+            return select(Patient.patient_id)
+        return select(patient_care_provider_association.c.patient_id).where(
+            patient_care_provider_association.c.care_provider_id == care_provider_id
+        )
+
+    async def _scalar(self, session: AsyncSession, stmt) -> int:
+        return (await session.execute(stmt)).scalar() or 0
+
+    def _metric_value(self, metric: LeaderboardMetric):
+        if metric == "streak":
+            return func.coalesce(PlayerProfile.current_streak, 0)
+        if metric == "xp":
+            return func.coalesce(PlayerProfile.total_xp, 0)
+
+        today = datetime.utcnow().date()
+        if metric == "weekly_steps":
+            week_start = today - timedelta(days=today.weekday())
+            return (
+                select(func.coalesce(func.sum(DailyTask.current_value), 0))
+                .where(
+                    DailyTask.patient_id == Patient.patient_id,
+                    DailyTask.task_type == TaskType.HIT_STEP_GOAL.value,
+                    DailyTask.task_date >= week_start,
+                )
+                .correlate(Patient)
+                .scalar_subquery()
+            )
+
+        since = (
+            today - timedelta(days=today.weekday())
+            if metric == "weekly_xp"
+            else today.replace(day=1)
+        )
+        return (
+            select(func.coalesce(func.sum(XPLedgerEntry.xp_amount), 0))
+            .where(
+                XPLedgerEntry.patient_id == Patient.patient_id,
+                XPLedgerEntry.xp_amount > 0,
+                XPLedgerEntry.created_at >= datetime.combine(since, datetime.min.time()),
+            )
+            .correlate(Patient)
+            .scalar_subquery()
+        )
+
+    def _summary(self, row, *, is_disengaged: bool, tasks: int = 0) -> PatientEngagementSummary:
+        level = row.level or 1
+        return PatientEngagementSummary(
+            patient_id=str(row.patient_id),
+            patient_name=row.first_name,
+            level=level,
+            title=title_for_level(level),
+            total_xp=row.total_xp or 0,
+            current_streak=row.current_streak or 0,
+            last_active_date=row.last_active_date,
+            tasks_completed_this_week=tasks,
+            is_disengaged=is_disengaged,
+        )
+
+    async def _disengaged_rows(
+        self, session: AsyncSession, panel: Select, cutoff, limit: int
+    ) -> List[PatientEngagementSummary]:
+        rows = (
+            await session.execute(
+                select(
+                    Patient.patient_id,
+                    Patient.first_name,
+                    PlayerProfile.level,
+                    PlayerProfile.current_streak,
+                    PlayerProfile.total_xp,
+                    PlayerProfile.last_active_date,
+                )
+                .outerjoin(PlayerProfile, PlayerProfile.patient_id == Patient.patient_id)
+                .where(
+                    Patient.patient_id.in_(panel),
+                    or_(
+                        PlayerProfile.last_active_date.is_(None),
+                        PlayerProfile.last_active_date < cutoff,
+                    ),
+                )
+                .order_by(PlayerProfile.last_active_date.asc().nulls_first())
+                .limit(limit)
+            )
+        ).all()
+        return [self._summary(r, is_disengaged=True) for r in rows]
+
     @with_postgres_session
     async def get_overview(
         self,
         care_provider_id: UUID,
         *,
+        health_facility_id: Optional[UUID] = None,
+        is_admin: bool = False,
         postgres_session: AsyncSession,
     ) -> CPGamificationOverview:
-        # Get all patients for this care provider
-        result = await postgres_session.execute(
-            select(patient_care_provider_association.c.patient_id).where(
-                patient_care_provider_association.c.care_provider_id
-                == care_provider_id
-            )
+        panel = self._panel_ids(care_provider_id, health_facility_id, is_admin)
+
+        total = await self._scalar(
+            postgres_session, select(func.count()).select_from(panel.subquery())
         )
-        patient_ids = list(result.scalars().all())
-        if not patient_ids:
+        if total == 0:
             return CPGamificationOverview(
-                total_patients=0,
-                active_patients=0,
-                at_risk_patients=0,
-                patients=[],
+                total_patients=0, active_patients=0, disengaged_patients=0
             )
 
         today = date.today()
         week_start = today - timedelta(days=today.weekday())
-        at_risk_cutoff = today - timedelta(days=AT_RISK_INACTIVE_DAYS)
+        cutoff = today - timedelta(days=DISENGAGED_INACTIVE_DAYS)
 
-        # Batch: all profiles for these patients
-        profiles_result = await postgres_session.execute(
-            select(PlayerProfile).where(
-                PlayerProfile.patient_id.in_(patient_ids)
-            )
+        active = await self._scalar(
+            postgres_session,
+            select(func.count()).select_from(PlayerProfile).where(
+                PlayerProfile.patient_id.in_(panel),
+                PlayerProfile.last_active_date >= cutoff,
+            ),
         )
-        profiles_by_id = {
-            p.patient_id: p for p in profiles_result.scalars().all()
-        }
-
-        # Batch: all names
-        names_result = await postgres_session.execute(
-            select(Patient.patient_id, Patient.first_name).where(
-                Patient.patient_id.in_(patient_ids)
-            )
+        sum_streak = await self._scalar(
+            postgres_session,
+            select(func.coalesce(func.sum(PlayerProfile.current_streak), 0)).where(
+                PlayerProfile.patient_id.in_(panel)
+            ),
         )
-        names_by_id = {row.patient_id: row.first_name for row in names_result.all()}
-
-        # Batch: task counts per patient this week
-        tasks_result = await postgres_session.execute(
-            select(
-                DailyTask.patient_id,
-                func.count(DailyTask.task_id).label("cnt"),
-            )
-            .where(
-                DailyTask.patient_id.in_(patient_ids),
+        completed = await self._scalar(
+            postgres_session,
+            select(func.count()).select_from(DailyTask).where(
+                DailyTask.patient_id.in_(panel),
                 DailyTask.task_date >= week_start,
                 DailyTask.status == TaskStatus.COMPLETED.value,
-            )
-            .group_by(DailyTask.patient_id)
+            ),
         )
-        tasks_by_id = {row.patient_id: row.cnt for row in tasks_result.all()}
+        total_tasks = await self._scalar(
+            postgres_session,
+            select(func.count()).select_from(DailyTask).where(
+                DailyTask.patient_id.in_(panel),
+                DailyTask.task_date >= week_start,
+            ),
+        )
 
-        summaries: List[PatientEngagementSummary] = []
-        active_count = 0
-        at_risk_count = 0
-
-        for pid in patient_ids:
-            profile = profiles_by_id.get(pid)
-            name = names_by_id.get(pid)
-            tasks_this_week = tasks_by_id.get(pid, 0)
-
-            level = profile.level if profile else 1
-            streak = profile.current_streak if profile else 0
-            xp = profile.total_xp if profile else 0
-            last_active = profile.last_active_date if profile else None
-
-            is_at_risk = (
-                last_active is None or last_active < at_risk_cutoff
-            )
-            is_active = last_active is not None and last_active >= at_risk_cutoff
-
-            if is_active:
-                active_count += 1
-            if is_at_risk:
-                at_risk_count += 1
-
-            summaries.append(
-                PatientEngagementSummary(
-                    patient_id=str(pid),
-                    patient_name=name,
-                    level=level,
-                    title=title_for_level(level),
-                    total_xp=xp,
-                    current_streak=streak,
-                    last_active_date=last_active,
-                    tasks_completed_this_week=tasks_this_week,
-                    is_at_risk=is_at_risk,
+        disengaged = await self._disengaged_rows(
+            postgres_session, panel, cutoff, _DISENGAGED_PREVIEW
+        )
+        mover_rows = (
+            await postgres_session.execute(
+                select(
+                    Patient.patient_id,
+                    Patient.first_name,
+                    PlayerProfile.level,
+                    PlayerProfile.current_streak,
+                    PlayerProfile.total_xp,
+                    PlayerProfile.last_active_date,
+                    func.count(DailyTask.task_id).label("cnt"),
                 )
+                .join(
+                    DailyTask,
+                    and_(
+                        DailyTask.patient_id == Patient.patient_id,
+                        DailyTask.task_date >= week_start,
+                        DailyTask.status == TaskStatus.COMPLETED.value,
+                    ),
+                )
+                .outerjoin(PlayerProfile, PlayerProfile.patient_id == Patient.patient_id)
+                .where(Patient.patient_id.in_(panel))
+                .group_by(
+                    Patient.patient_id,
+                    Patient.first_name,
+                    PlayerProfile.level,
+                    PlayerProfile.current_streak,
+                    PlayerProfile.total_xp,
+                    PlayerProfile.last_active_date,
+                )
+                .order_by(func.count(DailyTask.task_id).desc())
+                .limit(_MOVERS_PREVIEW)
             )
-
-        # Sort: at-risk first, then by last active ascending
-        summaries.sort(
-            key=lambda s: (
-                not s.is_at_risk,
-                s.last_active_date or date.min,
-            )
-        )
+        ).all()
+        movers = [self._summary(r, is_disengaged=False, tasks=r.cnt) for r in mover_rows]
 
         return CPGamificationOverview(
-            total_patients=len(patient_ids),
-            active_patients=active_count,
-            at_risk_patients=at_risk_count,
-            patients=summaries,
+            total_patients=total,
+            active_patients=active,
+            disengaged_patients=total - active,
+            avg_streak=round(sum_streak / total, 1),
+            task_completion_pct=(
+                round(completed / total_tasks * 100, 1) if total_tasks else None
+            ),
+            disengaged=disengaged,
+            top_movers=movers,
         )
 
     @with_postgres_session
-    async def get_at_risk_patients(
+    async def get_leaderboard(
         self,
         care_provider_id: UUID,
         *,
+        metric: LeaderboardMetric = "streak",
+        limit: int = 50,
+        offset: int = 0,
+        search: Optional[str] = None,
+        health_facility_id: Optional[UUID] = None,
+        is_admin: bool = False,
+        postgres_session: AsyncSession,
+    ) -> CPLeaderboardResponse:
+        """Ranked, paginated, searchable panel leaderboard — ordering and paging
+        happen in SQL so the whole panel never loads into memory."""
+        panel = self._panel_ids(care_provider_id, health_facility_id, is_admin)
+        value = self._metric_value(metric)
+
+        conditions = [Patient.patient_id.in_(panel)]
+        if search and search.strip():
+            full_name = func.concat(Patient.first_name, " ", Patient.last_name)
+            conditions += [full_name.ilike(f"%{term}%") for term in search.split()]
+
+        total = await self._scalar(
+            postgres_session,
+            select(func.count()).select_from(Patient).where(*conditions),
+        )
+        rows = (
+            await postgres_session.execute(
+                select(
+                    Patient.patient_id,
+                    Patient.first_name,
+                    func.coalesce(PlayerProfile.level, 1).label("level"),
+                    value.label("value"),
+                )
+                .outerjoin(PlayerProfile, PlayerProfile.patient_id == Patient.patient_id)
+                .where(*conditions)
+                .order_by(value.desc(), Patient.patient_id)
+                .limit(limit)
+                .offset(offset)
+            )
+        ).all()
+
+        entries = [
+            CPLeaderboardEntry(
+                rank=offset + i + 1,
+                patient_id=str(r.patient_id),
+                patient_name=r.first_name,
+                level=r.level,
+                title=title_for_level(r.level),
+                value=float(r.value or 0),
+            )
+            for i, r in enumerate(rows)
+        ]
+        return CPLeaderboardResponse(metric=metric, total=total, entries=entries)
+
+    @with_postgres_session
+    async def get_disengaged_patients(
+        self,
+        care_provider_id: UUID,
+        *,
+        limit: int = 100,
+        health_facility_id: Optional[UUID] = None,
+        is_admin: bool = False,
         postgres_session: AsyncSession,
     ) -> List[PatientEngagementSummary]:
-        overview = await self.get_overview(
-            care_provider_id, postgres_session=postgres_session
-        )
-        return [p for p in overview.patients if p.is_at_risk]
+        panel = self._panel_ids(care_provider_id, health_facility_id, is_admin)
+        cutoff = date.today() - timedelta(days=DISENGAGED_INACTIVE_DAYS)
+        return await self._disengaged_rows(postgres_session, panel, cutoff, limit)
 
     @with_postgres_session
     async def star_achievement(
@@ -211,14 +365,54 @@ class CPGamificationService:
 
         responses: List[GroupResponse] = []
         for group in groups:
-            count_result = await postgres_session.execute(
+            member_count = await self._scalar(
+                postgres_session,
                 select(func.count()).select_from(GroupMember).where(
                     GroupMember.group_id == group.group_id,
                     GroupMember.is_active == True,
+                ),
+            )
+            member_rows = (
+                await postgres_session.execute(
+                    select(
+                        Patient.patient_id,
+                        Patient.first_name,
+                        Patient.profile_picture,
+                    )
+                    .join(GroupMember, GroupMember.patient_id == Patient.patient_id)
+                    .where(
+                        GroupMember.group_id == group.group_id,
+                        GroupMember.is_active == True,
+                    )
+                    .order_by(GroupMember.joined_at.asc())
+                    .limit(4)
                 )
+            ).all()
+            top_members = [
+                AvatarPreview(
+                    patient_id=str(r.patient_id),
+                    name=r.first_name,
+                    profile_picture=r.profile_picture,
+                )
+                for r in member_rows
+            ]
+            active_challenges = await self._scalar(
+                postgres_session,
+                select(func.count(func.distinct(ChallengeParticipant.challenge_id)))
+                .join(
+                    Challenge,
+                    Challenge.challenge_id == ChallengeParticipant.challenge_id,
+                )
+                .where(
+                    ChallengeParticipant.participant_type == "group",
+                    ChallengeParticipant.participant_id == group.group_id,
+                    Challenge.is_active == True,
+                ),
             )
             responses.append(
-                GroupService.to_response(group, count_result.scalar() or 0)
+                GroupService.to_response(
+                    group, member_count, top_members, active_challenges
+                )
             )
         return responses
 
@@ -243,13 +437,53 @@ class CPGamificationService:
 
         responses: List[ChallengeResponse] = []
         for challenge in challenges:
-            count_result = await postgres_session.execute(
+            active = ChallengeParticipant.status.in_(["active", "completed"])
+            count = await self._scalar(
+                postgres_session,
                 select(func.count()).select_from(ChallengeParticipant).where(
                     ChallengeParticipant.challenge_id == challenge.challenge_id,
-                    ChallengeParticipant.status.in_(["active", "completed"]),
-                )
+                    active,
+                ),
             )
+            avg_progress = (
+                await postgres_session.execute(
+                    select(func.coalesce(func.avg(ChallengeParticipant.current_value), 0.0)).where(
+                        ChallengeParticipant.challenge_id == challenge.challenge_id,
+                        active,
+                    )
+                )
+            ).scalar() or 0.0
+            part_rows = (
+                await postgres_session.execute(
+                    select(
+                        Patient.patient_id,
+                        Patient.first_name,
+                        Patient.profile_picture,
+                    )
+                    .join(
+                        ChallengeParticipant,
+                        ChallengeParticipant.participant_id == Patient.patient_id,
+                    )
+                    .where(
+                        ChallengeParticipant.challenge_id == challenge.challenge_id,
+                        ChallengeParticipant.participant_type == "patient",
+                        active,
+                    )
+                    .order_by(ChallengeParticipant.joined_at.asc())
+                    .limit(4)
+                )
+            ).all()
+            top_participants = [
+                AvatarPreview(
+                    patient_id=str(r.patient_id),
+                    name=r.first_name,
+                    profile_picture=r.profile_picture,
+                )
+                for r in part_rows
+            ]
             responses.append(
-                ChallengeService._to_response(challenge, count_result.scalar() or 0)
+                ChallengeService._to_response(
+                    challenge, count, float(avg_progress), top_participants
+                )
             )
         return responses

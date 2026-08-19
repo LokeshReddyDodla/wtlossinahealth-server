@@ -147,7 +147,6 @@ async def _count_mongo(mongo: MongoStore) -> dict[str, dict[str, int]]:
     counts: dict[str, dict[str, int]] = defaultdict(dict)
 
     collections = [
-        ("ai_conversations", "ai_conversation_messages", "user_id"),
         ("patient_documents", "patient_documents", "patient_id"),
         ("proactive_insights", "ai_proactive_insights", "patient_id"),
         ("cgm_reports", "cgm_reports", "patient_id"),

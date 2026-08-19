@@ -48,6 +48,8 @@ from lib.schemas.gamification import (
     ChallengeResponse,
     CheerInput,
     CPGamificationOverview,
+    CPLeaderboardResponse,
+    LeaderboardMetric,
     DailyHistoryResponse,
     DailyProgressResponse,
     FeedEventResponse,
@@ -1101,11 +1103,15 @@ async def get_group_feed(
 ):
     if actor.role == ProfileTypeEnum.PATIENT:
         pid = UUID(actor.id)
+        enforce_membership = True
     else:
         await _ensure_group_owner(group_service, group_id, actor)
         pid = UUID(actor.id)
+        enforce_membership = False
     try:
-        feed = await service.get_group_feed(group_id, pid)
+        feed = await service.get_group_feed(
+            group_id, pid, enforce_membership=enforce_membership
+        )
         return SuccessResponse(message="Group feed", data=feed)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
@@ -1345,22 +1351,56 @@ async def get_cp_overview(
     current_cp: CareProvider = Depends(_cp_read()),
 ):
     _check_cp(cp_id, current_cp)
-    overview = await service.get_overview(current_cp.care_provider_id)
+    overview = await service.get_overview(
+        current_cp.care_provider_id,
+        health_facility_id=current_cp.health_facility_id,
+        is_admin=current_cp.is_admin,
+    )
     return SuccessResponse(message="Gamification overview", data=overview)
 
 
 @router.get(
-    "/care-providers/{cp_id}/at-risk",
+    "/care-providers/{cp_id}/disengaged",
     response_model=SuccessResponse[List[PatientEngagementSummary]],
 )
-async def get_at_risk_patients(
+async def get_disengaged_patients(
     cp_id: UUID,
     service: CPGamificationService = Depends(get_cp_gamification_service),
     current_cp: CareProvider = Depends(_cp_read()),
 ):
     _check_cp(cp_id, current_cp)
-    patients = await service.get_at_risk_patients(current_cp.care_provider_id)
-    return SuccessResponse(message="At-risk patients", data=patients)
+    patients = await service.get_disengaged_patients(
+        current_cp.care_provider_id,
+        health_facility_id=current_cp.health_facility_id,
+        is_admin=current_cp.is_admin,
+    )
+    return SuccessResponse(message="Disengaged patients", data=patients)
+
+
+@router.get(
+    "/care-providers/{cp_id}/leaderboard",
+    response_model=SuccessResponse[CPLeaderboardResponse],
+)
+async def get_cp_leaderboard(
+    cp_id: UUID,
+    metric: LeaderboardMetric = Query("streak"),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    search: Optional[str] = Query(None, max_length=100),
+    service: CPGamificationService = Depends(get_cp_gamification_service),
+    current_cp: CareProvider = Depends(_cp_read()),
+):
+    _check_cp(cp_id, current_cp)
+    board = await service.get_leaderboard(
+        current_cp.care_provider_id,
+        metric=metric,
+        limit=limit,
+        offset=offset,
+        search=search,
+        health_facility_id=current_cp.health_facility_id,
+        is_admin=current_cp.is_admin,
+    )
+    return SuccessResponse(message="Leaderboard", data=board)
 
 
 @router.get(
