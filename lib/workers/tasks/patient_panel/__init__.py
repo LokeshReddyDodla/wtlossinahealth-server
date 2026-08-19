@@ -25,13 +25,28 @@ def get_tasks():
 
 
 def get_cron_jobs():
-    from lib.workers.tasks.utils.cron_helpers import interval_cron
+    from arq.cron import CronJob
 
+    # Full-roster reconcile every 3h (00:00, 03:00, … 21:00). The 30-min sweep
+    # starved the Postgres pool; the panel's freshness label makes a 3h staleness
+    # visible to the care provider. Per-patient _job_id dedupes an overrun sweep.
     return [
-        interval_cron(
+        CronJob(
             coroutine=reconcile_patient_panel,
             name="patient-panel-reconcile",
-            minute_step=30,
+            month=None,
+            day=None,
+            weekday=None,
+            hour=set(range(0, 24, 3)),
+            minute={0},
+            second={0},
+            microsecond=0,
+            unique=True,
+            job_id="patient-panel-reconcile",
             timeout_s=300,
+            keep_result_s=0,
+            keep_result_forever=False,
+            max_tries=1,
+            run_at_startup=False,
         ),
     ]
