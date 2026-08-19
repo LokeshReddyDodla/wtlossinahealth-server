@@ -271,8 +271,6 @@ container.register(
 )
 
 
-
-
 container.register(
     ArqTaskManager,
     lambda: get_arq_task_manager(),
@@ -929,7 +927,6 @@ container.register(
         ),
     ),
 )
-
 
 
 # 🔹 CGM Upload Service

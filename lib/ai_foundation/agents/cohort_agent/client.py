@@ -52,7 +52,12 @@ class InternalAPIClient:
     async def get(self, path: str, params: dict[str, Any] | None = None) -> Any:
         """GET an API path and return parsed JSON, unwrapping the standard
         ``{status, data, message}`` envelope to ``data`` when present."""
-        url = path if path.startswith("http") else f"{self.base_url}/{path.lstrip('/')}"
+        # SECURITY: never allow an absolute URL. `path` can originate from the
+        # LLM (api_get / run_python), and _headers() attaches the provider JWT;
+        # an absolute URL would leak the token off-host and enable SSRF.
+        if "://" in path or path.strip().lower().startswith(("http:", "https:", "//")):
+            raise ValueError("api_get path must be a relative backend path, not an absolute URL")
+        url = f"{self.base_url}/{path.lstrip('/')}"
         last_exc: Exception | None = None
         for attempt in range(3):
             try:

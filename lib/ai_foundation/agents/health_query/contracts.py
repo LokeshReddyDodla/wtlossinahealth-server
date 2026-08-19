@@ -135,6 +135,7 @@ _DOMAIN_TO_SPECIALIST: dict[DomainName, str] = {
     DomainName.PLANS: "nutrition",  # plans routed to nutrition specialist
     DomainName.DOCUMENTS: "documents",
     DomainName.WORKOUT: "fitness",
+    
 }
 
 
