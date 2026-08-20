@@ -1,4 +1,5 @@
-import hashlib
+
+from lib.services.reports.base import report_id as base_report_id
 import logging
 from datetime import date, datetime, time, timedelta
 from typing import List, Optional
@@ -228,12 +229,11 @@ class SleepReportService:
         start_iso: str,
         end_iso: str,
     ) -> str:
-        key = f"{patient_id}_{report_type}_{start_iso}_{end_iso}"
-        return hashlib.sha256(key.encode()).hexdigest()
+        return base_report_id(patient_id, report_type, start_iso, end_iso)
 
     async def save_reports_bulk(self, patient_id, reports: List[SleepStats]):
         try:
-            from pymongo import UpdateOne
+            from pymongo import ReplaceOne
 
             if not reports:
                 logging.warning("No Sleep reports to save")
@@ -261,8 +261,10 @@ class SleepReportService:
                     }
                 )
 
+                # Full replace: a regenerated report must not inherit fields
+                # that exclude_none omits this time.
                 ops.append(
-                    UpdateOne({"_id": report_id}, {"$set": report_dict}, upsert=True)
+                    ReplaceOne({"_id": report_id}, report_dict, upsert=True)
                 )
 
             await self.sleep_report_collection.bulk_write(ops)

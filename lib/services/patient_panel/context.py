@@ -105,84 +105,72 @@ def _as_utc(dt: datetime) -> datetime:
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
-async def panel_context(patient_id: str) -> dict[str, Any]:
-    async with postgres_store.get_session() as s:
-        patient = (
-            await s.execute(select(Patient).where(Patient.patient_id == patient_id))
-        ).scalar_one_or_none()
-        if patient is None:
-            return {}
+def _frontier_subquery(model):
+    return (
+        select(func.max(model.last_cgm_reading_at))
+        .join(PatientConnectedApp, model.connected_app_id == PatientConnectedApp.id)
+        .where(PatientConnectedApp.patient_id == Patient.patient_id)
+        .scalar_subquery()
+    )
 
-        dh = (
-            await s.execute(
-                select(PatientDiabeticHistory).where(PatientDiabeticHistory.patient_id == patient_id)
-            )
-        ).scalar_one_or_none()
-        rh = (
-            await s.execute(
-                select(PatientReproductiveHealth).where(PatientReproductiveHealth.patient_id == patient_id)
-            )
-        ).scalar_one_or_none()
 
-        cp_ids = list(
-            (
-                await s.execute(
-                    select(patient_care_provider_association.c.care_provider_id).where(
-                        patient_care_provider_association.c.patient_id == patient_id
-                    )
-                )
-            ).scalars().all()
+def _adherence_count_subquery(event_status: str, since: date):
+    return (
+        select(func.count())
+        .select_from(CareIntentEvent)
+        .join(CareIntent, CareIntentEvent.care_intent_id == CareIntent.care_intent_id)
+        .where(
+            CareIntent.patient_id == Patient.patient_id,
+            CareIntent.status == "active",
+            CareIntentEvent.event_date >= since,
+            CareIntentEvent.status == event_status,
         )
+        .scalar_subquery()
+    )
 
-        frontier_at: datetime | None = None
-        for model in (PatientLibreView, PatientSinocare):
-            row = (
-                await s.execute(
-                    select(model.last_cgm_reading_at)
-                    .join(PatientConnectedApp, model.connected_app_id == PatientConnectedApp.id)
-                    .where(PatientConnectedApp.patient_id == patient_id)
-                    .where(model.last_cgm_reading_at.is_not(None))
-                )
-            ).scalars().first()
-            if row is not None and (frontier_at is None or row > frontier_at):
-                frontier_at = row
 
-        last_active_at = (
-            await s.execute(
-                select(func.max(UserDevice.last_active_at)).where(
-                    UserDevice.user_id == patient_id,
-                    UserDevice.profile_type == ProfileTypeEnum.PATIENT.value,
-                )
+async def panel_context(patient_id: str) -> dict[str, Any]:
+    # Recompute runs with high concurrency, so the whole context is one
+    # round-trip — the connection is held for one query, not seven.
+    adherence_since = datetime.now(timezone.utc).date() - timedelta(days=30)
+    stmt = (
+        select(
+            Patient,
+            PatientDiabeticHistory,
+            PatientReproductiveHealth,
+            select(func.array_agg(patient_care_provider_association.c.care_provider_id))
+            .where(patient_care_provider_association.c.patient_id == Patient.patient_id)
+            .scalar_subquery(),
+            select(func.max(UserDevice.last_active_at))
+            .where(
+                UserDevice.user_id == Patient.patient_id,
+                UserDevice.profile_type == ProfileTypeEnum.PATIENT.value,
             )
-        ).scalar_one_or_none()
+            .scalar_subquery(),
+            _frontier_subquery(PatientLibreView),
+            _frontier_subquery(PatientSinocare),
+            _adherence_count_subquery("followed", adherence_since),
+            _adherence_count_subquery("missed", adherence_since),
+        )
+        .outerjoin(PatientDiabeticHistory, PatientDiabeticHistory.patient_id == Patient.patient_id)
+        .outerjoin(PatientReproductiveHealth, PatientReproductiveHealth.patient_id == Patient.patient_id)
+        .where(Patient.patient_id == patient_id)
+    )
+    async with postgres_store.get_session() as s:
+        row = (await s.execute(stmt)).first()
 
-        # Care-plan adherence over the last 30 days — only queried when the
-        # patient has active care intents (cheap via the patient_id+status index).
-        adherence_pct: int | None = None
-        intent_ids = (
-            await s.execute(
-                select(CareIntent.care_intent_id).where(
-                    CareIntent.patient_id == patient_id,
-                    CareIntent.status == "active",
-                )
-            )
-        ).scalars().all()
-        if intent_ids:
-            since = datetime.now(timezone.utc).date() - timedelta(days=30)
-            counts = (
-                await s.execute(
-                    select(CareIntentEvent.status, func.count())
-                    .where(
-                        CareIntentEvent.care_intent_id.in_(intent_ids),
-                        CareIntentEvent.event_date >= since,
-                    )
-                    .group_by(CareIntentEvent.status)
-                )
-            ).all()
-            tally = {st: n for st, n in counts}
-            decided = tally.get("followed", 0) + tally.get("missed", 0)
-            if decided:
-                adherence_pct = round(100 * tally.get("followed", 0) / decided)
+    if row is None:
+        return {}
+    patient, dh, rh, cp_ids, last_active_at, lv_frontier, sino_frontier, followed, missed = row
+
+    frontier_candidates = [f for f in (lv_frontier, sino_frontier) if f is not None]
+    frontier_at = max(frontier_candidates) if frontier_candidates else None
+
+    adherence_pct: int | None = None
+    decided = (followed or 0) + (missed or 0)
+    if decided:
+        adherence_pct = round(100 * (followed or 0) / decided)
+    cp_ids = cp_ids or []
 
     is_pregnant = bool((rh and rh.is_pregnant) or (dh and dh.is_pregnant))
     ctx = _build(

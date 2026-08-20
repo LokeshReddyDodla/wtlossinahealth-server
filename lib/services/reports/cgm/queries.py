@@ -159,16 +159,15 @@ def generate_daily_avg_query(patient_id: str, start_date: str, end_date: str) ->
     """
 
 
-def generate_readings_around_meal_query(
-    patient_id: str, meal_time: str, before_minutes: int = 30, after_minutes: int = 30
+def generate_readings_window_query(
+    patient_id: str, start: str, end: str
 ) -> tuple[str, dict]:
-    """Query + params to fetch CGM readings around a meal time.
+    """Query + params for all readings in a window, sorted by time.
 
-    Parameterized (unlike the report queries above, whose inputs are
-    server-generated) because meal_time flows in from stored meal payloads —
+    Parameterized because the bounds derive from stored meal payloads —
     execute as ``client.execute(query, params)``.
     """
-    query = f"""
+    query = """
     SELECT
         time AS reading_time,
         glucose_level AS glucose_mgdl
@@ -177,13 +176,10 @@ def generate_readings_around_meal_query(
     WHERE
         patient_id = %(patient_id)s
         AND record_type = 'historic'
-        AND time BETWEEN
-            toDateTime(%(meal_time)s) - INTERVAL {int(before_minutes)} MINUTE
-            AND
-            toDateTime(%(meal_time)s) + INTERVAL {int(after_minutes)} MINUTE
+        AND time BETWEEN toDateTime(%(start)s) AND toDateTime(%(end)s)
     ORDER BY time;
     """
-    return query, {"patient_id": patient_id, "meal_time": meal_time}
+    return query, {"patient_id": patient_id, "start": start, "end": end}
 
 
 def generate_trend_prev_window_query(patient_id: str, prev_start: str, prev_end: str) -> str:

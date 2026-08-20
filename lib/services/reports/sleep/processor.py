@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import datetime
 from typing import List, Optional
@@ -98,7 +99,8 @@ class SleepStatsProcessor:
                 patient_id, start_date, end_date
             )
             recommended_min = await self._recommended_sleep_minimum(patient_id)
-            return self._process_period(
+            return await asyncio.to_thread(
+                self._process_period,
                 patient_id, start_date, end_date, report_type,
                 checkins, recommended_min,
             )

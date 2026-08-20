@@ -3,17 +3,20 @@ from dateutil.parser import parse
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from lib.core.postgres_store import PostgresStore
+from lib.derived import DataDomain, dates_between, mark_dirty
 from lib.models.patient_smbg import PatientSMBG
-from lib.workers.tasks.fitness.enqueue import (
-    enqueue_process_fitness_upload_async,
-)
-from lib.workers.tasks.sleep.enqueue import enqueue_process_sleep_upload_async
 from lib.workers.tasks.vitals.enqueue import enqueue_generate_vital_vector_async
 from lib.utils.postgres_session_decorator import with_postgres_session
 from rest_server.patients.fitness.api_schema import FitnessDataRequest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 _FITNESS_VITAL_KEY = {"blood_oxygen": "spo2", "body_temperature": "temperature"}
+_SLEEP_FIELDS = ("sleep_in_bed", "sleep_deep", "sleep_light", "sleep_rem", "sleep_awake")
+_DEVICE_VITAL_FIELDS = (
+    "blood_pressure_systolic", "blood_pressure_diastolic", "heart_rate",
+    "blood_oxygen", "resting_heart_rate", "body_temperature", "weight",
+    "respiratory_rate",
+)
 _VECTORIZED_VITALS = {
     "heart_rate", "resting_heart_rate", "systolic_bp", "diastolic_bp",
     "spo2", "temperature", "respiratory_rate", "weight",
@@ -52,10 +55,14 @@ class FitnessUploadService:
         # Commit the session to save all changes
         await postgres_session.commit()
 
-        # Trigger report generation asynchronously
-        await enqueue_process_fitness_upload_async(patient_id, start_datetime, end_datetime)
-
-        await enqueue_process_sleep_upload_async(patient_id, start_datetime, end_datetime)
+        span = dates_between(start_datetime.date(), end_datetime.date())
+        await mark_dirty(patient_id, DataDomain.FITNESS, span)
+        if any(getattr(fitness_data, f, None) for f in _SLEEP_FIELDS):
+            await mark_dirty(patient_id, DataDomain.SLEEP, span)
+        if any(getattr(fitness_data, f, None) for f in _DEVICE_VITAL_FIELDS):
+            await mark_dirty(patient_id, DataDomain.VITALS, span)
+        if fitness_data.blood_glucose:
+            await mark_dirty(patient_id, DataDomain.SMBG, span)
 
         # Gamification hook (fire-and-forget)
         try:

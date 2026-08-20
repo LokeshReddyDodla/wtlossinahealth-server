@@ -26,7 +26,7 @@ class _Vitals:
         self._rows = rows
         self._weight = weight or []
 
-    async def get_latest_vitals(self, patient_id):
+    async def get_latest_vitals(self, patient_id, since=None):
         return self._rows
 
     async def get_weight_history(self, patient_id, days=60):
@@ -37,7 +37,7 @@ class _SMBG:
     def __init__(self, readings):
         self._readings = readings
 
-    async def get_patient_smbgs(self, patient_id):
+    async def get_patient_smbgs(self, patient_id, *, since=None, limit=None):
         return self._readings
 
 

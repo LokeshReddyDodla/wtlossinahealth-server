@@ -9,7 +9,6 @@ from lib.workers.arq.config import Queues
 from lib.workers.arq.redis import enqueue_job
 from lib.utils.datetime_utils import normalize_to_date_iso, parse_datetime
 from lib.workers.tasks.base import TaskResult, task_with_logging
-from lib.workers.tasks.cgm.vector_generation import _trigger_vector_generation
 
 
 async def filter_periods_needing_work(
@@ -107,14 +106,6 @@ async def process_cgm_upload(
 
     if not to_process:
         logger.info(f"No periods need processing for {patient_id}")
-
-        # TODO: Rethink this. We should only trigger vector generation if we have new reports.
-        await _trigger_vector_generation(
-            patient_id,
-            min(p["start"] for p in periods_normalized),
-            max(p["end"] for p in periods_normalized),
-        )
-
         return TaskResult(
             success=True,
             data={
@@ -140,11 +131,6 @@ async def process_cgm_upload(
         results.append(result)
 
     successful = sum(1 for r in results if r.get("success"))
-
-    # Trigger vector generation once after all reports are done
-    start_date = min(p["start"] for p in periods_normalized)
-    end_date = max(p["end"] for p in periods_normalized)
-    await _trigger_vector_generation(patient_id, start_date, end_date)
 
     return TaskResult(
         success=True,
@@ -174,7 +160,12 @@ async def _generate_single_report(
         processor = get_cgm_stats_processor()
         service = get_cgm_report_service()
 
-        reports = await processor.generate_report(patient_id, start_date, end_date)
+        # Custom (sensor-lifecycle) reports only — daily/weekly and their
+        # vectors are owned by the derived drain, driven by the same upload's
+        # dirty cells.
+        reports = await processor.generate_report(
+            patient_id, start_date, end_date, report_types={"custom"}
+        )
 
         if not reports:
             return {

@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 from datetime import datetime
 from typing import Dict, List, Optional
@@ -16,7 +17,7 @@ from .hyper_stats import HyperglycemiaStatistics
 from .hypo_stats import HypoglycemiaStatistics
 from .queries import (
     generate_hourly_avg_query,
-    generate_readings_around_meal_query,
+    generate_readings_window_query,
     generate_readings_in_range_query,
     generate_sensor_active_query,
     generate_total_readings_count_query,
@@ -83,32 +84,27 @@ class CGMStatsProcessor:
             for row in data
         ]
 
-    def get_readings_around_meal(
-        self,
-        patient_id: str,
-        meal_time: datetime,
-        before_minutes: int = 30,
-        after_minutes: int = 90,
-    ):
-        """Get CGM readings around a meal time."""
-        query, params = generate_readings_around_meal_query(
+    def get_readings_for_window(
+        self, patient_id: str, start: datetime, end: datetime
+    ) -> list:
+        """All (time, glucose) rows in the window, sorted — one round-trip that
+        callers slice per meal instead of querying per meal."""
+        query, params = generate_readings_window_query(
             patient_id,
-            meal_time.strftime("%Y-%m-%d %H:%M:%S"),
-            before_minutes,
-            after_minutes,
+            start.strftime("%Y-%m-%d %H:%M:%S"),
+            end.strftime("%Y-%m-%d %H:%M:%S"),
         )
-        results = self.clickhouse_store.client.execute(query, params)
-
-        glucose_before = [r for r in results if r[0] < meal_time]
-        glucose_after = [r for r in results if r[0] >= meal_time]
-        return glucose_before, glucose_after
+        return self.clickhouse_store.client.execute(query, params)
 
     async def generate_report(
         self,
         patient_id: str,
         start_date: datetime,
         end_date: datetime,
+        report_types: set[str] | None = None,
     ) -> List[CGMStats]:
+        """Generate reports for the window. `report_types` narrows which of
+        custom/daily/weekly are produced (None = all three)."""
         start_date = start_date.replace(
             hour=0, minute=0, second=0, microsecond=0
         )
@@ -118,28 +114,28 @@ class CGMStatsProcessor:
 
         reports: List[CGMStats] = []
 
-        # Overall
-        reports.append(
-            await self._process_period(
-                patient_id, start_date, end_date, CGMReportType.CUSTOM
+        if report_types is None or CGMReportType.CUSTOM in report_types:
+            reports.append(
+                await self._process_period(
+                    patient_id, start_date, end_date, CGMReportType.CUSTOM
+                )
             )
-        )
 
-        # Daily
-        day_periods = DayWisePeriod(start_date, end_date).periods
-        reports.extend(
-            await self._process_multiple_periods(
-                patient_id, day_periods, CGMReportType.DAILY
+        if report_types is None or CGMReportType.DAILY in report_types:
+            day_periods = DayWisePeriod(start_date, end_date).periods
+            reports.extend(
+                await self._process_multiple_periods(
+                    patient_id, day_periods, CGMReportType.DAILY
+                )
             )
-        )
 
-        # Weekly
-        week_periods = WeekWisePeriod(start_date, end_date).periods
-        reports.extend(
-            await self._process_multiple_periods(
-                patient_id, week_periods, CGMReportType.WEEKLY
+        if report_types is None or CGMReportType.WEEKLY in report_types:
+            week_periods = WeekWisePeriod(start_date, end_date).periods
+            reports.extend(
+                await self._process_multiple_periods(
+                    patient_id, week_periods, CGMReportType.WEEKLY
+                )
             )
-        )
 
         return reports
 
@@ -153,22 +149,47 @@ class CGMStatsProcessor:
         start_date_str = start_date.strftime("%Y-%m-%dT%H:%M:%S")
         end_date_str = end_date.strftime("%Y-%m-%dT%H:%M:%S")
 
-        cgm_summary_stats = CGMStatistics.fetch_summary_stats(
-            self.clickhouse_store, patient_id, start_date_str, end_date_str
-        )
-        cgm_range_stats = CGMRangeStatistics.fetch(
-            self.clickhouse_store, patient_id, start_date_str, end_date_str
+        prev_start = start_date - (end_date - start_date)
+        window = (self.clickhouse_store, patient_id, start_date_str, end_date_str)
+        # The stat blocks are independent ClickHouse round-trips through the
+        # sync driver — run them in threads so one report costs one round-trip
+        # of wall-clock and never blocks the worker's event loop.
+        (
+            cgm_summary_stats,
+            cgm_range_stats,
+            trend_result,
+            hyper_stats,
+            hypo_stats,
+            time_period_stats,
+            total_readings_result,
+            median_gap_result,
+        ) = await asyncio.gather(
+            asyncio.to_thread(CGMStatistics.fetch_summary_stats, *window),
+            asyncio.to_thread(CGMRangeStatistics.fetch, *window),
+            asyncio.to_thread(
+                self.clickhouse_store.execute,
+                generate_trend_prev_window_query(
+                    patient_id,
+                    prev_start.strftime("%Y-%m-%dT%H:%M:%S"),
+                    start_date_str,
+                ),
+            ),
+            asyncio.to_thread(HyperglycemiaStatistics().fetch, *window),
+            asyncio.to_thread(HypoglycemiaStatistics().fetch, *window),
+            asyncio.to_thread(TimePeriodStatistics.fetch, *window),
+            asyncio.to_thread(
+                self.clickhouse_store.execute,
+                generate_total_readings_count_query(
+                    patient_id, start_date_str, end_date_str
+                ),
+            ),
+            asyncio.to_thread(
+                self.clickhouse_store.execute,
+                generate_sensor_active_query(patient_id, start_date_str, end_date_str),
+            ),
         )
         cgm_summary_stats.gri = CGMRangeStatistics.compute_gri(cgm_range_stats)
 
-        prev_start = start_date - (end_date - start_date)
-        trend_result = self.clickhouse_store.client.execute(
-            generate_trend_prev_window_query(
-                patient_id,
-                prev_start.strftime("%Y-%m-%dT%H:%M:%S"),
-                start_date_str,
-            )
-        )
         trend: Optional[CGMTrend] = None
         if trend_result and trend_result[0][2]:  # previous window has readings
             prev_avg = validate_float(trend_result[0][0])
@@ -182,54 +203,44 @@ class CGMStatsProcessor:
                 delta_time_in_range_percent=validate_float(cur_tir - prev_tir),
                 delta_gmi=validate_float(0.02392 * (cur_avg - prev_avg)),
             )
-        hyper_stats = HyperglycemiaStatistics().fetch(
-            self.clickhouse_store, patient_id, start_date_str, end_date_str
-        )
-        hypo_stats = HypoglycemiaStatistics().fetch(
-            self.clickhouse_store, patient_id, start_date_str, end_date_str
-        )
-        time_period_stats = TimePeriodStatistics.fetch(
-            self.clickhouse_store, patient_id, start_date_str, end_date_str
-        )
 
-        fitness_report = await self.fitness_stats_processor.generate_custom_report(
-            patient_id,
-            start_date,
-            end_date,
-            report_type=report_type,
-        )
-
-        sleep_report = await self.sleep_stats_processor.generate_custom_report(
-            patient_id,
-            start_date,
-            end_date,
-            report_type=report_type,
-        )
+        # Daily reports skip the embedded fitness/sleep sub-reports — the
+        # derived drain generates those dailies independently, and the save
+        # layer sets the FK ids deterministically instead. Custom and weekly
+        # keep embedding (weekly ids aren't stable across generators).
+        fitness_report = None
+        sleep_report = None
+        if report_type != CGMReportType.DAILY:
+            fitness_report = await self.fitness_stats_processor.generate_custom_report(
+                patient_id,
+                start_date,
+                end_date,
+                report_type=report_type,
+            )
+            sleep_report = await self.sleep_stats_processor.generate_custom_report(
+                patient_id,
+                start_date,
+                end_date,
+                report_type=report_type,
+            )
 
         cgm_readings: Optional[List[CGMReading]] = None
         meal_report_id: Optional[str] = None
 
         if report_type == CGMReportType.DAILY:
-            cgm_readings = self.get_readings_in_range(
-                patient_id, start_date_str, end_date_str
+            cgm_readings = await asyncio.to_thread(
+                self.get_readings_in_range, patient_id, start_date_str, end_date_str
             )
             meal_report_id = hashlib.sha256(
                 f"{patient_id}_{report_type}_{start_date.date()}".encode()
             ).hexdigest()
 
         days_covered = (end_date.date() - start_date.date()).days + 1
-        
-        total_readings_query = generate_total_readings_count_query(
-            patient_id, start_date_str, end_date_str
-        )
-        total_readings_result = self.clickhouse_store.client.execute(total_readings_query)
+
         total_readings = total_readings_result[0][0] if total_readings_result else 0
 
         # Sensor-active %: scored against the sensor's own cadence (median gap
         # between readings), so 5-min and 15-min devices are both correct.
-        median_gap_result = self.clickhouse_store.client.execute(
-            generate_sensor_active_query(patient_id, start_date_str, end_date_str)
-        )
         median_gap_s = (
             median_gap_result[0][0]
             if median_gap_result and median_gap_result[0][0]

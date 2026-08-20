@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from datetime import datetime, timedelta
 from uuid import uuid4
 
 from lib.core.clickhouse_store import ClickHouseStore
+from lib.derived import DataDomain, mark_dirty
 from lib.schemas.patient_vital import PatientVitalCreate
 from lib.services.patient_summary.enum import StaleReason
 from lib.utils.patient_summary_stale import mark_summary_stale_and_enqueue
@@ -33,7 +36,8 @@ class PatientVitalService:
         end_date: datetime | None = None,
     ) -> tuple[list[dict], int]:
         """Return vitals newest-first with pagination and optional date filter."""
-        return self.clickhouse.query_vitals(
+        return await asyncio.to_thread(
+            self.clickhouse.query_vitals,
             patient_id,
             start_time=start_date,
             end_time=end_date,
@@ -48,17 +52,24 @@ class PatientVitalService:
         end_date: datetime,
     ) -> list[dict]:
         """Daily avg/min/max/count per vital type."""
-        return self.clickhouse.query_vitals_summary(patient_id, start_date, end_date)
+        return await asyncio.to_thread(
+            self.clickhouse.query_vitals_summary, patient_id, start_date, end_date
+        )
 
-    async def get_latest_vitals(self, patient_id: str) -> list[dict]:
-        """Most recent reading per vital type."""
-        return self.clickhouse.query_vitals_latest(patient_id)
+    async def get_latest_vitals(
+        self, patient_id: str, since: datetime | None = None
+    ) -> list[dict]:
+        """Most recent reading per vital type, optionally bounded to a window."""
+        return await asyncio.to_thread(
+            self.clickhouse.query_vitals_latest, patient_id, since=since
+        )
 
     async def get_weight_history(self, patient_id: str, days: int = 60) -> list[dict]:
         """Weight readings over the trailing window, for weight-trend triage."""
         # ClickHouse toDateTime() only accepts second precision.
         end = datetime.utcnow().replace(microsecond=0)
-        rows, _ = self.clickhouse.query_vitals(
+        rows, _ = await asyncio.to_thread(
+            self.clickhouse.query_vitals,
             patient_id,
             start_time=end - timedelta(days=days),
             end_time=end,
@@ -96,6 +107,7 @@ class PatientVitalService:
 
         if rows:
             self.clickhouse.write_data("aihealth.vitals_data", rows)
+            await mark_dirty(patient_id, DataDomain.VITALS, [test_time.date()])
 
         # Mark affected summaries as stale
         await mark_summary_stale_and_enqueue(

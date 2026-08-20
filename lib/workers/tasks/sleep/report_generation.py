@@ -1,5 +1,6 @@
 """Sleep Report Generation Tasks - Optimized."""
 
+import asyncio
 from datetime import datetime
 from typing import Any, Dict, List
 
@@ -172,7 +173,8 @@ async def _generate_monthly_reports(
         )
         recommended_min = await processor._recommended_sleep_minimum(patient_id)
 
-        reports = processor.generate_report(
+        reports = await asyncio.to_thread(
+            processor.generate_report,
             patient_id,
             start_date,
             end_date,

@@ -35,7 +35,6 @@ from lib.schemas.patient_meal import MealAnalysisResponse
 from lib.schemas.patient_meal import PatientMeal as PatientMealSchema
 from lib.services.vector import MealVectorService
 from lib.services.patient_profile_service import PatientProfileService
-from lib.workers.tasks.meal.enqueue import enqueue_daily_meal_report_async
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.postgres_session_decorator import with_postgres_session
 from rest_server.patients.meals.api_schema import (
@@ -505,10 +504,9 @@ class MealService:
                 run_analysis=client_analysis is None,
             )
             if old_date != meal.date:
-                try:
-                    await enqueue_daily_meal_report_async(str(patient_id), old_date)
-                except Exception:
-                    pass
+                from lib.derived import DataDomain, mark_dirty
+
+                await mark_dirty(str(patient_id), DataDomain.MEAL, [old_date])
 
             # Gamification: macros changed, totals need refresh. Do NOT
             # re-fire MEAL_LOGGED — would duplicate XP / task completion.
@@ -623,7 +621,9 @@ class MealService:
             await postgres_session.delete(meal)
             await postgres_session.commit()
 
-            await enqueue_daily_meal_report_async(str(patient_id), meal_date)
+            from lib.derived import DataDomain, mark_dirty
+
+            await mark_dirty(str(patient_id), DataDomain.MEAL, [meal_date])
             try:
                 await self.meal_vector_service.delete_meal_vector(str(meal_id))
             except Exception:

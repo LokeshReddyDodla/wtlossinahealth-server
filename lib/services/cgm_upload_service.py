@@ -21,6 +21,7 @@ from lib.utils.libre_view_sensor_report_generator import SensorLifecycleReportGe
 from lib.utils.postgres_session_decorator import with_postgres_session
 from lib.workers.arq.config import Queues
 from lib.workers.arq.redis import enqueue_job
+from lib.derived import DataDomain, dates_between, mark_dirty
 from lib.workers.tasks.cgm.enqueue import enqueue_cgm_report_generation_async
 
 # First CGM connect has no prior reading frontier; cap the meal-report backfill
@@ -32,6 +33,17 @@ class CGMUploadService:
     def __init__(self, clickhouse_store, postgres_store: PostgresStore):
         self.clickhouse_store = clickhouse_store
         self.postgres_store = postgres_store
+
+    async def _mark_cgm_dirty(self, patient_id: str, points: List[dict], defer_s: int | None) -> None:
+        if not points:
+            return
+        times = [p["time"] for p in points]
+        await mark_dirty(
+            patient_id,
+            DataDomain.CGM,
+            dates_between(min(times).date(), max(times).date(), cap_days=366),
+            defer_s=defer_s,
+        )
 
     @with_postgres_session
     async def parse_and_upload_libreview_raw_csv_data(
@@ -58,6 +70,7 @@ class CGMUploadService:
             report_periods = self._generate_report_periods(df)
 
             self.clickhouse_store.write_data("aihealth.cgm_data", data_points)
+            await self._mark_cgm_dirty(patient_id, data_points, defer_s=60)
 
             await self._enqueue_meal_report_refresh(
                 postgres_session, patient_id, "libreview", end_time
@@ -110,6 +123,7 @@ class CGMUploadService:
             return 0
 
         self.clickhouse_store.write_data("aihealth.cgm_data", rows)
+        await self._mark_cgm_dirty(patient_id, rows, defer_s=None)
 
         latest_reading_time = max(r["time"] for r in rows)
         await self._enqueue_meal_report_refresh(
@@ -176,6 +190,7 @@ class CGMUploadService:
             data_points = self._extract_sinocare_data_points(df, patient_id)
 
             self.clickhouse_store.write_data("aihealth.cgm_data", data_points)
+            await self._mark_cgm_dirty(patient_id, data_points, defer_s=60)
 
             await self._enqueue_meal_report_refresh(
                 postgres_session, patient_id, "sinocare", end_time
@@ -231,6 +246,7 @@ class CGMUploadService:
 
             data_points = self._extract_linx_data_points(df, patient_id)
             self.clickhouse_store.write_data("aihealth.cgm_data", data_points)
+            await self._mark_cgm_dirty(patient_id, data_points, defer_s=60)
 
             await self._enqueue_meal_report_refresh(
                 postgres_session, patient_id, "linx", end_time
@@ -438,32 +454,18 @@ class CGMUploadService:
         newest reading in this upload. The one-day lead-in catches a late-night
         meal whose ~2-3h excursion bled into the next morning. First connect (no
         frontier) is capped to the recent meal-history window, not all of history.
-        Deduped per (patient, date, 30-min bucket) so overlapping live syncs
-        (~5 min apart) collapse.
+        Dirty-cell set semantics collapse overlapping live syncs (~5 min apart).
         """
         prior = await self._prior_cgm_frontier(session, patient_id, source)
         window = self._meal_refresh_window(prior, end_time)
         if window is None:
             return
         start, end = window
-
-        now = datetime.now()
-        bucket = f"{now:%Y%m%d%H}{now.minute // 30}"
-        d = start
-        while d <= end:
-            try:
-                await enqueue_job(
-                    "generate_daily_meal_report",
-                    patient_id,
-                    d,
-                    _job_id=f"meal:report:cgmsync:{patient_id}:{d.isoformat()}:{bucket}",
-                    _queue_name=Queues.REPORTS,
-                )
-            except Exception as exc:
-                logger.warning(
-                    f"Failed to enqueue meal refresh for {patient_id} on {d}: {exc}"
-                )
-            d += timedelta(days=1)
+        await mark_dirty(
+            patient_id,
+            DataDomain.MEAL,
+            dates_between(start, end, cap_days=_FIRST_CONNECT_BACKFILL_DAYS + 1),
+        )
 
     @staticmethod
     def _meal_refresh_window(prior, end_time):

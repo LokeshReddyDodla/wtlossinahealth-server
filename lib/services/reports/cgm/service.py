@@ -1,4 +1,5 @@
-import hashlib
+
+from lib.services.reports.base import report_id as base_report_id
 import logging
 from datetime import date, datetime, time, timedelta
 from typing import Dict, List, Optional
@@ -461,12 +462,9 @@ class CGMReportService:
         end_iso: str,
         include_end: bool = True,
     ) -> str:
-        if include_end:
-            key = f"{patient_id}_{report_type}_{start_iso}_{end_iso}"
-        else:
-            key = f"{patient_id}_{report_type}_{start_iso}"
-
-        return hashlib.sha256(key.encode()).hexdigest()
+        return base_report_id(
+            patient_id, report_type, start_iso, end_iso if include_end else None
+        )
 
     def _compute_report_id_from_metadata(self, patient_id: str, metadata) -> str:
         """Compute report id from a metadata object.
@@ -602,6 +600,18 @@ class CGMReportService:
 
                 report_dict["sleep_report_id"] = sleep_report_id
                 report_dict.pop("sleep_report", None)
+
+            if metadata.report_type == "daily" and not report.fitness_report:
+                # Daily reports skip generating embedded sub-reports (the
+                # derived drain owns fitness/sleep dailies); the FK is
+                # deterministic — same scheme, same day window — so the
+                # $lookup resolves once the sibling drain writes that day.
+                report_dict["fitness_report_id"] = self.fitness_report_service._generate_report_id(
+                    patient_id, "daily", metadata.date_range.start, metadata.date_range.end
+                )
+                report_dict["sleep_report_id"] = self.sleep_report_service._generate_report_id(
+                    patient_id, "daily", metadata.date_range.start, metadata.date_range.end
+                )
 
             report_dict.update(
                 {

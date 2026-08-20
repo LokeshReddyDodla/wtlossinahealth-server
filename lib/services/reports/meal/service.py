@@ -1,4 +1,4 @@
-import hashlib
+from lib.services.reports.base import report_id as base_report_id
 import logging
 from datetime import date, datetime
 
@@ -119,8 +119,7 @@ class MealReportService:
             else:
                 date_iso = str(date_value)
 
-            unique_key = f"{patient_id}_{report_type}_{date_iso}"
-            report_id = hashlib.sha256(unique_key.encode()).hexdigest()
+            report_id = base_report_id(patient_id, report_type, date_iso)
             now = datetime.now()
 
             existing_report = await self.meal_report_collection.find_one(

@@ -16,16 +16,20 @@ SQLALCHEMY_DATABASE_URL = config("POSTGRES_ASYNCPG_URL")
 if not SQLALCHEMY_DATABASE_URL.startswith("postgresql+asyncpg://"):
     raise ValueError("POSTGRES_URL must start with 'postgresql+asyncpg://'")
 
-# Create the SQLAlchemy engine
+# Seven processes (2 API workers + 5 arq workers) share one Postgres, so the
+# per-process pool must stay small; PgBouncer in front multiplexes the rest.
 engine = create_async_engine(
     SQLALCHEMY_DATABASE_URL,
-    pool_size=100,
-    max_overflow=10,
+    pool_size=int(config("POSTGRES_POOL_SIZE", default=10)),
+    max_overflow=int(config("POSTGRES_MAX_OVERFLOW", default=5)),
     pool_timeout=30,
     pool_recycle=3600,
     pool_pre_ping=True,
     echo=False,
     future=True,
+    # PgBouncer transaction pooling breaks asyncpg's prepared-statement cache
+    # (statements outlive the server connection they were prepared on).
+    connect_args={"statement_cache_size": 0},
 )
 
 # Create a configured "Session" class
@@ -47,7 +51,7 @@ class PostgresStore:
     @asynccontextmanager
     async def get_session(self) -> AsyncGenerator[AsyncSession, None]:
         session: AsyncSession = self.session_local()
-        logger.info(
+        logger.debug(
             f"🔌 Acquiring connection (checked out: {self.engine.pool.checkedout()}, "
             f"in pool: {self.engine.pool.checkedin()})"
         )
@@ -61,7 +65,7 @@ class PostgresStore:
             raise
         finally:
             await session.close()
-            logger.info(
+            logger.debug(
                 f"🔓 Releasing connection (checked out: {self.engine.pool.checkedout()}, "
                 f"in pool: {self.engine.pool.checkedin()})"
             )
