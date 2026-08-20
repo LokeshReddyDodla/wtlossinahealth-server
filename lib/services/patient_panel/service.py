@@ -201,7 +201,7 @@ class PatientPanelService:
         await self._store.ensure_indexes()
 
     async def _fitness_window(self, patient_id: str) -> dict[str, Any]:
-        end = date.today()
+        end = datetime.now(timezone.utc).date()
         start = end - timedelta(days=_WINDOW_DAYS)
         reports = await self._safe(
             self._fitness.fetch_daily_reports_in_range(patient_id, start, end), []
@@ -209,7 +209,7 @@ class PatientPanelService:
         return fitness_inputs(reports)
 
     async def _sleep_window(self, patient_id: str) -> dict[str, Any]:
-        end = date.today()
+        end = datetime.now(timezone.utc).date()
         start = end - timedelta(days=_WINDOW_DAYS)
         reports = await self._safe(
             self._sleep.fetch_daily_reports_in_range(patient_id, start, end), []

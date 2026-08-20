@@ -207,15 +207,32 @@ class CGMReportService:
             other_cursor = self.cgm_report_collection.aggregate(
                 [
                     {
+                        # Dailies sit inside the custom window (containment);
+                        # weeklies are full ISO weeks that OVERLAP its edges —
+                        # containment would drop the first and last week of
+                        # every sensor period.
                         "$match": {
                             "patient_id": patient_id,
-                            "metadata.report_type": {"$in": ["daily", "weekly"]},
-                            "metadata.date_range.start": {
-                                "$gte": custom_report["metadata"]["date_range"]["start"]
-                            },
-                            "metadata.date_range.end": {
-                                "$lte": custom_report["metadata"]["date_range"]["end"]
-                            },
+                            "$or": [
+                                {
+                                    "metadata.report_type": "daily",
+                                    "metadata.date_range.start": {
+                                        "$gte": custom_report["metadata"]["date_range"]["start"]
+                                    },
+                                    "metadata.date_range.end": {
+                                        "$lte": custom_report["metadata"]["date_range"]["end"]
+                                    },
+                                },
+                                {
+                                    "metadata.report_type": "weekly",
+                                    "metadata.date_range.start": {
+                                        "$lte": custom_report["metadata"]["date_range"]["end"]
+                                    },
+                                    "metadata.date_range.end": {
+                                        "$gte": custom_report["metadata"]["date_range"]["start"]
+                                    },
+                                },
+                            ],
                         }
                     },
                     {

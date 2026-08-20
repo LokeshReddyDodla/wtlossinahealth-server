@@ -22,11 +22,15 @@ async def refresh_patient(ctx: dict[str, Any], patient_id: str) -> TaskResult:
     # still regenerate via legacy upload-path triggers until they migrate in.
     # A failure raises before the clear, so cells survive for the arq retry.
     domains = get_report_domains()
+    known = {d.value: d for d in DataDomain}
     days_by_domain: dict[DataDomain, list[date]] = {}
     for cell in cells:
-        days_by_domain.setdefault(DataDomain(cell["domain"]), []).append(
-            date.fromisoformat(cell["date"])
-        )
+        # A cell holding a retired domain value must not poison the drain —
+        # it still gets cleared below with the rest of the claim.
+        domain = known.get(cell["domain"])
+        if domain is None:
+            continue
+        days_by_domain.setdefault(domain, []).append(date.fromisoformat(cell["date"]))
 
     days_computed = 0
     for domain in sorted(days_by_domain, key=lambda d: d.value):
@@ -55,11 +59,15 @@ async def refresh_patient(ctx: dict[str, Any], patient_id: str) -> TaskResult:
     # (lapsed / data-gap) that no upload event can ever trigger.
     signal = await container.resolve(PatientPanelService).recompute(patient_id)
 
+    # Unregistered domains' cells are cleared too — they are kicks for the
+    # finalizers, not a banked backlog; a domain migrating in later needs its
+    # own backfill.
     await store.clear(patient_id, cells, claim_ts)
     if await store.has_dirty(patient_id):
-        # arq drops a duplicate _job_id while this run is in flight, so marks
-        # that landed mid-drain must be re-kicked from here.
-        await enqueue_refresh_patient(patient_id, defer_s=_RE_ENQUEUE_DEFER_S)
+        # arq drops a duplicate _job_id while that job is in flight — this run
+        # may BE the immediate or the deferred job, so the re-kick rides its
+        # own id, which can never be the one currently executing.
+        await enqueue_refresh_patient(patient_id, defer_s=_RE_ENQUEUE_DEFER_S, rekick=True)
 
     return TaskResult(
         success=True,

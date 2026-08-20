@@ -17,9 +17,10 @@ class DataDomain(str, Enum):
     MEAL = "meal"
     SLEEP = "sleep"
     FITNESS = "fitness"
+    # smbg/vitals are kick-only: no report domain (compute-on-read by
+    # decision), their cells exist to run the finalizers (panel).
     SMBG = "smbg"
     VITALS = "vitals"
-    WORKOUT = "workout"
 
 
 # User-action uploads drain immediately (the burst arrives inside one
