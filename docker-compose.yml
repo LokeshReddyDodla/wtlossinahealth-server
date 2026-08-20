@@ -153,9 +153,6 @@ services:
     container_name: aihealth-qdrant
     image: qdrant/qdrant:v1.11.0
     restart: unless-stopped
-    # Fully on-disk collection = one RocksDB per segment; a large backfill
-    # (2.6M points, 20+ unmerged segments) exhausts the default fd limit and
-    # flips the collection red with "Too many open files".
     ulimits:
       nofile:
         soft: 262144
