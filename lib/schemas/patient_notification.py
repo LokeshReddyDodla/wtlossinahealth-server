@@ -7,13 +7,16 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
-from lib.core.types import NotificationCategoryLiteral, NotificationSeverityLiteral
+from lib.core.types import NotificationSeverityLiteral
 
 
 class NotificationResponse(BaseModel):
     id: str
     patient_id: str
-    category: NotificationCategoryLiteral
+    # Open set: the broker accepts dynamic categories (policy.py owns their
+    # semantics and defaults unknowns to the safe tier), so a closed Literal
+    # here 500s the list the moment a new category is written.
+    category: str
     title: str
     body: str
     severity: Optional[NotificationSeverityLiteral] = None

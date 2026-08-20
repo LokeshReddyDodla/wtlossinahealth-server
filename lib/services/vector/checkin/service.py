@@ -36,7 +36,7 @@ class CheckinVectorService(BaseVectorService):
                 )
                 embedding = await embed_text(point["text"])
                 if embedding:
-                    await client.upsert(
+                    await self.qdrant_store.upsert_points(
                         collection_name=self.collection_name,
                         points=[PointStruct(
                             id=point["id"], vector=embedding, payload=point["payload"],
@@ -65,7 +65,7 @@ class CheckinVectorService(BaseVectorService):
                 )
                 embedding = await embed_text(point["text"])
                 if embedding:
-                    await client.upsert(
+                    await self.qdrant_store.upsert_points(
                         collection_name=self.collection_name,
                         points=[PointStruct(
                             id=point["id"], vector=embedding, payload=point["payload"],
@@ -190,7 +190,7 @@ class CheckinVectorService(BaseVectorService):
                 )
                 embedding = await embed_text(point["text"])
                 if embedding:
-                    await client.upsert(
+                    await self.qdrant_store.upsert_points(
                         collection_name=self.collection_name,
                         points=[PointStruct(
                             id=point["id"], vector=embedding, payload=point["payload"],
