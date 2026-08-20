@@ -144,6 +144,7 @@ class VitalsVectorService(BaseVectorService):
                 "heart_rate": vital.get("heart_rate"),
                 "ketones": vital.get("ketones"),
                 "respiratory_rate": vital.get("respiratory_rate"),
+                "resting_heart_rate": vital.get("resting_heart_rate"),
                 "spo2": vital.get("spo2"),
                 "temperature": vital.get("temperature"),
                 "weight": vital.get("weight"),

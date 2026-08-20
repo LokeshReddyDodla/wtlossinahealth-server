@@ -1,8 +1,10 @@
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel
+
+SMBGReadingType = Literal["fasting", "before_meal", "after_meal", "random"]
 
 
 class PatientSMBGBase(BaseModel):
@@ -10,7 +12,7 @@ class PatientSMBGBase(BaseModel):
     reading_time: datetime
     source_name: str
     source_platform: str
-    type: str  # pre_meal, post_meal, etc.
+    type: SMBGReadingType
     notes: Optional[str] = None
 
 

@@ -261,3 +261,19 @@ def test_vitals_canonical_naming():
     deduped = dedupe_latest_by_type(rows)
     assert [r["type"] for r in deduped] == ["spo2", "weight"]
     assert deduped[0]["value"] == 98
+
+
+def test_average_time_is_circular():
+    from datetime import datetime
+
+    from lib.services.reports.smbg.statistics import SMBGStatistics
+
+    # dinner window wraps midnight: 23:30 + 00:30 must average to midnight,
+    # not noon
+    late = datetime(2026, 8, 20, 23, 30)
+    early = datetime(2026, 8, 21, 0, 30)
+    assert SMBGStatistics.average_time([late, early]) == "00:00"
+    # non-wrapping times behave like the plain mean
+    assert SMBGStatistics.average_time(
+        [datetime(2026, 8, 20, 12, 0), datetime(2026, 8, 20, 14, 0)]
+    ) == "13:00"

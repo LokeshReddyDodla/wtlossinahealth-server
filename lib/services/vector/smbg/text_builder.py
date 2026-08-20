@@ -1,5 +1,10 @@
 """Text representation builder for SMBG data."""
 
+from lib.services.clinical_constants import (
+    GLUCOSE_HYPER_MGDL,
+    GLUCOSE_HYPO_MGDL,
+    GLUCOSE_SEVERE_HYPER_MGDL,
+)
 from datetime import datetime
 from typing import Any, Dict
 
@@ -62,14 +67,16 @@ class SMBGTextReprBuilder:
         Returns:
             Interpretation string
         """
-        if glucose < 70:
+        # Same ADA bands the SMBG report uses — the RAG text and the report
+        # must not disagree about whether a reading was in range.
+        if glucose < GLUCOSE_HYPO_MGDL:
             condition = "low (hypoglycemia)"
-        elif 70 <= glucose <= 130:
-            condition = "within normal range"
-        elif 130 < glucose <= 180:
-            condition = "slightly high"
-        else:
+        elif glucose <= GLUCOSE_HYPER_MGDL:
+            condition = "within target range (70-180 mg/dL)"
+        elif glucose <= GLUCOSE_SEVERE_HYPER_MGDL:
             condition = "high (hyperglycemia)"
+        else:
+            condition = "very high (severe hyperglycemia)"
 
         return (
             f"The glucose reading is {condition} for a {reading_type} reading."

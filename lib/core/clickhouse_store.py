@@ -229,13 +229,28 @@ class ClickHouseStore:
         ORDER BY date DESC, type
         """
         rows = self.client.execute(query)
-        return [
-            {
-                "date": str(r[0]), "type": canonical_vital_type(r[1]),
-                "avg": round(r[2], 1), "min": round(r[3], 1),
-                "max": round(r[4], 1), "count": r[5],
+        # GROUP BY runs on the raw type; a patient with rows under both a
+        # canonical name and its legacy alias would yield two rows for the
+        # same (date, canonical type) — merge them count-weighted.
+        merged: dict[tuple, dict] = {}
+        for r in rows:
+            key = (str(r[0]), canonical_vital_type(r[1]))
+            row = {
+                "date": key[0], "type": key[1],
+                "avg": r[2], "min": r[3], "max": r[4], "count": r[5],
             }
-            for r in rows
+            prior = merged.get(key)
+            if prior is None:
+                merged[key] = row
+            else:
+                total = prior["count"] + row["count"]
+                prior["avg"] = (prior["avg"] * prior["count"] + row["avg"] * row["count"]) / total
+                prior["min"] = min(prior["min"], row["min"])
+                prior["max"] = max(prior["max"], row["max"])
+                prior["count"] = total
+        return [
+            {**m, "avg": round(m["avg"], 1), "min": round(m["min"], 1), "max": round(m["max"], 1)}
+            for m in merged.values()
         ]
 
     def query_vitals_latest(
