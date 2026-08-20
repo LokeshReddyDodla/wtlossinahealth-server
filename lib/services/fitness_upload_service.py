@@ -3,6 +3,7 @@ from dateutil.parser import parse
 from loguru import logger
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from lib.core.clickhouse_store import canonical_vital_type
 from lib.core.postgres_store import PostgresStore
 from lib.derived import DataDomain, dates_between, mark_dirty
 from lib.models.patient_smbg import PatientSMBG
@@ -11,7 +12,6 @@ from lib.utils.postgres_session_decorator import with_postgres_session
 from rest_server.patients.fitness.api_schema import FitnessDataRequest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-_FITNESS_VITAL_KEY = {"blood_oxygen": "spo2", "body_temperature": "temperature"}
 _SLEEP_FIELDS = ("sleep_in_bed", "sleep_deep", "sleep_light", "sleep_rem", "sleep_awake")
 _DEVICE_VITAL_FIELDS = (
     "blood_pressure_systolic", "blood_pressure_diastolic", "heart_rate",
@@ -206,7 +206,7 @@ class FitnessUploadService:
         ]:
             for item in vital_data:
                 vitals_data_points.append({
-                    "patient_id": patient_id, "type": vital_type,
+                    "patient_id": patient_id, "type": canonical_vital_type(vital_type),
                     "value": item.value,
                     "time": parse(item.start_datetime).replace(tzinfo=None),
                     "source_name": item.source_name,
@@ -281,7 +281,7 @@ class FitnessUploadService:
     async def _enqueue_vitals_vector(self, patient_id: str, points: list[dict]) -> None:
         latest: dict[str, dict] = {}
         for p in points:
-            key = _FITNESS_VITAL_KEY.get(p["type"], p["type"])
+            key = canonical_vital_type(p["type"])
             if key in _VECTORIZED_VITALS and (key not in latest or p["time"] > latest[key]["time"]):
                 latest[key] = p
         if not latest:

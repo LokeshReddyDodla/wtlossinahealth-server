@@ -207,3 +207,43 @@ def test_slice_readings_around_meal_matches_per_meal_query_semantics():
     # the reading AT meal_time counts as "after" (matches r[0] >= meal_time).
     assert [r[0] for r in before] == [meal_time - timedelta(minutes=30), meal_time - timedelta(minutes=10)]
     assert [r[0] for r in after] == [meal_time + timedelta(minutes=m) for m in (0, 15, 60, 90)]
+
+
+def test_cgm_vector_windows_capped():
+    from datetime import timedelta
+
+    from lib.derived.domains.cgm import vector_windows
+
+    # A stale-frontier patient marks a day months back — one small window,
+    # never a months-wide span that dies on the vectors job timeout.
+    assert vector_windows([date(2026, 5, 27)]) == [(date(2026, 5, 27), date(2026, 5, 27))]
+
+    # A 366-day CSV backfill splits into <=31-day jobs covering every day.
+    days = [date(2026, 1, 1) + timedelta(days=i) for i in range(90)]
+    windows = vector_windows(days)
+    assert all((e - s).days < 31 for s, e in windows)
+    assert windows[0][0] == date(2026, 1, 1) and windows[-1][1] == date(2026, 3, 31)
+    covered = sum((e - s).days + 1 for s, e in windows)
+    assert covered == 90
+
+
+def test_vitals_canonical_naming():
+    from lib.core.clickhouse_store import (
+        canonical_vital_type,
+        dedupe_latest_by_type,
+        expand_vital_types,
+    )
+
+    assert canonical_vital_type("blood_oxygen") == "spo2"
+    assert canonical_vital_type("weight") == "weight"
+    assert set(expand_vital_types(["spo2", "weight"])) == {"spo2", "blood_oxygen", "weight"}
+
+    # newest-first rows: manual spo2 (new) + legacy device blood_oxygen (old)
+    rows = [
+        {"type": canonical_vital_type("spo2"), "value": 98, "time": 2, "source_name": "m"},
+        {"type": canonical_vital_type("blood_oxygen"), "value": 95, "time": 1, "source_name": "d"},
+        {"type": canonical_vital_type("weight"), "value": 80, "time": 1, "source_name": "d"},
+    ]
+    deduped = dedupe_latest_by_type(rows)
+    assert [r["type"] for r in deduped] == ["spo2", "weight"]
+    assert deduped[0]["value"] == 98

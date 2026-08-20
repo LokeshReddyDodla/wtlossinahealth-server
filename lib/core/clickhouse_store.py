@@ -11,6 +11,38 @@ CLICKHOUSE_PORT = os.getenv("CLICKHOUSE_PORT", "9000")
 CLICKHOUSE_USER = os.getenv("CLICKHOUSE_USER", "default")
 CLICKHOUSE_PASSWORD = str(os.getenv("CLICKHOUSE_PASSWORD", ""))
 
+# Manual vitals entries write spo2/temperature while device syncs historically
+# wrote blood_oxygen/body_temperature for the same measurements. Writes use
+# the canonical names; reads normalize legacy rows so no consumer sees both.
+CANONICAL_VITAL_TYPE = {"blood_oxygen": "spo2", "body_temperature": "temperature"}
+_VITAL_TYPE_ALIASES = {
+    "spo2": ("spo2", "blood_oxygen"),
+    "temperature": ("temperature", "body_temperature"),
+}
+
+
+def canonical_vital_type(vital_type: str) -> str:
+    return CANONICAL_VITAL_TYPE.get(vital_type, vital_type)
+
+
+def expand_vital_types(types: list[str]) -> list[str]:
+    """Filter values including the legacy aliases of each canonical type."""
+    return [alias for t in types for alias in _VITAL_TYPE_ALIASES.get(t, (t,))]
+
+
+def dedupe_latest_by_type(rows: list[dict]) -> list[dict]:
+    """Keep the first (newest — rows arrive time-DESC) row per canonical type;
+    a patient with both manual spo2 and legacy device blood_oxygen rows would
+    otherwise surface twice."""
+    seen: set[str] = set()
+    out: list[dict] = []
+    for r in rows:
+        if r["type"] in seen:
+            continue
+        seen.add(r["type"])
+        out.append(r)
+    return out
+
 
 class ClickHouseStore:
     def __init__(self):
@@ -152,7 +184,7 @@ class ClickHouseStore:
         if end_time:
             conditions.append(f"time <= toDateTime('{end_time}')")
         if types:
-            type_list = ", ".join(f"'{t}'" for t in types)
+            type_list = ", ".join(f"'{t}'" for t in expand_vital_types(types))
             conditions.append(f"type IN ({type_list})")
         where = " AND ".join(conditions)
 
@@ -169,7 +201,7 @@ class ClickHouseStore:
         rows = self.client.execute(data_query)
         return [
             {
-                "vital_id": r[0], "type": r[1], "value": r[2],
+                "vital_id": r[0], "type": canonical_vital_type(r[1]), "value": r[2],
                 "time": r[3], "source_name": r[4], "source_platform": r[5],
             }
             for r in rows
@@ -199,7 +231,7 @@ class ClickHouseStore:
         rows = self.client.execute(query)
         return [
             {
-                "date": str(r[0]), "type": r[1],
+                "date": str(r[0]), "type": canonical_vital_type(r[1]),
                 "avg": round(r[2], 1), "min": round(r[3], 1),
                 "max": round(r[4], 1), "count": r[5],
             }
@@ -223,10 +255,12 @@ class ClickHouseStore:
         LIMIT 1 BY type
         """
         rows = self.client.execute(query, params)
-        return [
-            {"type": r[0], "value": round(r[1], 2), "time": r[2], "source_name": r[3]}
-            for r in rows
-        ]
+        return dedupe_latest_by_type(
+            [
+                {"type": canonical_vital_type(r[0]), "value": round(r[1], 2), "time": r[2], "source_name": r[3]}
+                for r in rows
+            ]
+        )
 
     # -- Generic helpers ----------------------------------------------------
 
