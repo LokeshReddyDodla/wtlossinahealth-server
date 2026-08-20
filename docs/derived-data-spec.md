@@ -226,8 +226,8 @@ resolve-at-read (it reads materialized reports).
 | 2 | Meal implements `ReportDomain` (report+rollup into drain; vector ids forwarded) — proves the interface | `trigger_meal_tasks`, meal job-id hacks, meal-sync bespoke logic |
 | 3 | CGM domain (daily/weekly/custom into drain; LLU marks dirty) | CGM reconcile cron |
 | 4 | Sleep + fitness domains; report base class lands here (shared id/save/metadata/indexes) | month freshness filters, sleep `$set` save |
-| 5 | SMBG + vitals thin daily rollup docs join the drain (kills SMBG compute-per-request; starts retiring 8+ hand-rolled vitals SQL sites) | — |
-| 6 | Summary as finalizer #2 (resurrects the dead staleness chain); Admin Ops = mark-dirty endpoint | `mark_summary_stale_and_enqueue` corpse |
+| 5 | CANCELLED — SMBG/vitals stay compute-on-read. The SMBG report endpoint is cold and its queries cheap; ClickHouse aggregates vitals on read natively. Their dirty cells still drive the panel (their real consumer). Revisit only if the SMBG endpoint measures slow — then it is one compute_days domain away. The vitals hand-rolled-SQL duplication is a helper-consolidation refactor, not storage. | — |
+| 6 | Summary as finalizer #2 (resurrects the dead staleness chain) or deletion of the whole chain — product call; Admin Ops = mark-dirty endpoint | `mark_summary_stale_and_enqueue` corpse |
 
 ## 12. Scale envelope
 

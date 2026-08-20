@@ -13,11 +13,25 @@ from datetime import date, datetime, time, timedelta
 
 from loguru import logger
 
+from lib.derived.dirty import contiguous_runs
 from lib.derived.registry import DataDomain
 
 
 def week_mondays(days: list[date]) -> list[date]:
     return sorted({d - timedelta(days=d.weekday()) for d in days})
+
+
+def vector_windows(days: list[date], max_span_days: int = 31) -> list[tuple[date, date]]:
+    """Contiguous windows capped at max_span_days. One vector job per window —
+    a single job over a long span (year-old CSV, stale LLU frontier) embeds
+    thousands of points and dies on the VECTORS worker's 20-min job timeout."""
+    windows: list[tuple[date, date]] = []
+    for start, end in contiguous_runs(days):
+        while (end - start).days >= max_span_days:
+            windows.append((start, start + timedelta(days=max_span_days - 1)))
+            start = start + timedelta(days=max_span_days)
+        windows.append((start, end))
+    return windows
 
 
 class CGMReportDomain:
@@ -65,15 +79,17 @@ class CGMReportDomain:
             logger.warning(f"Patient profile not found for {patient_id}")
             return
 
-        start = datetime.combine(min(days), time.min)
-        end = max(datetime.combine(max(days), time.max), datetime.now())
-        await enqueue_job(
-            "generate_cgm_vectors",
-            patient_id,
-            patient.age,
-            patient.gender,
-            start,
-            end,
-            _job_id=f"cgm:vectors:{patient_id}:{datetime.now():%Y%m%d%H%M%S}",
-            _queue_name=Queues.VECTORS,
-        )
+        # Window covers exactly the dirty days — extending to now() turns a
+        # patient with an old data frontier into a months-wide window on
+        # every drain.
+        for i, (win_start, win_end) in enumerate(vector_windows(days)):
+            await enqueue_job(
+                "generate_cgm_vectors",
+                patient_id,
+                patient.age,
+                patient.gender,
+                datetime.combine(win_start, time.min),
+                datetime.combine(win_end, time.max),
+                _job_id=f"cgm:vectors:{patient_id}:{datetime.now():%Y%m%d%H%M%S}:{i}",
+                _queue_name=Queues.VECTORS,
+            )
