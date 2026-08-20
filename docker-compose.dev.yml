@@ -1,3 +1,13 @@
+x-worker-deps: &worker-deps
+  aihealth-arq-redis:
+    condition: service_healthy
+  aihealth-api:
+    condition: service_healthy
+  aihealth-postgres:
+    condition: service_healthy
+  aihealth-mongo:
+    condition: service_healthy
+
 services:
   # ==========================================
   # Core Application
@@ -33,6 +43,11 @@ services:
       # Celery
       - CELERY_BROKER_URL=${CELERY_BROKER_URL}
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
+      # ClickHouse
+      - CLICKHOUSE_HOST=${CLICKHOUSE_HOST}
+      - CLICKHOUSE_PORT=${CLICKHOUSE_PORT}
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
       # OpenAI
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       # Langfuse
@@ -44,12 +59,25 @@ services:
       - api_logs:/src/logs
       - alembic_data:/src/alembic/versions
       - .:/src
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/openapi.json"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
     depends_on:
-      - aihealth-redis
-      - aihealth-postgres
-      - aihealth-mongo
-      - aihealth-clickhouse
-      - aihealth-qdrant
+      aihealth-postgres:
+        condition: service_healthy
+      aihealth-pgbouncer:
+        condition: service_started
+      aihealth-mongo:
+        condition: service_healthy
+      aihealth-redis:
+        condition: service_healthy
+      aihealth-clickhouse:
+        condition: service_healthy
+      aihealth-qdrant:
+        condition: service_started
 
   # ==========================================
   # Databases
@@ -66,6 +94,11 @@ services:
       - POSTGRES_DB=${POSTGRES_DB}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   # Transaction-pooling proxy: app URLs point at aihealth-pgbouncer:5432
   # (host debugging via localhost:6432); alembic/POSTGRES_URL_SYNC stays
@@ -75,7 +108,8 @@ services:
     image: edoburu/pgbouncer:v1.24.1-p1
     restart: unless-stopped
     depends_on:
-      - aihealth-postgres
+      aihealth-postgres:
+        condition: service_healthy
     ports:
       - 6432:5432
     environment:
@@ -113,6 +147,12 @@ services:
       - --auth
       - --keyFile
       - /etc/mongo-keyfile/mongodb-keyfile
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh -u ${MONGO_INITDB_ROOT_USERNAME} -p ${MONGO_INITDB_ROOT_PASSWORD} --quiet --eval 'db.adminCommand({ping:1}).ok' | grep -q 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
 
   aihealth-redis:
     container_name: aihealth-redis
@@ -124,6 +164,11 @@ services:
       - "--requirepass ${REDIS_PASSWORD}"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   aihealth-clickhouse:
     container_name: aihealth-clickhouse
@@ -140,6 +185,12 @@ services:
       - CLICKHOUSE_BACKGROUND_MERGE_POOL_SIZE=2
     volumes:
       - clickhouse_data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
 
   aihealth-qdrant:
     container_name: aihealth-qdrant
@@ -216,14 +267,7 @@ services:
       - arq_logs:/var/log/arq
       - .:/src
     depends_on:
-      aihealth-arq-redis:
-        condition: service_healthy
-      aihealth-api:
-        condition: service_started
-      aihealth-postgres:
-        condition: service_started
-      aihealth-mongo:
-        condition: service_started
+      <<: *worker-deps
 
   aihealth-arq-worker-reports:
     container_name: aihealth-arq-worker-reports
@@ -258,14 +302,7 @@ services:
       - arq_logs:/var/log/arq
       - .:/src
     depends_on:
-      aihealth-arq-redis:
-        condition: service_healthy
-      aihealth-api:
-        condition: service_started
-      aihealth-postgres:
-        condition: service_started
-      aihealth-mongo:
-        condition: service_started
+      <<: *worker-deps
 
   aihealth-arq-worker-vectors:
     container_name: aihealth-arq-worker-vectors
@@ -300,14 +337,7 @@ services:
       - arq_logs:/var/log/arq
       - .:/src
     depends_on:
-      aihealth-arq-redis:
-        condition: service_healthy
-      aihealth-api:
-        condition: service_started
-      aihealth-postgres:
-        condition: service_started
-      aihealth-mongo:
-        condition: service_started
+      <<: *worker-deps
       aihealth-qdrant:
         condition: service_started
 
@@ -349,14 +379,9 @@ services:
       - arq_logs:/var/log/arq
       - .:/src
     depends_on:
-      aihealth-arq-redis:
-        condition: service_healthy
-      aihealth-api:
-        condition: service_started
-      aihealth-postgres:
-        condition: service_started
+      <<: *worker-deps
       aihealth-clickhouse:
-        condition: service_started
+        condition: service_healthy
 
   aihealth-arq-worker-instant:
     container_name: aihealth-arq-worker-instant
@@ -391,14 +416,7 @@ services:
       - arq_logs:/var/log/arq
       - .:/src
     depends_on:
-      aihealth-arq-redis:
-        condition: service_healthy
-      aihealth-api:
-        condition: service_started
-      aihealth-postgres:
-        condition: service_started
-      aihealth-mongo:
-        condition: service_started
+      <<: *worker-deps
 
   # ==========================================
   # Development Tools
