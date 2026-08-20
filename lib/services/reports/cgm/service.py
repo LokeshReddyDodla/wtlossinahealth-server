@@ -601,6 +601,18 @@ class CGMReportService:
                 report_dict["sleep_report_id"] = sleep_report_id
                 report_dict.pop("sleep_report", None)
 
+            if metadata.report_type == "daily" and not report.fitness_report:
+                # Daily reports skip generating embedded sub-reports (the
+                # derived drain owns fitness/sleep dailies); the FK is
+                # deterministic — same scheme, same day window — so the
+                # $lookup resolves once the sibling drain writes that day.
+                report_dict["fitness_report_id"] = self.fitness_report_service._generate_report_id(
+                    patient_id, "daily", metadata.date_range.start, metadata.date_range.end
+                )
+                report_dict["sleep_report_id"] = self.sleep_report_service._generate_report_id(
+                    patient_id, "daily", metadata.date_range.start, metadata.date_range.end
+                )
+
             report_dict.update(
                 {
                     "_id": report_id,

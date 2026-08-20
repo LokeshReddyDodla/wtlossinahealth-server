@@ -204,19 +204,25 @@ class CGMStatsProcessor:
                 delta_gmi=validate_float(0.02392 * (cur_avg - prev_avg)),
             )
 
-        fitness_report = await self.fitness_stats_processor.generate_custom_report(
-            patient_id,
-            start_date,
-            end_date,
-            report_type=report_type,
-        )
-
-        sleep_report = await self.sleep_stats_processor.generate_custom_report(
-            patient_id,
-            start_date,
-            end_date,
-            report_type=report_type,
-        )
+        # Daily reports skip the embedded fitness/sleep sub-reports — the
+        # derived drain generates those dailies independently, and the save
+        # layer sets the FK ids deterministically instead. Custom and weekly
+        # keep embedding (weekly ids aren't stable across generators).
+        fitness_report = None
+        sleep_report = None
+        if report_type != CGMReportType.DAILY:
+            fitness_report = await self.fitness_stats_processor.generate_custom_report(
+                patient_id,
+                start_date,
+                end_date,
+                report_type=report_type,
+            )
+            sleep_report = await self.sleep_stats_processor.generate_custom_report(
+                patient_id,
+                start_date,
+                end_date,
+                report_type=report_type,
+            )
 
         cgm_readings: Optional[List[CGMReading]] = None
         meal_report_id: Optional[str] = None
