@@ -143,15 +143,25 @@ def vitals_inputs(latest_vitals: list[dict[str, Any]] | None) -> dict[str, Any]:
 
 def smbg_inputs(readings: list[Any] | None) -> dict[str, Any]:
     vals = []
+    fasting_vals = []
     for r in readings or []:
         v = getattr(r, "glucose_level", None)
-        if v is None and isinstance(r, dict):
-            v = r.get("glucose_level")
+        reading_type = getattr(r, "type", None)
+        if isinstance(r, dict):
+            v = r.get("glucose_level") if v is None else v
+            reading_type = r.get("type") if reading_type is None else reading_type
         if isinstance(v, (int, float)):
             vals.append(v)
+            if reading_type == "fasting":
+                fasting_vals.append(v)
     if not vals:
         return {}
-    return {"smbg_avg": round(sum(vals) / len(vals))}
+    out: dict[str, Any] = {"smbg_avg": round(sum(vals) / len(vals))}
+    # Fasting finger-sticks are the lab-free fasting-glucose signal — this is
+    # what makes the "Fasting above goal" rule reachable for SMBG patients.
+    if fasting_vals:
+        out["fasting_glucose"] = round(sum(fasting_vals) / len(fasting_vals))
+    return out
 
 
 def weight_inputs(readings: list[dict[str, Any]] | None) -> dict[str, Any]:

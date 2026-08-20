@@ -134,16 +134,18 @@ class PatientPanelService:
         merged.update(vitals_inputs(latest_vitals))
         if merged.get("tir_pct") is None:
             smbg_since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=_WINDOW_DAYS)
-            merged.update(
-                smbg_inputs(
-                    await self._safe(
-                        self._smbg.get_patient_smbgs(
-                            patient_id, since=smbg_since, limit=_SMBG_FALLBACK_LIMIT
-                        ),
-                        [],
-                    )
+            smbg_vals = smbg_inputs(
+                await self._safe(
+                    self._smbg.get_patient_smbgs(
+                        patient_id, since=smbg_since, limit=_SMBG_FALLBACK_LIMIT
+                    ),
+                    [],
                 )
             )
+            if merged.get("fasting_glucose") is not None:
+                # An actual lab FBS from vitals outranks a finger-stick average.
+                smbg_vals.pop("fasting_glucose", None)
+            merged.update(smbg_vals)
         merged.update(weight_inputs(weight_history))
 
         inputs = PanelInputs(

@@ -234,6 +234,24 @@ def test_smbg_inputs_averages():
     assert smbg_inputs([SimpleNamespace(other=1)]) == {}
 
 
+def test_smbg_inputs_fasting_average():
+    from types import SimpleNamespace
+    rows = [
+        SimpleNamespace(glucose_level=140, type="fasting"),
+        SimpleNamespace(glucose_level=150, type="fasting"),
+        SimpleNamespace(glucose_level=200, type="after_meal"),
+    ]
+    out = smbg_inputs(rows)
+    assert out["fasting_glucose"] == 145  # fasting readings only
+    assert out["smbg_avg"] == 163  # overall mean still includes everything
+    # no fasting readings -> no fasting signal (rule stays silent, not zero)
+    assert "fasting_glucose" not in smbg_inputs(
+        [SimpleNamespace(glucose_level=120, type="random")]
+    )
+    # dict rows (device-sourced) work too
+    assert smbg_inputs([{"glucose_level": 132, "type": "fasting"}])["fasting_glucose"] == 132
+
+
 def test_weight_inputs_net_delta():
     rows = [{"time": "2026-06-01", "value": 90.0}, {"time": "2026-07-15", "value": 87.4}]
     assert weight_inputs(rows)["weight_delta_kg"] == -2.6
