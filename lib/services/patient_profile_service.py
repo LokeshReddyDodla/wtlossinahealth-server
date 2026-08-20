@@ -376,9 +376,9 @@ class PatientProfileService:
             await postgres_session.commit()
             await postgres_session.refresh(new_patient)
 
-            from lib.workers.tasks.patient_panel.recompute import enqueue_panel_recompute
+            from lib.derived import enqueue_refresh_patient
 
-            await enqueue_panel_recompute(str(new_patient.patient_id))
+            await enqueue_refresh_patient(str(new_patient.patient_id))
 
             return new_patient
 

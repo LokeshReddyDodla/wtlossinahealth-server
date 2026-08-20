@@ -5,9 +5,12 @@ server-side sorted/filtered query — no per-patient AI, no fan-out. Provider-ga
 and facility/CP-scoped exactly like the other dashboard-metrics roster reads.
 """
 
+from datetime import datetime, timedelta, timezone
+
 from fastapi import Depends, HTTPException, Query, status
 
 from lib.core.constants import ProfileTypeEnum
+from lib.derived import enqueue_refresh_patient
 from lib.dependencies.actor import Actor, get_current_actor
 from lib.dependencies.service_dependencies import get_patient_panel_service
 from lib.services.patient_panel.service import PatientPanelService
@@ -19,6 +22,29 @@ from rest_server.response_models import SuccessResponse
 
 from .read import resolve_patient_scope
 from .router import router
+
+_STALE_REFRESH_AFTER = timedelta(hours=6)
+
+
+async def _refresh_stale_rows(rows: list[dict]) -> None:
+    """A provider viewing the panel is the refresh trigger for time-based
+    transitions (lapsed / data-gap) — idle patients emit no upload events, so
+    those rules can only advance here. Enqueues are deduped per patient and
+    the list is served from the materialized docs, so this costs the request
+    nothing but the Redis round-trips."""
+    cutoff = datetime.now(timezone.utc) - _STALE_REFRESH_AFTER
+    for row in rows:
+        computed_at = row.get("computed_at")
+        try:
+            if computed_at is None:
+                continue
+            stamp = datetime.fromisoformat(str(computed_at))
+            if stamp.tzinfo is None:
+                stamp = stamp.replace(tzinfo=timezone.utc)
+            if stamp < cutoff:
+                await enqueue_refresh_patient(row["patient_id"])
+        except Exception:
+            continue
 
 
 @router.get("/patients/panel", response_model=SuccessResponse)
@@ -58,6 +84,7 @@ async def get_patient_panel(
         skip=(page - 1) * size,
         limit=size,
     )
+    await _refresh_stale_rows(rows)
     return SuccessResponse(
         message=f"{total} patients",
         data={"items": rows, "total": total, "page": page, "size": size},

@@ -123,6 +123,14 @@ async def on_startup() -> None:
         import logging
         logging.getLogger(__name__).warning(f"Failed patient_panel init: {e}")
 
+    # Derived-data engine — unique index that gives dirty cells set semantics.
+    try:
+        from lib.derived import get_dirty_store
+        await get_dirty_store().ensure_indexes()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Failed derived_dirty_cells init: {e}")
+
 
 @app.on_event("shutdown")
 async def on_shutdown() -> None:
