@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import math
 from datetime import date, datetime, time, timedelta
@@ -57,8 +58,9 @@ class FitnessStatsProcessor:
             manual = await self._fetch_manual_workouts(
                 patient_id, start_date.date(), end_date.date()
             )
-            return self._process_period(
-                patient_id, start_date, end_date, report_type, manual
+            return await asyncio.to_thread(
+                self._process_period,
+                patient_id, start_date, end_date, report_type, manual,
             )
         except Exception as e:
             logging.error(
@@ -82,6 +84,20 @@ class FitnessStatsProcessor:
         manual = await self._fetch_manual_workouts(
             patient_id, start_date.date(), end_date.date()
         )
+        # The period computations are serial sync ClickHouse round-trips —
+        # run them in a worker thread so the event loop stays free.
+        return await asyncio.to_thread(
+            self._generate_periods, patient_id, start_date, end_date, report_types, manual
+        )
+
+    def _generate_periods(
+        self,
+        patient_id: str,
+        start_date: datetime,
+        end_date: datetime,
+        report_types: List[str],
+        manual: list,
+    ) -> List[FitnessStats]:
         reports: List[FitnessStats] = []
 
         if FitnessReportType.MONTHLY in report_types:

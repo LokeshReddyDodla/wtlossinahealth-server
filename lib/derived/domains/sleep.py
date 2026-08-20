@@ -6,6 +6,7 @@ per window, so contiguous dirty days compute as one run instead of per-day.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import date, datetime, time, timedelta
 
 from loguru import logger
@@ -46,7 +47,9 @@ class SleepReportDomain:
         processor = get_sleep_stats_processor()
         checkins = await processor._fetch_sleep_checkins(patient_id, start, end)
         rec_min = await processor._recommended_sleep_minimum(patient_id)
-        reports = processor.generate_report(
+        # generate_report is sync ClickHouse work — keep it off the event loop.
+        reports = await asyncio.to_thread(
+            processor.generate_report,
             patient_id,
             start,
             end,
