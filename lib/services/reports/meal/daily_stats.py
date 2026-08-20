@@ -94,8 +94,8 @@ def slice_readings_around_meal(
     before_minutes: int = 30,
     after_minutes: int = 90,
 ):
-    """Split one pre-fetched (time, glucose) list into before/after windows —
-    the day is fetched once instead of one ClickHouse query per meal."""
+    """Split a pre-fetched (time, glucose) list into the meal's before/after
+    windows. A reading exactly at meal_time counts as "after"."""
     lo = meal_time - timedelta(minutes=before_minutes)
     hi = meal_time + timedelta(minutes=after_minutes)
     window = [r for r in readings if lo <= r[0] <= hi]

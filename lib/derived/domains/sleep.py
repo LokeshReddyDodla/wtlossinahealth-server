@@ -26,8 +26,8 @@ def month_bounds(days: list[date]) -> list[tuple[datetime, datetime]]:
 
 
 def week_windows(days: list[date]) -> list[tuple[datetime, datetime]]:
-    """Full ISO-week windows containing the given days — stable report ids,
-    so live data updates one weekly doc instead of accreting clipped variants."""
+    """Full ISO-week windows containing the given days — full weeks keep
+    the weekly report id stable across regenerations."""
     mondays = sorted({d - timedelta(days=d.weekday()) for d in days})
     return [
         (datetime.combine(m, time.min), datetime.combine(m + timedelta(days=6), time.max))

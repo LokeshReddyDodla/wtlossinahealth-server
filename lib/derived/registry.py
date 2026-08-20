@@ -22,11 +22,10 @@ class DataDomain(str, Enum):
     WORKOUT = "workout"
 
 
-# User-action uploads run immediately — users spam refresh right after a
-# sync, and the burst arrives inside one request anyway (one mark). The
-# single-flight job + durable cells coalesce overlapping work; only the
-# background LLU stream defers, to bound regen frequency for streamers
-# (and it rides a separate job id so it can never delay an immediate kick).
+# User-action uploads drain immediately (the burst arrives inside one
+# request; single-flight + durable cells coalesce the rest). Only the
+# background LLU stream defers, to bound regen frequency for streamers —
+# on a separate job id so it can never delay an immediate kick.
 _DEFAULT_DEFER_S = 0
 DOMAIN_DEFER_S: dict[DataDomain, int] = {
     DataDomain.CGM: 900,

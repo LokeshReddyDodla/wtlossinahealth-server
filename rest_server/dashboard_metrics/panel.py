@@ -29,9 +29,7 @@ _STALE_REFRESH_AFTER = timedelta(hours=6)
 async def _refresh_stale_rows(rows: list[dict]) -> None:
     """A provider viewing the panel is the refresh trigger for time-based
     transitions (lapsed / data-gap) — idle patients emit no upload events, so
-    those rules can only advance here. Enqueues are deduped per patient and
-    the list is served from the materialized docs, so this costs the request
-    nothing but the Redis round-trips."""
+    those rules can only advance here. Enqueues are deduped per patient."""
     cutoff = datetime.now(timezone.utc) - _STALE_REFRESH_AFTER
     for row in rows:
         computed_at = row.get("computed_at")

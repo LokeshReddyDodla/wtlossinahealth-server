@@ -47,6 +47,7 @@ class CGMUploadService:
         )
 
     def _parse_and_store_libreview(self, patient_id: str, file_contents: bytes):
+        """Sync CPU + insert work — callers run this via asyncio.to_thread."""
         decoded = file_contents.decode("utf-8")
         df = pd.read_csv(StringIO(decoded), skiprows=2)
 
@@ -72,8 +73,6 @@ class CGMUploadService:
         postgres_session: AsyncSession,
     ):
         try:
-            # pandas parse + extract + insert are CPU/sync work — run the lot
-            # in a thread so the request doesn't stall the event loop.
             data_points, report_periods, end_time = await asyncio.to_thread(
                 self._parse_and_store_libreview, patient_id, file_contents
             )

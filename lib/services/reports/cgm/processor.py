@@ -87,8 +87,7 @@ class CGMStatsProcessor:
     def get_readings_for_window(
         self, patient_id: str, start: datetime, end: datetime
     ) -> list:
-        """All (time, glucose) rows in the window, sorted — one round-trip that
-        callers slice per meal instead of querying per meal."""
+        """All (time, glucose) rows in the window, sorted by time."""
         query, params = generate_readings_window_query(
             patient_id,
             start.strftime("%Y-%m-%d %H:%M:%S"),
