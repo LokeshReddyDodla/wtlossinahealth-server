@@ -34,9 +34,16 @@ async def refresh_patient(ctx: dict[str, Any], patient_id: str) -> TaskResult:
         if impl is None:
             continue
         days = sorted(set(days_by_domain[domain]))
-        for day in days:
-            await impl.compute_daily(patient_id, day)
-            days_computed += 1
+        compute_days = getattr(impl, "compute_days", None)
+        if compute_days is not None:
+            # Batch-shaped domains (per-window input fetches) take the whole
+            # day set at once instead of a per-day loop.
+            await compute_days(patient_id, days)
+            days_computed += len(days)
+        else:
+            for day in days:
+                await impl.compute_daily(patient_id, day)
+                days_computed += 1
         rollup = getattr(impl, "rollup", None)
         if rollup is not None:
             await rollup(patient_id, days)

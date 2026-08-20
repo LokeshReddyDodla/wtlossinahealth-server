@@ -44,9 +44,13 @@ def get_report_domains() -> dict[DataDomain, object]:
     marked — its reports just keep regenerating via legacy triggers until it
     migrates in."""
     from lib.derived.domains.cgm import CGMReportDomain
+    from lib.derived.domains.fitness import FitnessReportDomain
     from lib.derived.domains.meal import MealReportDomain
+    from lib.derived.domains.sleep import SleepReportDomain
 
     return {
         DataDomain.MEAL: MealReportDomain(),
         DataDomain.CGM: CGMReportDomain(),
+        DataDomain.SLEEP: SleepReportDomain(),
+        DataDomain.FITNESS: FitnessReportDomain(),
     }

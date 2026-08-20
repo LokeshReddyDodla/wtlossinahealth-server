@@ -450,24 +450,12 @@ class PatientWorkoutService:
 
     @staticmethod
     async def _fire_report_regeneration(patient_id: str, workout_date) -> None:
-        """Enqueue fitness report regeneration so MongoDB reports include this workout."""
+        """Manual workouts fold into the fitness report, so a workout change
+        dirties the fitness day too."""
         from lib.derived import DataDomain, mark_dirty
 
         await mark_dirty(str(patient_id), DataDomain.WORKOUT, [workout_date])
-        try:
-            from datetime import datetime, time
-            from lib.workers.tasks.fitness.enqueue import (
-                enqueue_process_fitness_upload_async,
-            )
-            start_dt = datetime.combine(workout_date, time.min)
-            end_dt = datetime.combine(workout_date, time.max)
-            await enqueue_process_fitness_upload_async(
-                patient_id=str(patient_id),
-                start_date=start_dt,
-                end_date=end_dt,
-            )
-        except Exception as e:
-            logger.warning(f"Failed to enqueue report regeneration: {e}")
+        await mark_dirty(str(patient_id), DataDomain.FITNESS, [workout_date])
 
     @staticmethod
     async def _fire_gamification(patient_id: str) -> None:

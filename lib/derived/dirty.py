@@ -128,3 +128,16 @@ def dates_between(start: date, end: date, cap_days: int = 90) -> list[date]:
         start, end = end, start
     span = min((end - start).days, cap_days - 1)
     return [start + timedelta(days=i) for i in range(span + 1)]
+
+
+def contiguous_runs(days: list[date]) -> list[tuple[date, date]]:
+    """Sorted (start, end) runs of consecutive days — lets a batch-shaped
+    domain compute one window per run instead of per day, without a sparse
+    cell set (e.g. a January edit + today) regenerating the months between."""
+    runs: list[tuple[date, date]] = []
+    for d in sorted(set(days)):
+        if runs and (d - runs[-1][1]).days == 1:
+            runs[-1] = (runs[-1][0], d)
+        else:
+            runs.append((d, d))
+    return runs

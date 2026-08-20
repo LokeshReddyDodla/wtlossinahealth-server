@@ -119,22 +119,6 @@ class DailyCheckinService:
 
             await mark_dirty(str(patient_id), DataDomain.SLEEP, [checkin_date])
 
-            # Sleep report regen (fire-and-forget)
-            try:
-                from datetime import datetime as _dt
-                from datetime import time as _time
-
-                from lib.workers.tasks.sleep.enqueue import (
-                    enqueue_process_sleep_upload_async,
-                )
-                await enqueue_process_sleep_upload_async(
-                    patient_id,
-                    _dt.combine(checkin_date, _time.min),
-                    _dt.combine(checkin_date, _time.max),
-                )
-            except Exception as e:
-                logger.error(f"Failed to enqueue sleep report for {patient_id}: {e}")
-
             # Gamification hook (fire-and-forget)
             try:
                 from lib.core.container import container

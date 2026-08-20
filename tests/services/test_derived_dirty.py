@@ -130,9 +130,9 @@ def test_registered_domains():
     from lib.derived.registry import get_report_domains
 
     domains = get_report_domains()
-    assert DataDomain.MEAL in domains
-    assert DataDomain.CGM in domains
-    assert DataDomain.SLEEP not in domains  # legacy triggers still own sleep
+    for d in (DataDomain.MEAL, DataDomain.CGM, DataDomain.SLEEP, DataDomain.FITNESS):
+        assert d in domains
+    assert DataDomain.SMBG not in domains  # raw-read domains: panel reads them directly
 
 
 def test_cgm_week_mondays():
@@ -142,3 +142,28 @@ def test_cgm_week_mondays():
     days = [date(2026, 8, 20), date(2026, 8, 19), date(2026, 8, 24)]
     assert week_mondays(days) == [date(2026, 8, 17), date(2026, 8, 24)]
     assert week_mondays([date(2026, 8, 17)]) == [date(2026, 8, 17)]
+
+
+def test_contiguous_runs():
+    from lib.derived.dirty import contiguous_runs
+
+    days = [date(2026, 8, 20), date(2026, 8, 18), date(2026, 8, 19), date(2026, 8, 25)]
+    assert contiguous_runs(days) == [
+        (date(2026, 8, 18), date(2026, 8, 20)),
+        (date(2026, 8, 25), date(2026, 8, 25)),
+    ]
+    assert contiguous_runs([]) == []
+
+
+def test_month_and_week_windows():
+    from lib.derived.domains.sleep import month_bounds, week_windows
+
+    days = [date(2026, 12, 31), date(2027, 1, 1)]
+    months = month_bounds(days)
+    assert months[0][0].month == 12 and months[0][1].day == 31
+    assert months[1][0] == __import__("datetime").datetime(2027, 1, 1)
+    assert months[1][1].month == 1 and months[1][1].day == 31
+
+    weeks = week_windows([date(2026, 8, 20)])  # Thursday
+    assert weeks[0][0].date() == date(2026, 8, 17)  # Monday
+    assert weeks[0][1].date() == date(2026, 8, 23)  # Sunday

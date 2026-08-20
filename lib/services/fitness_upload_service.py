@@ -5,10 +5,6 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from lib.core.postgres_store import PostgresStore
 from lib.derived import DataDomain, dates_between, mark_dirty
 from lib.models.patient_smbg import PatientSMBG
-from lib.workers.tasks.fitness.enqueue import (
-    enqueue_process_fitness_upload_async,
-)
-from lib.workers.tasks.sleep.enqueue import enqueue_process_sleep_upload_async
 from lib.workers.tasks.vitals.enqueue import enqueue_generate_vital_vector_async
 from lib.utils.postgres_session_decorator import with_postgres_session
 from rest_server.patients.fitness.api_schema import FitnessDataRequest
@@ -67,11 +63,6 @@ class FitnessUploadService:
             await mark_dirty(patient_id, DataDomain.VITALS, span)
         if fitness_data.blood_glucose:
             await mark_dirty(patient_id, DataDomain.SMBG, span)
-
-        # Trigger report generation asynchronously
-        await enqueue_process_fitness_upload_async(patient_id, start_datetime, end_datetime)
-
-        await enqueue_process_sleep_upload_async(patient_id, start_datetime, end_datetime)
 
         # Gamification hook (fire-and-forget)
         try:
