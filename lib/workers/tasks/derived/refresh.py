@@ -22,13 +22,27 @@ async def refresh_patient(ctx: dict[str, Any], patient_id: str) -> TaskResult:
     # still regenerate via legacy upload-path triggers until they migrate in.
     # A failure raises before the clear, so cells survive for the arq retry.
     domains = get_report_domains()
+    days_by_domain: dict[DataDomain, list[date]] = {}
+    for cell in cells:
+        days_by_domain.setdefault(DataDomain(cell["domain"]), []).append(
+            date.fromisoformat(cell["date"])
+        )
+
     days_computed = 0
-    for cell in sorted(cells, key=lambda c: (c["domain"], c["date"])):
-        impl = domains.get(DataDomain(cell["domain"]))
+    for domain in sorted(days_by_domain, key=lambda d: d.value):
+        impl = domains.get(domain)
         if impl is None:
             continue
-        await impl.compute_daily(patient_id, date.fromisoformat(cell["date"]))
-        days_computed += 1
+        days = sorted(set(days_by_domain[domain]))
+        for day in days:
+            await impl.compute_daily(patient_id, day)
+            days_computed += 1
+        rollup = getattr(impl, "rollup", None)
+        if rollup is not None:
+            await rollup(patient_id, days)
+        vectorize = getattr(impl, "vectorize", None)
+        if vectorize is not None:
+            await vectorize(patient_id, days)
 
     # Finalizers run once, after every domain is fresh. An empty claim is the
     # provider-view stale-refresh path: recompute time-based transitions

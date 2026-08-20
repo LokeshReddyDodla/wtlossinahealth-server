@@ -42,7 +42,7 @@ class CGMUploadService:
         await mark_dirty(
             patient_id,
             DataDomain.CGM,
-            dates_between(min(times).date(), max(times).date()),
+            dates_between(min(times).date(), max(times).date(), cap_days=366),
             defer_s=defer_s,
         )
 

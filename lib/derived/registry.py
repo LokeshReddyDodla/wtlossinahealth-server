@@ -43,6 +43,10 @@ def get_report_domains() -> dict[DataDomain, object]:
     """Domains the drain computes. A domain absent here still gets its cells
     marked — its reports just keep regenerating via legacy triggers until it
     migrates in."""
+    from lib.derived.domains.cgm import CGMReportDomain
     from lib.derived.domains.meal import MealReportDomain
 
-    return {DataDomain.MEAL: MealReportDomain()}
+    return {
+        DataDomain.MEAL: MealReportDomain(),
+        DataDomain.CGM: CGMReportDomain(),
+    }

@@ -126,9 +126,19 @@ async def test_meal_domain_computes_and_saves(monkeypatch):
     assert calls["saved"]["patient_id"] == "p1"
 
 
-def test_meal_domain_registered():
+def test_registered_domains():
     from lib.derived.registry import get_report_domains
 
     domains = get_report_domains()
     assert DataDomain.MEAL in domains
-    assert DataDomain.CGM not in domains  # legacy triggers still own CGM
+    assert DataDomain.CGM in domains
+    assert DataDomain.SLEEP not in domains  # legacy triggers still own sleep
+
+
+def test_cgm_week_mondays():
+    from lib.derived.domains.cgm import week_mondays
+
+    # Wed Aug 19 + Thu Aug 20 2026 share a week; Mon Aug 24 starts the next.
+    days = [date(2026, 8, 20), date(2026, 8, 19), date(2026, 8, 24)]
+    assert week_mondays(days) == [date(2026, 8, 17), date(2026, 8, 24)]
+    assert week_mondays([date(2026, 8, 17)]) == [date(2026, 8, 17)]

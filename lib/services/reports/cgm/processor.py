@@ -108,7 +108,10 @@ class CGMStatsProcessor:
         patient_id: str,
         start_date: datetime,
         end_date: datetime,
+        report_types: set[str] | None = None,
     ) -> List[CGMStats]:
+        """Generate reports for the window. `report_types` narrows which of
+        custom/daily/weekly are produced (None = all three)."""
         start_date = start_date.replace(
             hour=0, minute=0, second=0, microsecond=0
         )
@@ -118,28 +121,28 @@ class CGMStatsProcessor:
 
         reports: List[CGMStats] = []
 
-        # Overall
-        reports.append(
-            await self._process_period(
-                patient_id, start_date, end_date, CGMReportType.CUSTOM
+        if report_types is None or CGMReportType.CUSTOM in report_types:
+            reports.append(
+                await self._process_period(
+                    patient_id, start_date, end_date, CGMReportType.CUSTOM
+                )
             )
-        )
 
-        # Daily
-        day_periods = DayWisePeriod(start_date, end_date).periods
-        reports.extend(
-            await self._process_multiple_periods(
-                patient_id, day_periods, CGMReportType.DAILY
+        if report_types is None or CGMReportType.DAILY in report_types:
+            day_periods = DayWisePeriod(start_date, end_date).periods
+            reports.extend(
+                await self._process_multiple_periods(
+                    patient_id, day_periods, CGMReportType.DAILY
+                )
             )
-        )
 
-        # Weekly
-        week_periods = WeekWisePeriod(start_date, end_date).periods
-        reports.extend(
-            await self._process_multiple_periods(
-                patient_id, week_periods, CGMReportType.WEEKLY
+        if report_types is None or CGMReportType.WEEKLY in report_types:
+            week_periods = WeekWisePeriod(start_date, end_date).periods
+            reports.extend(
+                await self._process_multiple_periods(
+                    patient_id, week_periods, CGMReportType.WEEKLY
+                )
             )
-        )
 
         return reports
 
