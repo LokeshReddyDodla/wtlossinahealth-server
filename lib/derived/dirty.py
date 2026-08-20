@@ -17,17 +17,21 @@ from pymongo import UpdateOne
 
 COLLECTION_NAME = "derived_dirty_cells"
 REFRESH_TASK = "refresh_patient"
-_RE_ENQUEUE_DEFER_S = 60
+_RE_ENQUEUE_DEFER_S = 30
 # Backfills can legitimately touch months; anything wider is almost certainly
 # a caller bug and would bloat the cell set.
 _MAX_DATES_PER_MARK = 366
 
 
-def _refresh_job_id(patient_id: str) -> str:
+def _refresh_job_id(patient_id: str, deferred: bool = False) -> str:
     # Stable per-patient id: arq drops a duplicate while one is queued or
     # running (keep_result=0 keeps the result key from blocking re-enqueue).
     # Marks landing mid-run are covered by the drain's self-re-enqueue.
-    return f"derived:refresh:{patient_id}"
+    # Deferred (background-stream) kicks ride their own id so a pending slow
+    # job can never absorb-and-delay a user-action's immediate kick; the
+    # occasional extra run finds an empty dirty set and costs one cheap
+    # finalizer pass.
+    return f"derived:refresh:{patient_id}:deferred" if deferred else f"derived:refresh:{patient_id}"
 
 
 class DirtyCellStore:
@@ -94,7 +98,7 @@ async def enqueue_refresh_patient(patient_id: str, defer_s: int | None = None) -
         await enqueue_job(
             REFRESH_TASK,
             patient_id,
-            _job_id=_refresh_job_id(patient_id),
+            _job_id=_refresh_job_id(patient_id, deferred=bool(defer_s)),
             _queue_name=Queues.REPORTS,
             _defer_by=timedelta(seconds=defer_s) if defer_s else None,
         )

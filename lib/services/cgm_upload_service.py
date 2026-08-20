@@ -70,7 +70,7 @@ class CGMUploadService:
             report_periods = self._generate_report_periods(df)
 
             self.clickhouse_store.write_data("aihealth.cgm_data", data_points)
-            await self._mark_cgm_dirty(patient_id, data_points, defer_s=60)
+            await self._mark_cgm_dirty(patient_id, data_points, defer_s=0)
 
             await self._enqueue_meal_report_refresh(
                 postgres_session, patient_id, "libreview", end_time
@@ -190,7 +190,7 @@ class CGMUploadService:
             data_points = self._extract_sinocare_data_points(df, patient_id)
 
             self.clickhouse_store.write_data("aihealth.cgm_data", data_points)
-            await self._mark_cgm_dirty(patient_id, data_points, defer_s=60)
+            await self._mark_cgm_dirty(patient_id, data_points, defer_s=0)
 
             await self._enqueue_meal_report_refresh(
                 postgres_session, patient_id, "sinocare", end_time
@@ -246,7 +246,7 @@ class CGMUploadService:
 
             data_points = self._extract_linx_data_points(df, patient_id)
             self.clickhouse_store.write_data("aihealth.cgm_data", data_points)
-            await self._mark_cgm_dirty(patient_id, data_points, defer_s=60)
+            await self._mark_cgm_dirty(patient_id, data_points, defer_s=0)
 
             await self._enqueue_meal_report_refresh(
                 postgres_session, patient_id, "linx", end_time

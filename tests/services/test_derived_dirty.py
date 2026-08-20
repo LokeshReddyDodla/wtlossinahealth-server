@@ -92,9 +92,16 @@ async def test_claim_scoped_per_patient():
 
 
 def test_defer_table():
-    assert defer_for(DataDomain.CGM) == 900
-    assert defer_for(DataDomain.MEAL) == 60
-    assert defer_for(DataDomain.FITNESS) == 120
+    assert defer_for(DataDomain.CGM) == 900  # background stream only
+    assert defer_for(DataDomain.MEAL) == 0  # user actions run immediately
+    assert defer_for(DataDomain.FITNESS) == 0
+
+
+def test_deferred_kick_has_own_job_id():
+    from lib.derived.dirty import _refresh_job_id
+
+    # A pending slow (stream) job must never dedup away a user-action kick.
+    assert _refresh_job_id("p1") != _refresh_job_id("p1", deferred=True)
 
 
 @pytest.mark.asyncio
