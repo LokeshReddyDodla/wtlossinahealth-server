@@ -44,3 +44,47 @@ def test_group_vital_rows_rebuilds_task_payload():
     assert grouped["v1"]["diastolic_bp"] == 85.0
     assert grouped["v1"]["test_time"] == t
     assert grouped["v2"]["weight"] == 80.0
+
+
+def test_report_gap_marks_daily_and_rollups():
+    from datetime import date, timedelta
+
+    from lib.workers.tasks.vector_coverage.sweep import report_gap_marks
+
+    # Aug 18 (Tue) + Aug 20 (Thu) 2026 have source data; Aug 20's daily is
+    # missing, the ISO week (Mon Aug 17) has no weekly doc, month has one.
+    source = {date(2026, 8, 18), date(2026, 8, 20)}
+    marks = report_gap_marks(
+        source_days=source,
+        daily_days={date(2026, 8, 18)},
+        weekly_starts=set(),
+        monthly_starts={date(2026, 8, 1)},
+        has_rollups=True,
+    )
+    assert marks == {date(2026, 8, 20), date(2026, 8, 17)}
+
+    # full coverage -> nothing marked
+    assert report_gap_marks(
+        source_days=source,
+        daily_days=source,
+        weekly_starts={date(2026, 8, 17)},
+        monthly_starts={date(2026, 8, 1)},
+        has_rollups=True,
+    ) == set()
+
+    # meal-shaped (no rollups): only daily diffs, no monday/first-of-month marks
+    assert report_gap_marks(source, set(), set(), set(), has_rollups=False) == source
+
+
+def test_doc_dates_handles_both_shapes():
+    from datetime import date
+
+    from lib.workers.tasks.vector_coverage.sweep import _doc_dates
+
+    meal_docs = [{"date": "2026-08-20"}, {"date": None}, {}]
+    assert _doc_dates(meal_docs, "date") == {date(2026, 8, 20)}
+    report_docs = [
+        {"metadata": {"date_range": {"start": "2026-08-17T00:00:00"}}},
+        {"metadata": {}},
+    ]
+    assert _doc_dates(report_docs, "start") == {date(2026, 8, 17)}
