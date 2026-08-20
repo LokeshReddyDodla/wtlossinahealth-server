@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from lib.core.postgres_store import PostgresStore
+from lib.derived import DataDomain, mark_dirty
 from lib.models.patient_smbg import PatientSMBG as PatientSMBGModel
 from lib.schemas.patient_smbg import PatientSMBGCreate
 from lib.services.patient_profile_service import PatientProfileService
@@ -97,6 +98,7 @@ class PatientSmbgService:
                 reading_id=str(new_smbg.id),
                 reading_data=reading_data,
             )
+            await mark_dirty(patient_id, DataDomain.SMBG, [new_smbg.reading_time.date()])
 
             return new_smbg
 
@@ -132,6 +134,7 @@ class PatientSmbgService:
                     message="SMBG record not found",
                 )
 
+            old_reading_date = smbg_record.reading_time.date()
             smbg_record.glucose_level = update_data.glucose_level
             smbg_record.reading_time = update_data.reading_time
             smbg_record.source_name = update_data.source_name
@@ -154,6 +157,11 @@ class PatientSmbgService:
                 patient_id=patient_id,
                 reading_id=str(smbg_record.id),
                 reading_data=reading_data,
+            )
+            await mark_dirty(
+                patient_id,
+                DataDomain.SMBG,
+                {old_reading_date, smbg_record.reading_time.date()},
             )
 
             try:
@@ -193,8 +201,10 @@ class PatientSmbgService:
                     message="SMBG record not found",
                 )
 
+            deleted_reading_date = smbg_record.reading_time.date()
             await postgres_session.delete(smbg_record)
             await postgres_session.commit()
+            await mark_dirty(patient_id, DataDomain.SMBG, [deleted_reading_date])
 
             try:
                 await self.smbg_vector_service.delete_smbg_vector(smbg_id)

@@ -451,6 +451,9 @@ class PatientWorkoutService:
     @staticmethod
     async def _fire_report_regeneration(patient_id: str, workout_date) -> None:
         """Enqueue fitness report regeneration so MongoDB reports include this workout."""
+        from lib.derived import DataDomain, mark_dirty
+
+        await mark_dirty(str(patient_id), DataDomain.WORKOUT, [workout_date])
         try:
             from datetime import datetime, time
             from lib.workers.tasks.fitness.enqueue import (

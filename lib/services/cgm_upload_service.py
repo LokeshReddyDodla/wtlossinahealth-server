@@ -21,6 +21,7 @@ from lib.utils.libre_view_sensor_report_generator import SensorLifecycleReportGe
 from lib.utils.postgres_session_decorator import with_postgres_session
 from lib.workers.arq.config import Queues
 from lib.workers.arq.redis import enqueue_job
+from lib.derived import DataDomain, dates_between, mark_dirty
 from lib.workers.tasks.cgm.enqueue import enqueue_cgm_report_generation_async
 
 # First CGM connect has no prior reading frontier; cap the meal-report backfill
@@ -34,6 +35,17 @@ class CGMUploadService:
         self.postgres_store = postgres_store
 
     @with_postgres_session
+    async def _mark_cgm_dirty(self, patient_id: str, points: List[dict], defer_s: int | None) -> None:
+        if not points:
+            return
+        times = [p["time"] for p in points]
+        await mark_dirty(
+            patient_id,
+            DataDomain.CGM,
+            dates_between(min(times).date(), max(times).date()),
+            defer_s=defer_s,
+        )
+
     async def parse_and_upload_libreview_raw_csv_data(
         self,
         patient_id: str,
@@ -58,6 +70,7 @@ class CGMUploadService:
             report_periods = self._generate_report_periods(df)
 
             self.clickhouse_store.write_data("aihealth.cgm_data", data_points)
+            await self._mark_cgm_dirty(patient_id, data_points, defer_s=60)
 
             await self._enqueue_meal_report_refresh(
                 postgres_session, patient_id, "libreview", end_time
@@ -110,6 +123,7 @@ class CGMUploadService:
             return 0
 
         self.clickhouse_store.write_data("aihealth.cgm_data", rows)
+        await self._mark_cgm_dirty(patient_id, rows, defer_s=None)
 
         latest_reading_time = max(r["time"] for r in rows)
         await self._enqueue_meal_report_refresh(
@@ -176,6 +190,7 @@ class CGMUploadService:
             data_points = self._extract_sinocare_data_points(df, patient_id)
 
             self.clickhouse_store.write_data("aihealth.cgm_data", data_points)
+            await self._mark_cgm_dirty(patient_id, data_points, defer_s=60)
 
             await self._enqueue_meal_report_refresh(
                 postgres_session, patient_id, "sinocare", end_time
@@ -231,6 +246,7 @@ class CGMUploadService:
 
             data_points = self._extract_linx_data_points(df, patient_id)
             self.clickhouse_store.write_data("aihealth.cgm_data", data_points)
+            await self._mark_cgm_dirty(patient_id, data_points, defer_s=60)
 
             await self._enqueue_meal_report_refresh(
                 postgres_session, patient_id, "linx", end_time

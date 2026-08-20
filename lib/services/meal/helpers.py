@@ -124,6 +124,9 @@ async def trigger_meal_tasks(
     stored at save) — re-running would be a wasted LLM call and could drift
     from what the user saw.
     """
+    from lib.derived import DataDomain, mark_dirty
+
+    await mark_dirty(patient_id, DataDomain.MEAL, [meal_date])
     try:
         await enqueue_daily_meal_report_async(str(patient_id), meal_date)
     except Exception:

@@ -115,6 +115,10 @@ class DailyCheckinService:
             except Exception as e:
                 logger.error(f"Failed to vectorize sleep for {patient_id}: {e}")
 
+            from lib.derived import DataDomain, mark_dirty
+
+            await mark_dirty(str(patient_id), DataDomain.SLEEP, [checkin_date])
+
             # Sleep report regen (fire-and-forget)
             try:
                 from datetime import datetime as _dt

@@ -505,6 +505,9 @@ class MealService:
                 run_analysis=client_analysis is None,
             )
             if old_date != meal.date:
+                from lib.derived import DataDomain, mark_dirty
+
+                await mark_dirty(str(patient_id), DataDomain.MEAL, [old_date])
                 try:
                     await enqueue_daily_meal_report_async(str(patient_id), old_date)
                 except Exception:
@@ -623,6 +626,9 @@ class MealService:
             await postgres_session.delete(meal)
             await postgres_session.commit()
 
+            from lib.derived import DataDomain, mark_dirty
+
+            await mark_dirty(str(patient_id), DataDomain.MEAL, [meal_date])
             await enqueue_daily_meal_report_async(str(patient_id), meal_date)
             try:
                 await self.meal_vector_service.delete_meal_vector(str(meal_id))

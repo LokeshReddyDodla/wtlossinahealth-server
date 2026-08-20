@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from uuid import uuid4
 
 from lib.core.clickhouse_store import ClickHouseStore
+from lib.derived import DataDomain, mark_dirty
 from lib.schemas.patient_vital import PatientVitalCreate
 from lib.services.patient_summary.enum import StaleReason
 from lib.utils.patient_summary_stale import mark_summary_stale_and_enqueue
@@ -98,6 +99,7 @@ class PatientVitalService:
 
         if rows:
             self.clickhouse.write_data("aihealth.vitals_data", rows)
+            await mark_dirty(patient_id, DataDomain.VITALS, [test_time.date()])
 
         # Mark affected summaries as stale
         await mark_summary_stale_and_enqueue(
