@@ -1,6 +1,7 @@
 import asyncio
 from datetime import datetime
 import hashlib
+import logging
 from typing import Any, List, Optional
 from fastapi import UploadFile
 from openai import AsyncOpenAI
@@ -9,6 +10,7 @@ from lib.core.mongo_store import MongoStore
 from lib.core.qdrant_store import QdrantStore
 from lib.core.types import DocumentTypeLiteral
 
+from lib.services.document_classification import classify_document
 from lib.services.file_content_extractor import FileContentExtractorService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.date_utils import extract_date_from_text
@@ -18,6 +20,9 @@ from lib.utils.s3_utils import upload_file_to_s3
 from qdrant_client.http.models import PointStruct
 
 from lib.utils.vector_utils import embed_text
+
+
+logger = logging.getLogger(__name__)
 
 
 class PatientDocumentService:
@@ -168,7 +173,15 @@ class PatientDocumentService:
                 extract_date_from_text(summary_text) or datetime.now()
             )
 
-            # Build Mongo document
+            # Classify the extracted text (rule-based, no LLM, no I/O)
+            classification = self._classify_document(
+                extracted_text=extracted_text,
+                file_name=file_name,
+                content_type=content_type,
+                document_type=document_type,
+            )
+
+            # Build Mongo document, classification included
             mongo_doc = self._build_mongo_document(
                 patient_id,
                 file_url,
@@ -181,7 +194,10 @@ class PatientDocumentService:
                 uploaded_by_id,
                 uploaded_by_type,
                 document_date,
+                classification,
             )
+
+            # Store the fully-assembled document
             inserted = await self.patient_document_collection.insert_one(mongo_doc)  # type: ignore
             document_id = str(inserted.inserted_id)
 
@@ -259,6 +275,36 @@ class PatientDocumentService:
             prompt=repr_prompt, model="gpt-4o-mini"
         )
 
+    def _classify_document(
+        self,
+        extracted_text: str,
+        file_name: str,
+        content_type: str,
+        document_type: str,
+    ) -> dict:
+        """Stamp the rule-based classification onto the doc at ingest.
+
+        The engine is pure and synchronous (no LLM, no I/O), so this costs
+        microseconds. Classification is metadata, never the reason an upload
+        fails: any engine error is logged and the document is stored
+        unstamped, which the backfill sweep
+        (scripts/classify_patient_documents.py) picks up on its next run.
+        """
+        try:
+            return classify_document(
+                extracted_text,
+                file_name=file_name,
+                mime_type=content_type,
+                category=document_type,
+            ).to_mongo()
+        except Exception:
+            logger.exception(
+                "Classification failed for %s; storing document unstamped "
+                "for the sweep to pick up.",
+                file_name,
+            )
+            return {}
+
     def _build_mongo_document(
         self,
         patient_id: str,
@@ -272,9 +318,10 @@ class PatientDocumentService:
         uploaded_by_id: str,
         uploaded_by_type: ProfileTypeEnum,
         document_date: datetime,
+        classification: Optional[dict] = None,
     ) -> dict:
         now = datetime.now()
-        return {
+        doc = {
             "patient_id": patient_id,
             "file": {
                 "url": file_url,
@@ -295,6 +342,14 @@ class PatientDocumentService:
                 "document_date": document_date,
             },
         }
+
+        # Only set the key when the engine actually produced a result. An
+        # empty dict would satisfy the sweep's {"classification": {"$exists":
+        # False}} filter and strand the document permanently unclassified.
+        if classification:
+            doc["classification"] = classification
+
+        return doc
 
     def _build_embedding_payload(
         self,
