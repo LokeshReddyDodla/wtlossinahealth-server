@@ -73,14 +73,18 @@ class QdrantStore:
             return
 
         async with self.get_client() as client:
-            try:
-                await client.get_collection(collection_name=QDRANT_COLLECTION)
+            # Existence must be a definitive answer: a failed check (timeout,
+            # refused connection, half-started Qdrant) aborts startup rather
+            # than falling through to creation — recreate_collection deletes
+            # the collection first.
+            exists = await client.collection_exists(collection_name=QDRANT_COLLECTION)
+            if exists:
                 logger.info(
                     f"✅ Qdrant collection '{QDRANT_COLLECTION}' already exists"
                 )
-            except Exception:
+            else:
                 logger.info(f"🆕 Creating Qdrant collection '{QDRANT_COLLECTION}'")
-                await client.recreate_collection(
+                await client.create_collection(
                     collection_name=QDRANT_COLLECTION,
                     vectors_config=VectorParams(
                         size=3072, distance=Distance.COSINE, on_disk=True
