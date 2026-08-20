@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 
+from loguru import logger
+
 from datetime import datetime, timedelta
 from uuid import uuid4
 
@@ -66,15 +68,17 @@ class PatientVitalService:
 
     async def get_weight_history(self, patient_id: str, days: int = 60) -> list[dict]:
         """Weight readings over the trailing window, for weight-trend triage."""
-        # ClickHouse toDateTime() only accepts second precision.
-        end = datetime.utcnow().replace(microsecond=0)
+        # Vitals `time` is patient-local naive; a bare utcnow() upper bound
+        # would exclude the newest readings for anyone east of UTC. ClickHouse
+        # toDateTime() only accepts second precision.
+        now = datetime.utcnow().replace(microsecond=0)
         rows, _ = await asyncio.to_thread(
             self.clickhouse.query_vitals,
             patient_id,
-            start_time=end - timedelta(days=days),
-            end_time=end,
+            start_time=now - timedelta(days=days),
+            end_time=now + timedelta(days=1),
             types=["weight"],
-            limit=200,
+            limit=1000,
         )
         return rows
 
@@ -106,7 +110,7 @@ class PatientVitalService:
                 })
 
         if rows:
-            self.clickhouse.write_data("aihealth.vitals_data", rows)
+            await self.clickhouse.awrite_data("aihealth.vitals_data", rows)
             await mark_dirty(patient_id, DataDomain.VITALS, [test_time.date()])
 
         # Mark affected summaries as stale
@@ -151,5 +155,12 @@ class PatientVitalService:
         return {"vital_id": vital_id, "rows_written": len(rows)}
 
     async def delete_vital(self, vital_id: str, patient_id: str) -> None:
-        """Delete all rows for a vital_id from ClickHouse."""
-        self.clickhouse.delete_vitals_by_vital_id(patient_id, vital_id)
+        """Delete all rows for a vital_id from ClickHouse and its Qdrant point —
+        an orphaned point would be cited by the agent forever."""
+        await asyncio.to_thread(self.clickhouse.delete_vitals_by_vital_id, patient_id, vital_id)
+        try:
+            from lib.dependencies.service_dependencies import get_vitals_vector_service
+
+            await get_vitals_vector_service().delete_vital_vector(vital_id)
+        except Exception as e:
+            logger.warning(f"Failed to delete vital vector {vital_id}: {e}")

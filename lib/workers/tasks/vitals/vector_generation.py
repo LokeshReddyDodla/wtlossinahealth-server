@@ -52,12 +52,9 @@ async def generate_vital_vector(
         )
 
     except Exception as e:
+        # Re-raise: the upsert is idempotent — let arq retry.
         logger.error(f"Failed to generate vital vector for {patient_id}: {e}")
-        return TaskResult(
-            success=False,
-            error=str(e),
-            data={"patient_id": patient_id, "vital_id": vital_id},
-        )
+        raise
 
 
 async def _enqueue_vital_vector(

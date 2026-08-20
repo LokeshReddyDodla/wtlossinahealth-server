@@ -1,5 +1,6 @@
 """CGM Upload Service - handles file parsing and data ingestion."""
 
+import asyncio
 from datetime import datetime, timedelta
 from io import BytesIO, StringIO
 from typing import List
@@ -45,6 +46,24 @@ class CGMUploadService:
             defer_s=defer_s,
         )
 
+    def _parse_and_store_libreview(self, patient_id: str, file_contents: bytes):
+        """Sync CPU + insert work — callers run this via asyncio.to_thread."""
+        decoded = file_contents.decode("utf-8")
+        df = pd.read_csv(StringIO(decoded), skiprows=2)
+
+        df["Device Timestamp"] = pd.to_datetime(
+            df["Device Timestamp"],
+            format="%d-%m-%Y %I:%M %p",
+            errors="coerce",
+        ).dt.tz_localize(None)
+        df = df.dropna(subset=["Device Timestamp"])
+
+        end_time = df["Device Timestamp"].max()
+        data_points = self._extract_libreview_data_points(df, patient_id)
+        report_periods = self._generate_report_periods(df)
+        self.clickhouse_store.write_data("aihealth.cgm_data", data_points)
+        return data_points, report_periods, end_time
+
     @with_postgres_session
     async def parse_and_upload_libreview_raw_csv_data(
         self,
@@ -54,23 +73,10 @@ class CGMUploadService:
         postgres_session: AsyncSession,
     ):
         try:
-            decoded = file_contents.decode("utf-8")
-            df = pd.read_csv(StringIO(decoded), skiprows=2)
-
-            df["Device Timestamp"] = pd.to_datetime(
-                df["Device Timestamp"],
-                format="%d-%m-%Y %I:%M %p",
-                errors="coerce",
-            ).dt.tz_localize(None)
-            df = df.dropna(subset=["Device Timestamp"])
-
-            end_time = df["Device Timestamp"].max()
-
-            data_points = self._extract_libreview_data_points(df, patient_id)
-            report_periods = self._generate_report_periods(df)
-
-            self.clickhouse_store.write_data("aihealth.cgm_data", data_points)
-            await self._mark_cgm_dirty(patient_id, data_points, defer_s=60)
+            data_points, report_periods, end_time = await asyncio.to_thread(
+                self._parse_and_store_libreview, patient_id, file_contents
+            )
+            await self._mark_cgm_dirty(patient_id, data_points, defer_s=0)
 
             await self._enqueue_meal_report_refresh(
                 postgres_session, patient_id, "libreview", end_time
@@ -122,7 +128,7 @@ class CGMUploadService:
         if not rows:
             return 0
 
-        self.clickhouse_store.write_data("aihealth.cgm_data", rows)
+        await self.clickhouse_store.awrite_data("aihealth.cgm_data", rows)
         await self._mark_cgm_dirty(patient_id, rows, defer_s=None)
 
         latest_reading_time = max(r["time"] for r in rows)
@@ -183,14 +189,14 @@ class CGMUploadService:
         postgres_session: AsyncSession,
     ):
         try:
-            df = self._parse_sinocare_file(file_contents)
+            df = await asyncio.to_thread(self._parse_sinocare_file, file_contents)
 
             end_time = df["timestamp"].max()
 
             data_points = self._extract_sinocare_data_points(df, patient_id)
 
-            self.clickhouse_store.write_data("aihealth.cgm_data", data_points)
-            await self._mark_cgm_dirty(patient_id, data_points, defer_s=60)
+            await self.clickhouse_store.awrite_data("aihealth.cgm_data", data_points)
+            await self._mark_cgm_dirty(patient_id, data_points, defer_s=0)
 
             await self._enqueue_meal_report_refresh(
                 postgres_session, patient_id, "sinocare", end_time
@@ -240,13 +246,13 @@ class CGMUploadService:
         postgres_session: AsyncSession,
     ):
         try:
-            df = self._parse_linx_file(file_contents)
+            df = await asyncio.to_thread(self._parse_linx_file, file_contents)
 
             end_time = df["timestamp"].max()
 
             data_points = self._extract_linx_data_points(df, patient_id)
-            self.clickhouse_store.write_data("aihealth.cgm_data", data_points)
-            await self._mark_cgm_dirty(patient_id, data_points, defer_s=60)
+            await self.clickhouse_store.awrite_data("aihealth.cgm_data", data_points)
+            await self._mark_cgm_dirty(patient_id, data_points, defer_s=0)
 
             await self._enqueue_meal_report_refresh(
                 postgres_session, patient_id, "linx", end_time

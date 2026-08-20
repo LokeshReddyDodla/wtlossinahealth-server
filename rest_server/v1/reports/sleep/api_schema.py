@@ -6,6 +6,16 @@ from pydantic import BaseModel, Field
 from rest_server.response_models import SuccessResponse
 
 
+def report_date_range(report: dict) -> tuple:
+    """Report docs carry their window under metadata.date_range (ISO strings),
+    not top-level start_date/end_date."""
+    date_range = (report.get("metadata") or {}).get("date_range") or {}
+    return (
+        date_range.get("start") or report.get("start_date"),
+        date_range.get("end") or report.get("end_date"),
+    )
+
+
 class SleepReportResponse(BaseModel):
     """Response model for a single sleep report"""
     patient_id: str = Field(..., description="Patient ID")

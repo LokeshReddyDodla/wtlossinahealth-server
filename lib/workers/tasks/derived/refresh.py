@@ -36,8 +36,7 @@ async def refresh_patient(ctx: dict[str, Any], patient_id: str) -> TaskResult:
         days = sorted(set(days_by_domain[domain]))
         compute_days = getattr(impl, "compute_days", None)
         if compute_days is not None:
-            # Batch-shaped domains (per-window input fetches) take the whole
-            # day set at once instead of a per-day loop.
+            # batch hook: for domains whose inputs are fetched per window
             await compute_days(patient_id, days)
             days_computed += len(days)
         else:

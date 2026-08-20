@@ -22,15 +22,12 @@ class DataDomain(str, Enum):
     WORKOUT = "workout"
 
 
-# Coalescing hint: how long the drain waits after a mark so a burst
-# (multi-meal logging session, device sync, CGM stream tick) collapses into
-# one run. Never a correctness dependency — the drain claims whatever is
-# dirty when it fires.
-_DEFAULT_DEFER_S = 60
+# User-action uploads drain immediately (the burst arrives inside one
+# request; single-flight + durable cells coalesce the rest). Only the
+# background LLU stream defers, to bound regen frequency for streamers —
+# on a separate job id so it can never delay an immediate kick.
+_DEFAULT_DEFER_S = 0
 DOMAIN_DEFER_S: dict[DataDomain, int] = {
-    DataDomain.FITNESS: 120,
-    DataDomain.SLEEP: 120,
-    # LLU polls every 5 minutes; 15 min bounds regen frequency for streamers.
     DataDomain.CGM: 900,
 }
 

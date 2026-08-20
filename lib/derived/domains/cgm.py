@@ -36,9 +36,8 @@ class CGMReportDomain:
         await get_cgm_report_service().save_reports_bulk(patient_id, reports)
 
     async def rollup(self, patient_id: str, days: list[date]) -> None:
-        """Regenerate the full ISO weeks containing the dirty days. Full weeks
-        keep the weekly report id stable, so live data updates one doc in
-        place instead of accreting end-clipped variants."""
+        """Regenerate the full ISO weeks containing the dirty days — full
+        weeks keep the weekly report id stable across regenerations."""
         from lib.dependencies.service_dependencies import (
             get_cgm_report_service,
             get_cgm_stats_processor,
@@ -54,9 +53,9 @@ class CGMReportDomain:
             await service.save_reports_bulk(patient_id, reports)
 
     async def vectorize(self, patient_id: str, days: list[date]) -> None:
-        """Enqueue the window-based CGM vector job. Job id is unique per run —
-        the vector task's own staleness diff makes re-runs cheap, and a
-        stable day-granular id silently dropped same-day updates."""
+        """Enqueue the window-based CGM vector job. The job id must be unique
+        per run — arq dedups by id, and the vector task's staleness diff
+        makes re-runs cheap."""
         from lib.dependencies.service_dependencies import get_patient_profile_service
         from lib.workers.arq.config import Queues
         from lib.workers.arq.redis import enqueue_job

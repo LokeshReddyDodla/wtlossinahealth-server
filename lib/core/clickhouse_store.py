@@ -1,3 +1,4 @@
+import asyncio
 import threading
 from datetime import datetime
 from typing import Optional
@@ -31,6 +32,11 @@ class ClickHouseStore:
             )
             self._local.client = client
         return client
+
+    async def awrite_data(self, table_name: str, data: list[dict]):
+        """write_data off the event loop — upload request paths must not
+        block their uvicorn/worker loop on a ClickHouse insert."""
+        return await asyncio.to_thread(self.write_data, table_name, data)
 
     def execute(self, query, params=None):
         """Resolves the thread-local client *inside* the calling thread — the

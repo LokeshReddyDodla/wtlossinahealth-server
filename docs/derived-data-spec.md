@@ -90,11 +90,11 @@ index: (patient_id)
 
 | domain | `_defer_by` | rationale |
 |---|---|---|
-| meal, smbg, vitals, workout | 60 s | coalesce a logging session |
-| fitness, sleep | 120 s | multi-array device sync |
-| cgm | 900 s | bound LLU 5-min stream regen; CSV/file uploads use 60 s |
+| all user-action uploads (meal, smbg, vitals, workout, fitness, sleep, CGM file uploads) | **0 — immediate** | users refresh right after syncing; the burst arrives inside one request anyway, and single-flight + durable cells coalesce overlapping work |
+| cgm live stream (LLU) | 900 s | bound regen frequency for streamers; rides a **separate job id** (`derived:refresh:{pid}:deferred`) so a pending slow kick can never delay a user-action's immediate one |
 
-Defer is a coalescing hint, never a correctness dependency.
+Defer is a coalescing hint, never a correctness dependency. Mid-drain marks
+re-kick at 30 s.
 
 ## 4. The drain: `refresh_patient(patient_id)`
 

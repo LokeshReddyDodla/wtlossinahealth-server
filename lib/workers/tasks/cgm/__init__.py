@@ -26,6 +26,5 @@ def get_tasks():
 
 def get_cron_jobs():
     # Deliberately none — live CGM reaches daily/weekly reports through the
-    # derived drain's dirty cells (marked at write_readings), which replaced
-    # the 30-minute reconcile sweep.
+    # derived drain's dirty cells (marked at write_readings).
     return []
