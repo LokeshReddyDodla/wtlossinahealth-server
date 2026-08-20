@@ -20,15 +20,21 @@ class SMBGQueries:
         start_date: datetime,
         end_date: datetime,
     ) -> List[PatientSMBG]:
-        """Fetch SMBG readings within a date range, filtered to valid types only."""
+        """Fetch SMBG readings within a date range. Device-synced rows carry
+        non-canonical types (HealthKit has no meal context) — they are read
+        and normalized to "random" here so every downstream grouper sees only
+        canonical types."""
         result = await postgres_session.execute(
             select(PatientSMBG)
             .where(PatientSMBG.patient_id == patient_id)
             .where(PatientSMBG.reading_time >= start_date)
             .where(PatientSMBG.reading_time <= end_date)
-            .where(PatientSMBG.type.in_(VALID_SMBG_TYPES))
         )
-        return list(result.scalars().all())
+        records = list(result.scalars().all())
+        for r in records:
+            if r.type not in VALID_SMBG_TYPES:
+                r.type = "random"
+        return records
 
     @staticmethod
     def filter_by_type(

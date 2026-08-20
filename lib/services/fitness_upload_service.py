@@ -1,5 +1,6 @@
 from datetime import datetime
 from dateutil.parser import parse
+from loguru import logger
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from lib.core.postgres_store import PostgresStore
@@ -224,7 +225,9 @@ class FitnessUploadService:
                     "reading_time": parse(item.start_datetime).replace(tzinfo=None),
                     "source_name": item.source_name,
                     "source_platform": item.source_platform,
-                    "type": "Unspecified",
+                    # Device readings carry no meal context; "random" is the
+                    # canonical bucket the SMBG report groups them under.
+                    "type": "random",
                 }
                 for item in fitness_data.blood_glucose
             ]
@@ -236,8 +239,44 @@ class FitnessUploadService:
                     "source_platform": stmt.excluded.source_platform,
                     "type": stmt.excluded.type,
                 },
+            ).returning(
+                PatientSMBG.id,
+                PatientSMBG.glucose_level,
+                PatientSMBG.reading_time,
+                PatientSMBG.type,
+                PatientSMBG.source_name,
+                PatientSMBG.uploaded_at,
             )
-            await postgres_session.execute(stmt)
+            upserted = (await postgres_session.execute(stmt)).all()
+            await self._enqueue_smbg_vectors(patient_id, upserted)
+
+    async def _enqueue_smbg_vectors(self, patient_id: str, rows: list) -> None:
+        """Vectorize device-synced glucose so it reaches RAG and the proactive
+        monitor, like manually-entered SMBG. Bounded to the recent window —
+        a first-connect HealthKit backfill must not fan out one vector job
+        (and one proactive event) per historical reading."""
+        from datetime import datetime, timedelta
+
+        from lib.workers.tasks.smbg.enqueue import enqueue_generate_smbg_vector_async
+
+        cutoff = datetime.utcnow() - timedelta(days=7)
+        recent = [r for r in rows if r.reading_time >= cutoff][:100]
+        for r in recent:
+            try:
+                await enqueue_generate_smbg_vector_async(
+                    patient_id=patient_id,
+                    reading_id=str(r.id),
+                    reading_data={
+                        "glucose_mgdl": r.glucose_level,
+                        "reading_time": r.reading_time.isoformat(),
+                        "type": r.type,
+                        "notes": None,
+                        "uploaded_at": r.uploaded_at,
+                        "source": r.source_name or "device",
+                    },
+                )
+            except Exception as e:
+                logger.warning(f"Failed to enqueue device SMBG vector for {patient_id}: {e}")
 
     async def _enqueue_vitals_vector(self, patient_id: str, points: list[dict]) -> None:
         latest: dict[str, dict] = {}
