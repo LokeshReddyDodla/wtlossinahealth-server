@@ -71,6 +71,29 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  # Transaction-pooling proxy: 7 app processes × their pools multiplex onto
+  # DEFAULT_POOL_SIZE server connections. App URLs point at
+  # aihealth-pgbouncer:5432 (host debugging via localhost:6432);
+  # alembic/POSTGRES_URL_SYNC stays direct to aihealth-postgres.
+  aihealth-pgbouncer:
+    container_name: aihealth-pgbouncer
+    image: edoburu/pgbouncer:v1.24.1-p1
+    restart: unless-stopped
+    depends_on:
+      - aihealth-postgres
+    ports:
+      - 6432:5432
+    environment:
+      - DB_HOST=aihealth-postgres
+      - DB_PORT=5432
+      - DB_USER=${POSTGRES_USER}
+      - DB_PASSWORD=${POSTGRES_PASSWORD}
+      - DB_NAME=${POSTGRES_DB}
+      - AUTH_TYPE=scram-sha-256
+      - POOL_MODE=transaction
+      - DEFAULT_POOL_SIZE=40
+      - MAX_CLIENT_CONN=1000
+
   aihealth-mongo:
     container_name: aihealth-mongo
     image: mongo:latest
