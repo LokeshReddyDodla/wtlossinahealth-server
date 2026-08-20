@@ -21,6 +21,11 @@ def _store_with_client(client):
             return False
 
     store.get_client = lambda: _Ctx()
+
+    async def _upsert_points(collection_name, points):
+        await client.upsert(collection_name=collection_name, points=points)
+
+    store.upsert_points = _upsert_points
     return store
 
 

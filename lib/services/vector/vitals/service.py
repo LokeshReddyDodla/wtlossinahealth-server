@@ -62,7 +62,7 @@ class VitalsVectorService(BaseVectorService):
 
                 embedding = await embed_text(point["text"])
                 if embedding:
-                    await client.upsert(
+                    await self.qdrant_store.upsert_points(
                         collection_name=self.collection_name,
                         points=[
                             PointStruct(
@@ -144,6 +144,7 @@ class VitalsVectorService(BaseVectorService):
                 "heart_rate": vital.get("heart_rate"),
                 "ketones": vital.get("ketones"),
                 "respiratory_rate": vital.get("respiratory_rate"),
+                "resting_heart_rate": vital.get("resting_heart_rate"),
                 "spo2": vital.get("spo2"),
                 "temperature": vital.get("temperature"),
                 "weight": vital.get("weight"),

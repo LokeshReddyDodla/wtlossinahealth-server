@@ -7,7 +7,6 @@ from uuid import UUID
 from fastapi import Depends, Path, Query, status
 
 from lib.core.constants import ProfileTypeEnum
-from lib.core.types import NotificationCategoryLiteral
 from lib.dependencies.actor import Actor, get_current_actor
 from lib.dependencies.patient_access import resolve_patient_access
 from lib.dependencies.service_dependencies import (
@@ -59,7 +58,7 @@ def _to_response(
 async def list_notifications(
     patient_id: str = Path(...),
     unread_only: bool = Query(False),
-    category: Optional[NotificationCategoryLiteral] = Query(None),
+    category: Optional[str] = Query(None),
     from_date: Optional[datetime] = Query(
         None, description="ISO 8601 datetime — include notifications created at or after this time"
     ),

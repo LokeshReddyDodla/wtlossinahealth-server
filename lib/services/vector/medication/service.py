@@ -70,7 +70,7 @@ class MedicationVectorService(BaseVectorService):
                 return {"points_created": 0}
 
             async with self.qdrant_store.get_client() as client:
-                await client.upsert(
+                await self.qdrant_store.upsert_points(
                     collection_name=self.collection_name,
                     points=[
                         PointStruct(

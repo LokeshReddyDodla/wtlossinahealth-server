@@ -1,5 +1,6 @@
 """Statistics calculation utilities for SMBG data."""
 
+import math
 import statistics
 from datetime import datetime
 from typing import List, Optional
@@ -122,14 +123,21 @@ class SMBGStatistics:
 
     @staticmethod
     def average_time(datetimes: List[datetime]) -> Optional[str]:
-        """Compute average time of day from a list of datetimes."""
+        """Circular mean of clock times — a linear mean puts 23:30 + 00:30 at
+        12:00, and the dinner meal window wraps midnight."""
         if not datetimes:
             return None
 
-        total_seconds = [
-            dt.hour * 3600 + dt.minute * 60 + dt.second for dt in datetimes
+        angles = [
+            (dt.hour * 3600 + dt.minute * 60 + dt.second) / 86400 * 2 * math.pi
+            for dt in datetimes
         ]
-        avg_seconds = sum(total_seconds) / len(total_seconds)
+        mean_angle = math.atan2(
+            sum(math.sin(a) for a in angles) / len(angles),
+            sum(math.cos(a) for a in angles) / len(angles),
+        )
+        # float % can round up to exactly 86400; the int modulo makes midnight 0
+        avg_seconds = round(mean_angle / (2 * math.pi) * 86400) % 86400
         hours, remainder = divmod(int(avg_seconds), 3600)
         minutes, _ = divmod(remainder, 60)
 

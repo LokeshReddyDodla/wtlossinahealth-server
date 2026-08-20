@@ -98,7 +98,7 @@ class FitnessUploadService:
                 await handler.on_weight_logged(_UUID(patient_id))
                 try:
                     from lib.utils.sync_profile_weight import sync_profile_weight
-                    latest = max(fitness_data.weight, key=lambda w: w.end_datetime)
+                    latest = max(fitness_data.weight, key=lambda w: parse(w.end_datetime))
                     await sync_profile_weight(patient_id, float(latest.value))
                 except Exception:
                     pass
@@ -168,25 +168,23 @@ class FitnessUploadService:
         ]
         await self.clickhouse_store.awrite_data("aihealth.sleep_data", sleep_data_points)
 
-        # Insert vitals into ClickHouse (HR, BP)
+        # Insert vitals into ClickHouse (HR, BP). BP readings pair by their
+        # source timestamp — read paths re-pair systolic/diastolic on exact
+        # time equality, and an unpaired reading must be stored, not dropped
+        # (zip-by-index silently truncated to the shorter list).
         vitals_data_points: list[dict] = []
-        for diastolic_item, systolic_item in zip(
-            fitness_data.blood_pressure_diastolic,
-            fitness_data.blood_pressure_systolic,
+        for bp_type, items in (
+            ("diastolic_bp", fitness_data.blood_pressure_diastolic),
+            ("systolic_bp", fitness_data.blood_pressure_systolic),
         ):
-            t = parse(diastolic_item.start_datetime).replace(tzinfo=None)
-            vitals_data_points.append({
-                "patient_id": patient_id, "type": "diastolic_bp",
-                "value": diastolic_item.value, "time": t,
-                "source_name": diastolic_item.source_name,
-                "source_platform": diastolic_item.source_platform,
-            })
-            vitals_data_points.append({
-                "patient_id": patient_id, "type": "systolic_bp",
-                "value": systolic_item.value, "time": t,
-                "source_name": systolic_item.source_name,
-                "source_platform": systolic_item.source_platform,
-            })
+            for item in items:
+                vitals_data_points.append({
+                    "patient_id": patient_id, "type": bp_type,
+                    "value": item.value,
+                    "time": parse(item.start_datetime).replace(tzinfo=None),
+                    "source_name": item.source_name,
+                    "source_platform": item.source_platform,
+                })
 
         for item in fitness_data.heart_rate:
             vitals_data_points.append({

@@ -11,7 +11,6 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.core.postgres_store import PostgresStore
-from lib.core.types import NotificationCategoryLiteral
 from lib.models.gamification import DailyTask
 from lib.models.patient_notification import PatientNotification
 from lib.schemas.gamification import TaskStatus
@@ -30,7 +29,7 @@ class PatientNotificationService:
         patient_id: str,
         *,
         unread_only: bool = False,
-        category: Optional[NotificationCategoryLiteral] = None,
+        category: Optional[str] = None,
         from_date: Optional[datetime] = None,
         to_date: Optional[datetime] = None,
         limit: int = 20,

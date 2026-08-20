@@ -23,14 +23,16 @@ _RE_ENQUEUE_DEFER_S = 30
 _MAX_DATES_PER_MARK = 366
 
 
-def _refresh_job_id(patient_id: str, deferred: bool = False) -> str:
-    # Stable per-patient id: arq drops a duplicate while one is queued or
-    # running (keep_result=0 keeps the result key from blocking re-enqueue);
+def _refresh_job_id(patient_id: str, kind: str = "") -> str:
+    # Stable per-patient ids: arq drops a duplicate while one is queued or
+    # running (keep_result=0 keeps result keys from blocking re-enqueue);
     # marks landing mid-run are covered by the drain's self-re-enqueue.
-    # Deferred (background-stream) kicks ride a separate id so a pending
-    # slow job never delays an immediate one — a kick that fires onto an
-    # already-drained set is expected and cheap.
-    return f"derived:refresh:{patient_id}:deferred" if deferred else f"derived:refresh:{patient_id}"
+    # Three id classes: immediate (user actions), "deferred" (background
+    # stream — must never delay an immediate kick), and "rekick" (the drain's
+    # self-re-enqueue — must never collide with whichever job is currently
+    # executing). A kick that fires onto an already-drained set is expected
+    # and cheap.
+    return f"derived:refresh:{patient_id}:{kind}" if kind else f"derived:refresh:{patient_id}"
 
 
 class DirtyCellStore:
@@ -52,7 +54,8 @@ class DirtyCellStore:
                 {"$set": {"marked_at": now}},
                 upsert=True,
             )
-            for d in list(dates)[:_MAX_DATES_PER_MARK]
+            # keep the NEWEST days when capped — recent days are what users see
+            for d in sorted(set(dates))[-_MAX_DATES_PER_MARK:]
         ]
         if not ops:
             return 0
@@ -88,16 +91,19 @@ def get_dirty_store() -> DirtyCellStore:
     return DirtyCellStore(store.get_collection(COLLECTION_NAME))
 
 
-async def enqueue_refresh_patient(patient_id: str, defer_s: int | None = None) -> None:
+async def enqueue_refresh_patient(
+    patient_id: str, defer_s: int | None = None, *, rekick: bool = False
+) -> None:
     """Fire-and-forget drain kick for one patient. Never raises."""
     from lib.workers.arq.config import Queues
     from lib.workers.arq.redis import enqueue_job
 
+    kind = "rekick" if rekick else ("deferred" if defer_s else "")
     try:
         await enqueue_job(
             REFRESH_TASK,
             patient_id,
-            _job_id=_refresh_job_id(patient_id, deferred=bool(defer_s)),
+            _job_id=_refresh_job_id(patient_id, kind),
             _queue_name=Queues.REPORTS,
             _defer_by=timedelta(seconds=defer_s) if defer_s else None,
         )
@@ -108,29 +114,32 @@ async def enqueue_refresh_patient(patient_id: str, defer_s: int | None = None) -
 async def mark_dirty(
     patient_id: str,
     domain: "DataDomain | str",
-    dates: Iterable[date] | None = None,
+    dates: Iterable[date],
     defer_s: int | None = None,
 ) -> None:
     """Record that a patient's data changed and kick the drain. Never raises —
     this sits in write paths and must not fail a save; a lost mark is healed
-    by the next activity or a provider panel view."""
+    by the next activity or a provider panel view. `dates` are the data's own
+    (patient/device-local) days — there is deliberately no server-clock
+    default, which could land on the wrong local day."""
     from lib.derived.registry import DataDomain, defer_for
 
     domain = DataDomain(domain)
     try:
-        cell_dates = list(dates) if dates else [datetime.now(timezone.utc).date()]
-        await get_dirty_store().mark(str(patient_id), domain.value, cell_dates)
+        await get_dirty_store().mark(str(patient_id), domain.value, dates)
     except Exception as e:
         logger.warning(f"mark_dirty failed for {patient_id}/{domain.value}: {e}")
     await enqueue_refresh_patient(str(patient_id), defer_s if defer_s is not None else defer_for(domain))
 
 
 def dates_between(start: date, end: date, cap_days: int = 90) -> list[date]:
-    """Inclusive day span for range-shaped payloads (device syncs, CSV uploads)."""
+    """Inclusive day span for range-shaped payloads (device syncs, CSV uploads).
+    The cap keeps the NEWEST days — a wide backfill must not spend its cell
+    budget on ancient history while today's report goes stale."""
     if end < start:
         start, end = end, start
-    span = min((end - start).days, cap_days - 1)
-    return [start + timedelta(days=i) for i in range(span + 1)]
+    start = max(start, end - timedelta(days=cap_days - 1))
+    return [start + timedelta(days=i) for i in range((end - start).days + 1)]
 
 
 def contiguous_runs(days: list[date]) -> list[tuple[date, date]]:

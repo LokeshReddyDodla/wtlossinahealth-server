@@ -2,6 +2,8 @@
 
 from typing import Dict, Tuple
 
+from lib.services.clinical_constants import GLUCOSE_HYPER_MGDL, GLUCOSE_HYPO_MGDL
+
 VALID_SMBG_TYPES = ("fasting", "before_meal", "after_meal", "random")
 
 MEAL_WINDOWS: Dict[str, Tuple[int, int]] = {
@@ -10,8 +12,8 @@ MEAL_WINDOWS: Dict[str, Tuple[int, int]] = {
     "dinner": (17, 3),
 }
 
-GLUCOSE_RANGE_LOW = 70
-GLUCOSE_RANGE_HIGH = 180
+GLUCOSE_RANGE_LOW = GLUCOSE_HYPO_MGDL
+GLUCOSE_RANGE_HIGH = GLUCOSE_HYPER_MGDL
 
 PRE_MEAL_TYPES = ("before_meal",)
 POST_MEAL_TYPES = ("after_meal",)

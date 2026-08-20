@@ -97,11 +97,25 @@ def test_defer_table():
     assert defer_for(DataDomain.FITNESS) == 0
 
 
-def test_deferred_kick_has_own_job_id():
+def test_kick_job_ids_never_collide():
     from lib.derived.dirty import _refresh_job_id
 
-    # A pending slow (stream) job must never dedup away a user-action kick.
-    assert _refresh_job_id("p1") != _refresh_job_id("p1", deferred=True)
+    # Immediate, deferred (stream), and rekick (self-re-enqueue) must all ride
+    # distinct ids: arq dedups on id, and the rekick can fire from inside
+    # whichever of the other two is currently executing.
+    ids = {_refresh_job_id("p1"), _refresh_job_id("p1", "deferred"), _refresh_job_id("p1", "rekick")}
+    assert len(ids) == 3
+
+
+def test_dates_between_cap_keeps_newest_days():
+    from datetime import timedelta
+
+    from lib.derived.dirty import dates_between
+
+    days = dates_between(date(2026, 1, 1), date(2026, 8, 20), cap_days=90)
+    assert len(days) == 90
+    assert days[-1] == date(2026, 8, 20)  # today survives the cap
+    assert days[0] == date(2026, 8, 20) - timedelta(days=89)
 
 
 @pytest.mark.asyncio
@@ -247,3 +261,19 @@ def test_vitals_canonical_naming():
     deduped = dedupe_latest_by_type(rows)
     assert [r["type"] for r in deduped] == ["spo2", "weight"]
     assert deduped[0]["value"] == 98
+
+
+def test_average_time_is_circular():
+    from datetime import datetime
+
+    from lib.services.reports.smbg.statistics import SMBGStatistics
+
+    # dinner window wraps midnight: 23:30 + 00:30 must average to midnight,
+    # not noon
+    late = datetime(2026, 8, 20, 23, 30)
+    early = datetime(2026, 8, 21, 0, 30)
+    assert SMBGStatistics.average_time([late, early]) == "00:00"
+    # non-wrapping times behave like the plain mean
+    assert SMBGStatistics.average_time(
+        [datetime(2026, 8, 20, 12, 0), datetime(2026, 8, 20, 14, 0)]
+    ) == "13:00"

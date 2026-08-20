@@ -403,7 +403,7 @@ class PatientDocumentService:
         embedding = await embed_text(text_repr)
         point_id = hashlib.md5(document_id.encode()).hexdigest()
         async with self.qdrant_store.get_client() as client:
-            await client.upsert(
+            await self.qdrant_store.upsert_points(
                 collection_name=self.qdrant_collection_name,
                 points=[
                     PointStruct(id=point_id, vector=embedding, payload=payload)

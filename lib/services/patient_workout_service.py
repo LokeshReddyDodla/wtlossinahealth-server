@@ -451,10 +451,9 @@ class PatientWorkoutService:
     @staticmethod
     async def _fire_report_regeneration(patient_id: str, workout_date) -> None:
         """Manual workouts fold into the fitness report, so a workout change
-        dirties the fitness day too."""
+        dirties the fitness day."""
         from lib.derived import DataDomain, mark_dirty
 
-        await mark_dirty(str(patient_id), DataDomain.WORKOUT, [workout_date])
         await mark_dirty(str(patient_id), DataDomain.FITNESS, [workout_date])
 
     @staticmethod
