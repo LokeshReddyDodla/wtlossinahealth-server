@@ -34,7 +34,6 @@ class CGMUploadService:
         self.clickhouse_store = clickhouse_store
         self.postgres_store = postgres_store
 
-    @with_postgres_session
     async def _mark_cgm_dirty(self, patient_id: str, points: List[dict], defer_s: int | None) -> None:
         if not points:
             return
@@ -46,6 +45,7 @@ class CGMUploadService:
             defer_s=defer_s,
         )
 
+    @with_postgres_session
     async def parse_and_upload_libreview_raw_csv_data(
         self,
         patient_id: str,
