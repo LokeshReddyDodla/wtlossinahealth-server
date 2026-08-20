@@ -167,3 +167,19 @@ def test_month_and_week_windows():
     weeks = week_windows([date(2026, 8, 20)])  # Thursday
     assert weeks[0][0].date() == date(2026, 8, 17)  # Monday
     assert weeks[0][1].date() == date(2026, 8, 23)  # Sunday
+
+
+def test_report_id_matches_legacy_scheme():
+    # Ids are persisted — the shared helper MUST hash the exact legacy strings,
+    # or every regenerated report duplicates instead of replacing.
+    import hashlib
+
+    from lib.services.reports.base import report_id
+
+    assert report_id("p1", "daily", "2026-08-20T00:00:00", "2026-08-20T23:59:59") == (
+        hashlib.sha256(b"p1_daily_2026-08-20T00:00:00_2026-08-20T23:59:59").hexdigest()
+    )
+    # CGM custom / meal daily omit the end
+    assert report_id("p1", "custom", "2026-08-20T00:00:00") == (
+        hashlib.sha256(b"p1_custom_2026-08-20T00:00:00").hexdigest()
+    )

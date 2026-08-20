@@ -1,4 +1,5 @@
-import hashlib
+
+from lib.services.reports.base import report_id as base_report_id
 import logging
 from datetime import date, datetime, time, timedelta
 from typing import List, Optional
@@ -200,8 +201,7 @@ class FitnessReportService:
         start_iso: str,
         end_iso: str,
     ) -> str:
-        key = f"{patient_id}_{report_type}_{start_iso}_{end_iso}"
-        return hashlib.sha256(key.encode()).hexdigest()
+        return base_report_id(patient_id, report_type, start_iso, end_iso)
 
     async def save_report(self, patient_id: str, report: FitnessStats):
         try:

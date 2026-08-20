@@ -131,6 +131,16 @@ async def on_startup() -> None:
         import logging
         logging.getLogger(__name__).warning(f"Failed derived_dirty_cells init: {e}")
 
+    # Report collections — the universal patient+type+start query shape.
+    try:
+        from lib.core.container import container
+        from lib.core.mongo_store import MongoStore
+        from lib.services.reports.base import ensure_report_indexes
+        await ensure_report_indexes(container.resolve(MongoStore))
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Failed report index init: {e}")
+
 
 @app.on_event("shutdown")
 async def on_shutdown() -> None:

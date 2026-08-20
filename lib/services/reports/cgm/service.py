@@ -1,4 +1,5 @@
-import hashlib
+
+from lib.services.reports.base import report_id as base_report_id
 import logging
 from datetime import date, datetime, time, timedelta
 from typing import Dict, List, Optional
@@ -461,12 +462,9 @@ class CGMReportService:
         end_iso: str,
         include_end: bool = True,
     ) -> str:
-        if include_end:
-            key = f"{patient_id}_{report_type}_{start_iso}_{end_iso}"
-        else:
-            key = f"{patient_id}_{report_type}_{start_iso}"
-
-        return hashlib.sha256(key.encode()).hexdigest()
+        return base_report_id(
+            patient_id, report_type, start_iso, end_iso if include_end else None
+        )
 
     def _compute_report_id_from_metadata(self, patient_id: str, metadata) -> str:
         """Compute report id from a metadata object.
