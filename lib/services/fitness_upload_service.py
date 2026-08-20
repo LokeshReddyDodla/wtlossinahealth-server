@@ -143,7 +143,7 @@ class FitnessUploadService:
             }
             for item in fitness_items
         ]
-        self.clickhouse_store.write_data("aihealth.fitness_data", data_points)
+        await self.clickhouse_store.awrite_data("aihealth.fitness_data", data_points)
 
         # Insert sleep data into ClickHouse
         sleep_data_points = [
@@ -165,7 +165,7 @@ class FitnessUploadService:
             ]
             for item in sleep_data
         ]
-        self.clickhouse_store.write_data("aihealth.sleep_data", sleep_data_points)
+        await self.clickhouse_store.awrite_data("aihealth.sleep_data", sleep_data_points)
 
         # Insert vitals into ClickHouse (HR, BP)
         vitals_data_points: list[dict] = []
@@ -213,7 +213,7 @@ class FitnessUploadService:
                 })
 
         if vitals_data_points:
-            self.clickhouse_store.write_data("aihealth.vitals_data", vitals_data_points)
+            await self.clickhouse_store.awrite_data("aihealth.vitals_data", vitals_data_points)
             await self._enqueue_vitals_vector(patient_id, vitals_data_points)
 
         if fitness_data.blood_glucose:

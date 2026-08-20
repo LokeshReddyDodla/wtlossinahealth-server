@@ -106,7 +106,7 @@ class PatientVitalService:
                 })
 
         if rows:
-            self.clickhouse.write_data("aihealth.vitals_data", rows)
+            await self.clickhouse.awrite_data("aihealth.vitals_data", rows)
             await mark_dirty(patient_id, DataDomain.VITALS, [test_time.date()])
 
         # Mark affected summaries as stale
