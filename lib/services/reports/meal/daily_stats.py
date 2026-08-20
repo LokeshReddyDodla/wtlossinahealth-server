@@ -1,6 +1,6 @@
 """Daily meal statistics builders."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from dateutil.parser import parse as parse_date
 
@@ -88,18 +88,34 @@ def empty_daily_stats(date, avg_glucose_by_date, diet_recommendations):
     )
 
 
+def slice_readings_around_meal(
+    readings,
+    meal_time: datetime,
+    before_minutes: int = 30,
+    after_minutes: int = 90,
+):
+    """Split one pre-fetched (time, glucose) list into before/after windows —
+    the day is fetched once instead of one ClickHouse query per meal."""
+    lo = meal_time - timedelta(minutes=before_minutes)
+    hi = meal_time + timedelta(minutes=after_minutes)
+    window = [r for r in readings if lo <= r[0] <= hi]
+    before = [r for r in window if r[0] < meal_time]
+    after = [r for r in window if r[0] >= meal_time]
+    return before, after
+
+
 def build_daily_stats(
     row,
     avg_glucose_by_date,
     diet_recommendations,
-    patient_id,
-    cgm_stats_processor,
+    day_readings,
 ):
-    """Build daily meal statistics from database row."""
+    """Build daily meal statistics from database row. `day_readings` is the
+    pre-fetched (time, glucose) list covering the day ± the meal windows."""
     for meal in row.meals:
         meal_time = datetime.combine(row.date, parse_date(meal["time"]).time())
-        glucose_before_meal, glucose_after_meal = (
-            cgm_stats_processor.get_readings_around_meal(patient_id, meal_time)
+        glucose_before_meal, glucose_after_meal = slice_readings_around_meal(
+            day_readings, meal_time
         )
 
         meal["glucose_before_meal"] = glucose_before_meal

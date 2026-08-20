@@ -1,3 +1,4 @@
+import asyncio
 from datetime import date, datetime, timedelta, time
 from functools import partial
 
@@ -61,11 +62,14 @@ class MealStatsProcessor:
         start_dt = datetime.combine(date, time.min)
         end_dt = datetime.combine(date, time.max)
 
-        avg_glucose = CGMStatistics.fetch_daily_average_glucose(
-            self.clickhouse_store,
-            patient_id,
-            start_dt,
-            end_dt,
+        avg_glucose = (
+            await asyncio.to_thread(
+                CGMStatistics.fetch_daily_average_glucose,
+                self.clickhouse_store,
+                patient_id,
+                start_dt,
+                end_dt,
+            )
         ).get(date, 0.0)
 
         query = build_meal_query(patient_id, date, date)
@@ -75,12 +79,17 @@ class MealStatsProcessor:
         if not row:
             return empty_daily_stats(date, {date: avg_glucose}, diet_recommendations)
 
+        day_readings = await asyncio.to_thread(
+            self.cgm_stats_processor.get_readings_for_window,
+            patient_id,
+            start_dt - timedelta(minutes=30),
+            end_dt + timedelta(minutes=90),
+        )
         return build_daily_stats(
             row,
             {date: avg_glucose},
             diet_recommendations,
-            patient_id,
-            self.cgm_stats_processor,
+            day_readings,
         )
 
     @with_postgres_session
@@ -97,8 +106,9 @@ class MealStatsProcessor:
             start_date,
         )
 
-        avg_glucose_by_date = CGMStatistics.fetch_daily_average_glucose(
-            self.clickhouse_store, patient_id, start_date, end_date
+        avg_glucose_by_date = await asyncio.to_thread(
+            CGMStatistics.fetch_daily_average_glucose,
+            self.clickhouse_store, patient_id, start_date, end_date,
         )
 
         query = build_meal_query(patient_id, start_date, end_date)
@@ -110,13 +120,18 @@ class MealStatsProcessor:
                 empty_daily_stats(start_date, avg_glucose_by_date, diet_recommendations)
             ]
 
+        readings = await asyncio.to_thread(
+            self.cgm_stats_processor.get_readings_for_window,
+            patient_id,
+            datetime.combine(min(r.date for r in rows), time.min) - timedelta(minutes=30),
+            datetime.combine(max(r.date for r in rows), time.max) + timedelta(minutes=90),
+        )
         return [
             build_daily_stats(
                 row,
                 avg_glucose_by_date,
                 diet_recommendations,
-                patient_id,
-                self.cgm_stats_processor,
+                readings,
             )
             for row in rows
         ]

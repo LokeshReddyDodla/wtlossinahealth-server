@@ -183,3 +183,20 @@ def test_report_id_matches_legacy_scheme():
     assert report_id("p1", "custom", "2026-08-20T00:00:00") == (
         hashlib.sha256(b"p1_custom_2026-08-20T00:00:00").hexdigest()
     )
+
+
+def test_slice_readings_around_meal_matches_per_meal_query_semantics():
+    from datetime import datetime, timedelta
+
+    from lib.services.reports.meal.daily_stats import slice_readings_around_meal
+
+    meal_time = datetime(2026, 8, 20, 13, 0)
+    readings = [
+        (meal_time + timedelta(minutes=m), 100.0 + m)
+        for m in (-45, -30, -10, 0, 15, 60, 90, 91)
+    ]
+    before, after = slice_readings_around_meal(readings, meal_time)
+    # -45 is outside the 30-min lead-in; +91 outside the 90-min tail;
+    # the reading AT meal_time counts as "after" (matches r[0] >= meal_time).
+    assert [r[0] for r in before] == [meal_time - timedelta(minutes=30), meal_time - timedelta(minutes=10)]
+    assert [r[0] for r in after] == [meal_time + timedelta(minutes=m) for m in (0, 15, 60, 90)]

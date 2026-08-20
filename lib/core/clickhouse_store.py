@@ -1,3 +1,4 @@
+import threading
 from datetime import datetime
 from typing import Optional
 import os
@@ -12,14 +13,30 @@ CLICKHOUSE_PASSWORD = str(os.getenv("CLICKHOUSE_PASSWORD", ""))
 
 class ClickHouseStore:
     def __init__(self):
-        self.client = Client(
-            host=CLICKHOUSE_HOST,
-            port=int(CLICKHOUSE_PORT),
-            user=CLICKHOUSE_USER,
-            password=CLICKHOUSE_PASSWORD.strip(),
-            send_receive_timeout=300,
-        )
+        self._local = threading.local()
         self.create_database()
+
+    @property
+    def client(self) -> Client:
+        # clickhouse-driver clients are not thread-safe, and report queries run
+        # concurrently via asyncio.to_thread — each thread gets its own client.
+        client = getattr(self._local, "client", None)
+        if client is None:
+            client = Client(
+                host=CLICKHOUSE_HOST,
+                port=int(CLICKHOUSE_PORT),
+                user=CLICKHOUSE_USER,
+                password=CLICKHOUSE_PASSWORD.strip(),
+                send_receive_timeout=300,
+            )
+            self._local.client = client
+        return client
+
+    def execute(self, query, params=None):
+        """Resolves the thread-local client *inside* the calling thread — the
+        safe target for asyncio.to_thread (to_thread(store.client.execute, q)
+        would bind the caller thread's client instead)."""
+        return self.client.execute(query, params)
 
     def create_database(self):
         self.client.execute("CREATE DATABASE IF NOT EXISTS aihealth")
