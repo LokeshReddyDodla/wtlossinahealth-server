@@ -25,12 +25,11 @@ _MAX_DATES_PER_MARK = 366
 
 def _refresh_job_id(patient_id: str, deferred: bool = False) -> str:
     # Stable per-patient id: arq drops a duplicate while one is queued or
-    # running (keep_result=0 keeps the result key from blocking re-enqueue).
-    # Marks landing mid-run are covered by the drain's self-re-enqueue.
-    # Deferred (background-stream) kicks ride their own id so a pending slow
-    # job can never absorb-and-delay a user-action's immediate kick; the
-    # occasional extra run finds an empty dirty set and costs one cheap
-    # finalizer pass.
+    # running (keep_result=0 keeps the result key from blocking re-enqueue);
+    # marks landing mid-run are covered by the drain's self-re-enqueue.
+    # Deferred (background-stream) kicks ride a separate id so a pending
+    # slow job never delays an immediate one — a kick that fires onto an
+    # already-drained set is expected and cheap.
     return f"derived:refresh:{patient_id}:deferred" if deferred else f"derived:refresh:{patient_id}"
 
 

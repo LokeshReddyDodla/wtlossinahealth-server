@@ -52,8 +52,7 @@ async def generate_vital_vector(
         )
 
     except Exception as e:
-        # Re-raise: the upsert is idempotent — let arq retry a transient
-        # Qdrant/embedding failure instead of losing the vector permanently.
+        # Re-raise: the upsert is idempotent — let arq retry.
         logger.error(f"Failed to generate vital vector for {patient_id}: {e}")
         raise
 

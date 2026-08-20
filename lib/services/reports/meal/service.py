@@ -60,8 +60,7 @@ class MealReportService:
         try:
             date_iso = report_date.isoformat()
 
-            # regenerate forces a rebuild but still serves the current doc —
-            # the caller gets data now and the fresh version on the next read.
+            # regenerate forces a rebuild but still serves the current doc.
             if regenerate:
                 await self.trigger_daily_report_generation(patient_id, report_date)
 
