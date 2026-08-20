@@ -183,15 +183,23 @@ class ClickHouseStore:
             for r in rows
         ]
 
-    def query_vitals_latest(self, patient_id: str) -> list[dict]:
+    def query_vitals_latest(
+        self, patient_id: str, since: Optional[datetime] = None
+    ) -> list[dict]:
+        params: dict = {"patient_id": patient_id}
+        since_clause = ""
+        if since is not None:
+            # ClickHouse toDateTime() only accepts second precision.
+            params["since"] = since.replace(microsecond=0)
+            since_clause = "AND time >= %(since)s"
         query = f"""
         SELECT type, value, time, source_name
         FROM aihealth.vitals_data FINAL
-        WHERE patient_id = '{patient_id}'
+        WHERE patient_id = %(patient_id)s {since_clause}
         ORDER BY time DESC
         LIMIT 1 BY type
         """
-        rows = self.client.execute(query)
+        rows = self.client.execute(query, params)
         return [
             {"type": r[0], "value": round(r[1], 2), "time": r[2], "source_name": r[3]}
             for r in rows

@@ -50,9 +50,11 @@ class PatientVitalService:
         """Daily avg/min/max/count per vital type."""
         return self.clickhouse.query_vitals_summary(patient_id, start_date, end_date)
 
-    async def get_latest_vitals(self, patient_id: str) -> list[dict]:
-        """Most recent reading per vital type."""
-        return self.clickhouse.query_vitals_latest(patient_id)
+    async def get_latest_vitals(
+        self, patient_id: str, since: datetime | None = None
+    ) -> list[dict]:
+        """Most recent reading per vital type, optionally bounded to a window."""
+        return self.clickhouse.query_vitals_latest(patient_id, since=since)
 
     async def get_weight_history(self, patient_id: str, days: int = 60) -> list[dict]:
         """Weight readings over the trailing window, for weight-trend triage."""

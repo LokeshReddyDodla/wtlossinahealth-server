@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 from typing import List, Tuple
 
 from fastapi import status
@@ -34,14 +35,24 @@ class PatientSmbgService:
 
     @with_postgres_session
     async def get_patient_smbgs(
-        self, patient_id: str, *, postgres_session: AsyncSession
+        self,
+        patient_id: str,
+        *,
+        since: datetime | None = None,
+        limit: int | None = None,
+        postgres_session: AsyncSession,
     ) -> List[PatientSMBGModel]:
         try:
-            result = await postgres_session.execute(
+            stmt = (
                 select(PatientSMBGModel)
                 .where(PatientSMBGModel.patient_id == patient_id)
                 .order_by(PatientSMBGModel.reading_time.desc())
             )
+            if since is not None:
+                stmt = stmt.where(PatientSMBGModel.reading_time >= since)
+            if limit is not None:
+                stmt = stmt.limit(limit)
+            result = await postgres_session.execute(stmt)
             smbg_records = result.scalars().all()
             return list(smbg_records)
         except SQLAlchemyError as e:

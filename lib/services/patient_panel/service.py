@@ -33,6 +33,10 @@ ContextProvider = Callable[[str], Awaitable[dict[str, Any]]]
 
 _WINDOW_DAYS = 14
 _CGM_LAPSED_LOOKBACK_DAYS = 60
+# Labs older than this can't drive triage — a years-old A1c must not pin
+# a patient at AT_RISK; they fall through to the data-gap rules instead.
+_LAB_RECENCY_DAYS = 180
+_SMBG_FALLBACK_LIMIT = 500
 
 
 def _confidence(days: int, sensor_active: float | None) -> DataConfidence | None:
@@ -105,7 +109,14 @@ class PatientPanelService:
             await asyncio.gather(
                 self._safe(self._context(patient_id), {}),
                 self._cgm_window(patient_id, _WINDOW_DAYS),
-                self._safe(self._vitals.get_latest_vitals(patient_id), []),
+                self._safe(
+                    self._vitals.get_latest_vitals(
+                        patient_id,
+                        since=datetime.now(timezone.utc).replace(tzinfo=None)
+                        - timedelta(days=_LAB_RECENCY_DAYS),
+                    ),
+                    [],
+                ),
                 self._safe(self._vitals.get_weight_history(patient_id), []),
                 self._fitness_window(patient_id),
                 self._sleep_window(patient_id),
@@ -122,7 +133,17 @@ class PatientPanelService:
         merged.update(cgm)
         merged.update(vitals_inputs(latest_vitals))
         if merged.get("tir_pct") is None:
-            merged.update(smbg_inputs(await self._safe(self._smbg.get_patient_smbgs(patient_id), [])))
+            smbg_since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=_WINDOW_DAYS)
+            merged.update(
+                smbg_inputs(
+                    await self._safe(
+                        self._smbg.get_patient_smbgs(
+                            patient_id, since=smbg_since, limit=_SMBG_FALLBACK_LIMIT
+                        ),
+                        [],
+                    )
+                )
+            )
         merged.update(weight_inputs(weight_history))
 
         inputs = PanelInputs(
