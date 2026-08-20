@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
 from lib.derived.dirty import _RE_ENQUEUE_DEFER_S, enqueue_refresh_patient, get_dirty_store
+from lib.derived.registry import DataDomain, get_report_domains
 from lib.workers.tasks.base import TaskResult, task_with_logging
 
 
@@ -16,9 +18,19 @@ async def refresh_patient(ctx: dict[str, Any], patient_id: str) -> TaskResult:
     store = get_dirty_store()
     claim_ts, cells = await store.claim(patient_id)
 
-    # Report domains migrate into this drain slice by slice; until then their
-    # reports regenerate via the legacy upload-path triggers and this drain
-    # runs only the cross-domain finalizers. An empty claim is the
+    # Registered domains recompute their dirty days here; unregistered ones
+    # still regenerate via legacy upload-path triggers until they migrate in.
+    # A failure raises before the clear, so cells survive for the arq retry.
+    domains = get_report_domains()
+    days_computed = 0
+    for cell in sorted(cells, key=lambda c: (c["domain"], c["date"])):
+        impl = domains.get(DataDomain(cell["domain"]))
+        if impl is None:
+            continue
+        await impl.compute_daily(patient_id, date.fromisoformat(cell["date"]))
+        days_computed += 1
+
+    # Finalizers run once, after every domain is fresh. An empty claim is the
     # provider-view stale-refresh path: recompute time-based transitions
     # (lapsed / data-gap) that no upload event can ever trigger.
     signal = await container.resolve(PatientPanelService).recompute(patient_id)
@@ -34,6 +46,7 @@ async def refresh_patient(ctx: dict[str, Any], patient_id: str) -> TaskResult:
         data={
             "patient_id": patient_id,
             "cells_drained": len(cells),
+            "days_computed": days_computed,
             "assessment": signal.assessment.value if signal else None,
         },
     )

@@ -12,7 +12,6 @@ from lib.models.patient_meal import (
 from lib.models.patient_meal import PatientMeal as PatientMealModel
 from lib.schemas.patient_meal import PatientFoodItem as PatientFoodItemSchema
 from lib.workers.tasks.meal.enqueue import (
-    enqueue_daily_meal_report_async,
     enqueue_meal_vector_async,
 )
 
@@ -127,10 +126,6 @@ async def trigger_meal_tasks(
     from lib.derived import DataDomain, mark_dirty
 
     await mark_dirty(patient_id, DataDomain.MEAL, [meal_date])
-    try:
-        await enqueue_daily_meal_report_async(str(patient_id), meal_date)
-    except Exception:
-        logger.exception("Failed to enqueue daily meal report for meal %s (%s)", meal_id, patient_id)
     try:
         await enqueue_meal_vector_async(str(patient_id), str(meal_id))
     except Exception:

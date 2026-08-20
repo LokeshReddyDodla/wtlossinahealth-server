@@ -95,3 +95,40 @@ def test_defer_table():
     assert defer_for(DataDomain.CGM) == 900
     assert defer_for(DataDomain.MEAL) == 60
     assert defer_for(DataDomain.FITNESS) == 120
+
+
+@pytest.mark.asyncio
+async def test_meal_domain_computes_and_saves(monkeypatch):
+    import lib.dependencies.service_dependencies as deps
+    from lib.derived.domains.meal import MealReportDomain
+
+    calls = {}
+
+    class _Report:
+        def model_dump(self):
+            return {"date": "2026-08-20", "meal_count": 2}
+
+    class _Processor:
+        async def get_meal_report_by_date(self, patient_id, day):
+            calls["computed"] = (patient_id, day)
+            return _Report()
+
+    class _Service:
+        async def save_report(self, patient_id, report):
+            calls["saved"] = report
+
+    monkeypatch.setattr(deps, "get_meal_stats_processor", lambda: _Processor())
+    monkeypatch.setattr(deps, "get_meal_report_service", lambda: _Service())
+
+    await MealReportDomain().compute_daily("p1", date(2026, 8, 20))
+    assert calls["computed"] == ("p1", date(2026, 8, 20))
+    assert calls["saved"]["report_type"] == "daily"
+    assert calls["saved"]["patient_id"] == "p1"
+
+
+def test_meal_domain_registered():
+    from lib.derived.registry import get_report_domains
+
+    domains = get_report_domains()
+    assert DataDomain.MEAL in domains
+    assert DataDomain.CGM not in domains  # legacy triggers still own CGM

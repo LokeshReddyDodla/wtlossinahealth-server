@@ -454,32 +454,18 @@ class CGMUploadService:
         newest reading in this upload. The one-day lead-in catches a late-night
         meal whose ~2-3h excursion bled into the next morning. First connect (no
         frontier) is capped to the recent meal-history window, not all of history.
-        Deduped per (patient, date, 30-min bucket) so overlapping live syncs
-        (~5 min apart) collapse.
+        Dirty-cell set semantics collapse overlapping live syncs (~5 min apart).
         """
         prior = await self._prior_cgm_frontier(session, patient_id, source)
         window = self._meal_refresh_window(prior, end_time)
         if window is None:
             return
         start, end = window
-
-        now = datetime.now()
-        bucket = f"{now:%Y%m%d%H}{now.minute // 30}"
-        d = start
-        while d <= end:
-            try:
-                await enqueue_job(
-                    "generate_daily_meal_report",
-                    patient_id,
-                    d,
-                    _job_id=f"meal:report:cgmsync:{patient_id}:{d.isoformat()}:{bucket}",
-                    _queue_name=Queues.REPORTS,
-                )
-            except Exception as exc:
-                logger.warning(
-                    f"Failed to enqueue meal refresh for {patient_id} on {d}: {exc}"
-                )
-            d += timedelta(days=1)
+        await mark_dirty(
+            patient_id,
+            DataDomain.MEAL,
+            dates_between(start, end, cap_days=_FIRST_CONNECT_BACKFILL_DAYS + 1),
+        )
 
     @staticmethod
     def _meal_refresh_window(prior, end_time):

@@ -37,3 +37,12 @@ DOMAIN_DEFER_S: dict[DataDomain, int] = {
 
 def defer_for(domain: DataDomain) -> int:
     return DOMAIN_DEFER_S.get(domain, _DEFAULT_DEFER_S)
+
+
+def get_report_domains() -> dict[DataDomain, object]:
+    """Domains the drain computes. A domain absent here still gets its cells
+    marked — its reports just keep regenerating via legacy triggers until it
+    migrates in."""
+    from lib.derived.domains.meal import MealReportDomain
+
+    return {DataDomain.MEAL: MealReportDomain()}

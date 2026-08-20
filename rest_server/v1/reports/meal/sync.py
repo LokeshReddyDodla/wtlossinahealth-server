@@ -1,15 +1,18 @@
-from datetime import datetime, date
+from collections import defaultdict
+from datetime import date, datetime, time, timedelta
+
+from fastapi import Depends, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+
 from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.actor import Actor, get_current_actor
 from lib.dependencies.database import get_postgres_session
-from rest_server.v1.reports.meal.api_schema import MealReportJob, SyncMealReportResponse
-from fastapi import Depends, HTTPException, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
+from lib.derived import DataDomain, mark_dirty
+from lib.derived.dirty import _refresh_job_id
 from lib.models.patient_meal import PatientMeal as PatientMealModel
-from lib.models.patient import Patient as PatientModel
-from lib.workers.tasks.meal.enqueue import enqueue_daily_meal_report_sync
-from sqlalchemy.future import select
-from loguru import logger
+from rest_server.v1.reports.meal.api_schema import MealReportJob, SyncMealReportResponse
+
 from .router import router
 
 
@@ -18,8 +21,8 @@ from .router import router
     response_model=SyncMealReportResponse,
     summary="Sync Meal Reports",
     description=(
-        "Admin-only endpoint to enqueue daily meal report generation "
-        "for patients who uploaded meals on the given date."
+        "Admin-only endpoint to regenerate daily meal reports for patients "
+        "who uploaded meals on the given date."
     ),
 )
 async def sync_patient_meals_report(
@@ -33,41 +36,42 @@ async def sync_patient_meals_report(
         )
     ),
 ) -> SyncMealReportResponse:
-    """Sync patient meals and generate daily reports."""
+    """Mark the affected days dirty and let the per-patient drain regenerate.
 
+    Selects the meals *uploaded* in the window but marks each meal's own
+    `date` — a meal logged today for yesterday regenerates yesterday's
+    report, the day it actually belongs to.
+    """
+    window_start = datetime.combine(report_date, time.min)
     stmt = (
-        select(PatientMealModel.patient_id)
+        select(PatientMealModel.patient_id, PatientMealModel.date)
         .where(
-            PatientMealModel.uploaded_at
-            >= datetime.combine(report_date, datetime.min.time()),
-            PatientMealModel.uploaded_at
-            < datetime.combine(report_date, datetime.max.time()),
+            PatientMealModel.uploaded_at >= window_start,
+            PatientMealModel.uploaded_at < window_start + timedelta(days=1),
         )
         .distinct()
     )
-    result = await session.execute(stmt)
-    patient_ids = result.scalars().all()
+    rows = (await session.execute(stmt)).all()
 
-    if not patient_ids:
+    if not rows:
         return SyncMealReportResponse(
             message=f"No meals found on {report_date}",
             report_date=report_date,
             jobs=[],
         )
 
-    stmt = select(PatientModel).where(PatientModel.patient_id.in_(patient_ids))
-    result = await session.execute(stmt)
-    patients_with_meals = result.scalars().all()
+    dates_by_patient: dict[str, set[date]] = defaultdict(set)
+    for patient_id, meal_date in rows:
+        dates_by_patient[str(patient_id)].add(meal_date)
 
     jobs = []
-    for patient in patients_with_meals:
-        job_id = enqueue_daily_meal_report_sync(str(patient.patient_id), report_date)
-        logger.info(f"Queued report for patient {patient.patient_id}: {job_id}")
+    for patient_id, meal_dates in dates_by_patient.items():
+        await mark_dirty(patient_id, DataDomain.MEAL, sorted(meal_dates))
         jobs.append(
             MealReportJob(
-                patient_id=str(patient.patient_id),
-                job_id=job_id,
-                status="queued" if job_id else "failed",
+                patient_id=patient_id,
+                job_id=_refresh_job_id(patient_id),
+                status="queued",
             )
         )
 
