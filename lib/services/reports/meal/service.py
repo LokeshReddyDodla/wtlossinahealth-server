@@ -60,9 +60,10 @@ class MealReportService:
         try:
             date_iso = report_date.isoformat()
 
+            # regenerate forces a rebuild but still serves the current doc —
+            # the caller gets data now and the fresh version on the next read.
             if regenerate:
                 await self.trigger_daily_report_generation(patient_id, report_date)
-                return None
 
             report = await self.meal_report_collection.find_one(
                 {
@@ -75,7 +76,8 @@ class MealReportService:
                 {"_id": 0},
             )
             if not report:
-                await self.trigger_daily_report_generation(patient_id, report_date)
+                if not regenerate:
+                    await self.trigger_daily_report_generation(patient_id, report_date)
                 return None
 
             if "meals" in report and isinstance(report["meals"], list):

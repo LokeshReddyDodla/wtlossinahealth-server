@@ -13,7 +13,7 @@ from lib.services.reports import SleepReportService
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import SuccessResponse
 
-from .api_schema import GetSleepReportResponse, SleepReportResponse
+from .api_schema import GetSleepReportResponse, SleepReportResponse, report_date_range
 from .router import router
 
 
@@ -49,12 +49,13 @@ async def get_daily_sleep_report(
                 message="Sleep report not found. It may be generating.",
             )
 
+        start_date, end_date = report_date_range(report)
         return SuccessResponse(
             message="Sleep report retrieved successfully",
             data=SleepReportResponse(
                 patient_id=str(access_info.target_patient_id),
-                start_date=report.get("start_date"),
-                end_date=report.get("end_date"),
+                start_date=start_date,
+                end_date=end_date,
                 report_type="daily",
                 data=report,
             ),
@@ -101,12 +102,13 @@ async def get_weekly_sleep_report(
                 message="Sleep report not found. It may be generating.",
             )
 
+        start_date, end_date = report_date_range(report)
         return SuccessResponse(
             message="Sleep report retrieved successfully",
             data=SleepReportResponse(
                 patient_id=str(access_info.target_patient_id),
-                start_date=report.get("start_date"),
-                end_date=report.get("end_date"),
+                start_date=start_date,
+                end_date=end_date,
                 report_type="weekly",
                 data=report,
             ),
@@ -159,12 +161,13 @@ async def get_monthly_sleep_report(
                 message="Sleep report not found. It may be generating.",
             )
 
+        start_date, end_date = report_date_range(report)
         return SuccessResponse(
             message="Sleep report retrieved successfully",
             data=SleepReportResponse(
                 patient_id=str(access_info.target_patient_id),
-                start_date=report.get("start_date"),
-                end_date=report.get("end_date"),
+                start_date=start_date,
+                end_date=end_date,
                 report_type="monthly",
                 data=report,
             ),

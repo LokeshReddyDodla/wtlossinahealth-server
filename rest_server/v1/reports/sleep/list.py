@@ -18,6 +18,7 @@ from .api_schema import (
     ListSleepReportsResponse,
     SleepReportListResponse,
     SleepReportResponse,
+    report_date_range,
 )
 from .router import router
 
@@ -60,8 +61,8 @@ async def list_sleep_reports(
         report_responses = [
             SleepReportResponse(
                 patient_id=str(access_info.target_patient_id),
-                start_date=report.get("start_date"),
-                end_date=report.get("end_date"),
+                start_date=report_date_range(report)[0],
+                end_date=report_date_range(report)[1],
                 report_type=report.get("report_type", "daily"),
                 data=report,
             )
