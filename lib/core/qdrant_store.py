@@ -73,14 +73,15 @@ class QdrantStore:
             return
 
         async with self.get_client() as client:
-            try:
-                await client.get_collection(collection_name=QDRANT_COLLECTION)
+            # a failed existence check must abort startup, never create
+            exists = await client.collection_exists(collection_name=QDRANT_COLLECTION)
+            if exists:
                 logger.info(
                     f"✅ Qdrant collection '{QDRANT_COLLECTION}' already exists"
                 )
-            except Exception:
+            else:
                 logger.info(f"🆕 Creating Qdrant collection '{QDRANT_COLLECTION}'")
-                await client.recreate_collection(
+                await client.create_collection(
                     collection_name=QDRANT_COLLECTION,
                     vectors_config=VectorParams(
                         size=3072, distance=Distance.COSINE, on_disk=True
@@ -160,9 +161,7 @@ class QdrantStore:
             raise
 
     async def upsert_points(self, collection_name: str, points: list):
-        """Single-batch upsert through the same retry as the chunked path —
-        per-entity services calling client.upsert directly bypassed it and
-        died on the first idle-connection ReadError."""
+        """Single-batch upsert with the idle-connection retry."""
         async with self.get_client() as client:
             await self._upsert_chunk(client, collection_name, points)
 
