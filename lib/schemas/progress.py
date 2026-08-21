@@ -31,6 +31,14 @@ class MetricSeries(BaseModel):
     current: float | None = None
     baseline: float | None = None
     delta: float | None = None
+    # How much data backs the series, so a provider can judge trust. `note` is a
+    # one-line methodology caveat; `low_coverage` means the trend is too sparse
+    # to diff, so `delta` is withheld.
+    note: str | None = None
+    coverage_days: int = 0
+    period_days: int = 0
+    latest: date | None = None
+    low_coverage: bool = False
 
 
 class Outcome(BaseModel):
