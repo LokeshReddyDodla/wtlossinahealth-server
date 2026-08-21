@@ -200,7 +200,7 @@ _NOTES: dict[str, str] = {
     "smbg_before_meal": "Average of pre-meal finger-sticks.",
     "smbg_after_meal": "Average of post-meal finger-sticks — **expected to run higher** than fasting.",
     "smbg_random": "Average of untagged/random finger-sticks.",
-    "tir_ranges": "Where glucose readings fall: below 70 / in 70–180 / above 180, averaged over **days with CGM data**.",
+    "tir_ranges": "Where glucose readings fall: below 70 / in 70–180 / above 180, for the **most recent period** — matching the Time-in-range value beside it.",
     "meal_slots": "How each day's logged calories split across meals — **reflects what was logged**, not total intake.",
     "sleep_stages": "Average share of the night in each stage. **Wearable estimates**, not a clinical sleep study.",
 }
@@ -370,7 +370,7 @@ class ProgressService:
         compositions = []
         for cat, key, label, unit, segdefs, empty in _COMPOSITIONS:
             comp = self._compose(reports_by_cat.get(cat) or [], cat, key, label, unit,
-                                 segdefs, period_days, empty)
+                                 segdefs, resolution, period_days, empty)
             if comp:
                 compositions.append(comp)
 
@@ -453,9 +453,11 @@ class ProgressService:
         )
 
     @staticmethod
-    def _compose(reports, category, key, label, unit, segdefs, period_days, empty=None):
-        """Average each segment over days with data → one stacked-bar composition."""
-        seg_vals: dict[str, list[float]] = {sl: [] for sl, _t, _ex in segdefs}
+    def _compose(reports, category, key, label, unit, segdefs, resolution, period_days, empty=None):
+        """One stacked-bar composition. Each segment is reduced the same way as a
+        metric headline (latest bucket via bucketize), so the bar's "In range"
+        equals the Time-in-range value shown beside it instead of a period mean."""
+        seg_daily: dict[str, list[tuple[date, float]]] = {sl: [] for sl, _t, _ex in segdefs}
         days: set[date] = set()
         for report in reports or []:
             d = _report_date(report)
@@ -465,19 +467,18 @@ class ProgressService:
             for sl, _tone, ex in segdefs:
                 v = ex(report)
                 if v is not None:
-                    seg_vals[sl].append(float(v))
+                    seg_daily[sl].append((d, float(v)))
                     got = True
             if got:
                 days.add(d)
         if not days:
             return None
-        segments = [
-            CompositionSegment(
-                label=sl, tone=tone,
-                value=round(sum(seg_vals[sl]) / len(seg_vals[sl]), 1) if seg_vals[sl] else 0.0,
-            )
-            for sl, tone, _ex in segdefs
-        ]
+        segments = []
+        for sl, tone, _ex in segdefs:
+            buckets = bucketize(seg_daily[sl], resolution)
+            segments.append(CompositionSegment(
+                label=sl, tone=tone, value=round(buckets[-1][1], 1) if buckets else 0.0,
+            ))
         if not any(s.value for s in segments):
             return None
         coverage_days = len(days)
