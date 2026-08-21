@@ -88,3 +88,40 @@ def test_doc_dates_handles_both_shapes():
         {"metadata": {}},
     ]
     assert _doc_dates(report_docs, "start") == {date(2026, 8, 17)}
+
+
+class _FakeRedis:
+    def __init__(self):
+        self.store: dict = {}
+
+    async def set(self, key, value, nx=False, ex=None):
+        if nx and key in self.store:
+            return False
+        self.store[key] = value
+        return True
+
+    async def get(self, key):
+        return self.store.get(key)
+
+    async def expire(self, key, ttl):
+        return key in self.store
+
+    async def delete(self, key):
+        self.store.pop(key, None)
+
+
+def test_sweep_lock_blocks_second_chain():
+    import asyncio
+
+    from lib.workers.tasks.vector_coverage.sweep import (
+        SWEEP_LOCK_KEY,
+        vector_coverage_sweep,
+    )
+
+    redis = _FakeRedis()
+    redis.store[SWEEP_LOCK_KEY] = b"other-chain-first-page"
+    result = asyncio.run(
+        vector_coverage_sweep({"redis": redis, "job_id": "spam-click"}, 10, None)
+    )
+    assert result.data == {"skipped": "sweep already running"}
+    assert redis.store[SWEEP_LOCK_KEY] == b"other-chain-first-page"

@@ -42,12 +42,19 @@ def _day_span(d: date) -> tuple[datetime, datetime]:
     return datetime.combine(d, datetime.min.time()), datetime.combine(d, datetime.max.time())
 
 
+# Stable regen:* job ids dedupe repeat requests for a span while it is queued
+# or running. Requires the reports worker's keep_result=0 (success AND
+# failure) — a retained result key blocks re-enqueues of a stable id.
+
+
 async def _regen_meal(pid: str, start: date, end: date) -> list[Optional[str]]:
     # Meal reports are per-day, so a range fans out to one job per day.
     jobs = []
     d = start
     while d <= end:
-        jobs.append(await enqueue_daily_meal_report_async(pid, d))
+        jobs.append(
+            await enqueue_daily_meal_report_async(pid, d, job_id=f"regen:meal:{pid}:{d}")
+        )
         d += timedelta(days=1)
     return jobs
 
@@ -55,13 +62,21 @@ async def _regen_meal(pid: str, start: date, end: date) -> list[Optional[str]]:
 async def _regen_sleep(pid: str, start: date, end: date) -> list[Optional[str]]:
     lo, _ = _day_span(start)
     _, hi = _day_span(end)
-    return [await enqueue_process_sleep_upload_async(pid, lo, hi)]
+    return [
+        await enqueue_process_sleep_upload_async(
+            pid, lo, hi, job_id=f"regen:sleep:{pid}:{start}:{end}"
+        )
+    ]
 
 
 async def _regen_fitness(pid: str, start: date, end: date) -> list[Optional[str]]:
     lo, _ = _day_span(start)
     _, hi = _day_span(end)
-    return [await enqueue_process_fitness_upload_async(pid, lo, hi)]
+    return [
+        await enqueue_process_fitness_upload_async(
+            pid, lo, hi, job_id=f"regen:fitness:{pid}:{start}:{end}"
+        )
+    ]
 
 
 # Add a report type = one line here. CGM is deliberately absent: its reports are
@@ -116,7 +131,7 @@ async def regenerate_reports(
         try:
             for job_id in await adapter(pid, start_date, end_date):
                 jobs.append(
-                    {"patient_id": pid, "job_id": job_id, "status": "queued" if job_id else "failed"}
+                    {"patient_id": pid, "job_id": job_id, "status": "queued" if job_id else "skipped"}
                 )
         except HTTPException:
             raise

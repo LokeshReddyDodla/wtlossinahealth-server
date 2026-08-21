@@ -10,11 +10,14 @@ from lib.workers.tasks.fitness.report_generation import _enqueue_fitness_upload
 
 
 async def enqueue_process_fitness_upload_async(
-    patient_id: str, start_date: datetime, end_date: datetime
+    patient_id: str,
+    start_date: datetime,
+    end_date: datetime,
+    job_id: Optional[str] = None,
 ) -> Optional[str]:
     """Enqueue fitness upload processing (async)."""
     try:
-        return await _enqueue_fitness_upload(patient_id, start_date, end_date)
+        return await _enqueue_fitness_upload(patient_id, start_date, end_date, job_id)
     except Exception as e:
         logger.error(f"Failed to enqueue fitness upload processing: {e}")
         return None

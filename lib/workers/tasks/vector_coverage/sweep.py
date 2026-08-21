@@ -28,6 +28,10 @@ from lib.workers.arq.redis import enqueue_job
 from lib.workers.tasks.base import TaskResult, task_with_logging
 
 _BATCH = 20  # patients per invocation; the sweep self-re-enqueues the next page
+# One sweep chain at a time; parallel chains enqueue the same missing
+# embeddings twice. Page-refreshed TTL is the crash backstop.
+SWEEP_LOCK_KEY = "vector:coverage:lock"
+_SWEEP_LOCK_TTL_S = 900
 _DEFAULT_WINDOW_DAYS = 120
 _ID_CHUNK = 500
 # Runaway guard: a patient needing more than this per type is a systemic
@@ -696,6 +700,21 @@ async def vector_coverage_sweep(
     from lib.dependencies.database import postgres_store
     from lib.models.patient import Patient
 
+    redis = ctx["redis"]
+    if cursor is None:
+        acquired = await redis.set(
+            SWEEP_LOCK_KEY, ctx["job_id"], nx=True, ex=_SWEEP_LOCK_TTL_S
+        )
+        if not acquired:
+            # Lock value = first page's job id: an arq retry of that page
+            # must re-enter its own lock, not deadlock.
+            holder = await redis.get(SWEEP_LOCK_KEY)
+            if holder not in (ctx["job_id"], ctx["job_id"].encode()):
+                return TaskResult(
+                    success=True, data={"skipped": "sweep already running"}
+                )
+    await redis.expire(SWEEP_LOCK_KEY, _SWEEP_LOCK_TTL_S)
+
     async with postgres_store.get_session() as s:
         stmt = select(Patient.patient_id).order_by(Patient.patient_id).limit(batch_size)
         if cursor:
@@ -703,6 +722,7 @@ async def vector_coverage_sweep(
         patient_ids = [str(pid) for pid in (await s.execute(stmt)).scalars().all()]
 
     if not patient_ids:
+        await redis.delete(SWEEP_LOCK_KEY)
         return TaskResult(success=True, data={"done": True, "cursor": cursor})
 
     stats: dict[str, int] = {}

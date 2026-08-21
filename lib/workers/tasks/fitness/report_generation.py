@@ -278,11 +278,12 @@ async def force_regenerate_fitness_reports(
 
 
 async def _enqueue_fitness_upload(
-    patient_id: str, start_date: datetime, end_date: datetime
+    patient_id: str, start_date: datetime, end_date: datetime, job_id: str | None = None
 ) -> str | None:
     """Internal: Enqueue fitness upload processing."""
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    job_id = f"fitness:upload:{patient_id}:{timestamp}"
+    if job_id is None:
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        job_id = f"fitness:upload:{patient_id}:{timestamp}"
 
     job = await enqueue_job(
         "process_fitness_upload",
