@@ -161,9 +161,7 @@ class QdrantStore:
             raise
 
     async def upsert_points(self, collection_name: str, points: list):
-        """Single-batch upsert through the same retry as the chunked path —
-        per-entity services calling client.upsert directly bypassed it and
-        died on the first idle-connection ReadError."""
+        """Single-batch upsert with the idle-connection retry."""
         async with self.get_client() as client:
             await self._upsert_chunk(client, collection_name, points)
 
