@@ -2,6 +2,12 @@
 # Usage: snapshot the collection, then run on the host next to docker-compose.yml.
 set -euo pipefail
 
+if docker compose version >/dev/null 2>&1; then
+  COMPOSE="docker compose"
+else
+  COMPOSE="docker-compose"
+fi
+
 VERSIONS=(v1.11.5 v1.12.6 v1.13.6 v1.14.1 v1.15.5 v1.16.3 v1.17.1 v1.18.3 v1.19.0)
 COLLECTION=patient_data
 QDRANT_URL=http://localhost:6333
@@ -31,7 +37,7 @@ wait_healthy() {
 
 for v in "${VERSIONS[@]}"; do
   echo "=== upgrading to $v"
-  QDRANT_VERSION="$v" docker compose up -d aihealth-qdrant
+  QDRANT_VERSION="$v" $COMPOSE up -d aihealth-qdrant
   wait_healthy
   echo "=== $v healthy"
 done
