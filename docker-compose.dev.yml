@@ -194,7 +194,7 @@ services:
 
   aihealth-qdrant:
     container_name: aihealth-qdrant
-    image: qdrant/qdrant:v1.11.0
+    image: qdrant/qdrant:${QDRANT_VERSION:-v1.11.0}
     restart: unless-stopped
     ulimits:
       nofile:
