@@ -290,6 +290,7 @@ services:
     container_name: aihealth-arq-worker-vectors
     image: aihealth-api:latest
     restart: unless-stopped
+    mem_limit: 4g
     command: >
       /opt/pysetup/.venv/bin/python -m arq lib.workers.arq.worker.VectorsWorkerSettings
     environment:

@@ -107,7 +107,7 @@ class VectorsWorkerSettings(WorkerSettings):
     redis_settings = WorkerSettings.redis_settings
     functions = WorkerSettings.functions
     queue_name = Queues.VECTORS
-    max_jobs = 30
+    max_jobs = 8
     job_timeout = timedelta(minutes=20)
     max_tries = 2
 
