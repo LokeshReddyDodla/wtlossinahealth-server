@@ -41,6 +41,29 @@ class MetricSeries(BaseModel):
     low_coverage: bool = False
 
 
+class CompositionSegment(BaseModel):
+    label: str
+    value: float
+    tone: str  # good | warn | bad | neutral — frontend colors the segment
+
+
+class Composition(BaseModel):
+    """Related metrics that are slices of one whole, shown as a single stacked
+    bar instead of separate trend lines — glucose time-in-ranges, calories by
+    meal, sleep stages. Values are averaged over days with data."""
+
+    category: str
+    key: str
+    label: str
+    unit: str
+    segments: list[CompositionSegment]
+    note: str | None = None
+    coverage_days: int = 0
+    period_days: int = 0
+    latest: date | None = None
+    low_coverage: bool = False
+
+
 class Outcome(BaseModel):
     key: str
     label: str
@@ -79,4 +102,5 @@ class ProgressView(BaseModel):
     outcomes: list[Outcome]
     metrics: list[MetricSeries]
     engagement: Engagement
+    compositions: list[Composition] = []
     care_intents: list[IntentAdherence] = []

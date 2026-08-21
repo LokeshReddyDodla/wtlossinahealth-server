@@ -20,6 +20,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from lib.core.clickhouse_store import ClickHouseStore
 from lib.core.postgres_store import PostgresStore
 from lib.schemas.progress import (
+    Composition,
+    CompositionSegment,
     Engagement,
     IntentAdherence,
     MetricSeries,
@@ -117,10 +119,6 @@ _GLUCOSE = [
      _nested(["cgm_summary_stats", "average_glucose_mgdl"])),
     ("cv", "Variability (CV)", "%", "down", 36.0,
      _nested(["cgm_summary_stats", "coefficient_of_variation_percent"])),
-    ("time_below", "Time below range", "%", "down", None,
-     _range_sum("below_54_percent", "below_70_above_54_percent")),
-    ("time_above", "Time above range", "%", "down", None,
-     _range_sum("above_180_below_250_percent", "above_250_percent")),
 ]
 
 _SLEEP = [
@@ -128,15 +126,20 @@ _SLEEP = [
      _minutes_to_hours(_nested(["duration", "per_day_average_duration"]))),
     ("sleep_efficiency", "Efficiency", "%", "up", 85.0,
      _nested(["quality", "sleep_efficiency"])),
-    ("deep_sleep", "Deep sleep", "%", "up", None,
-     _nested(["quality", "deep_sleep_percentage"])),
-    ("rem_sleep", "REM sleep", "%", "up", None,
-     _nested(["quality", "rem_sleep_percentage"])),
     ("awakenings", "Awakenings /night", "", "down", None,
      _nested(["quality", "average_awakenings"])),
     ("sleep_debt", "Sleep debt", "min", "down", None,
      _nested(["consistency", "sleep_debt_minutes"])),
 ]
+
+
+def _sleep_light(r: dict):
+    """Light-sleep share = the remainder once deep and REM are removed."""
+    deep = _nested(["quality", "deep_sleep_percentage"])(r)
+    rem = _nested(["quality", "rem_sleep_percentage"])(r)
+    if deep is None and rem is None:
+        return None
+    return round(max(0.0, 100 - (deep or 0) - (rem or 0)), 1)
 
 # Weight-loss / T2D framing: fewer calories & carbs = improving, more fiber &
 # protein = improving.
@@ -146,10 +149,6 @@ _MEAL = [
     ("fiber", "Fiber", "g", "up", 25.0, _flat("fiber")),
     ("protein", "Protein", "g", "up", None, _flat("proteins")),
     ("fat", "Fat", "g", "flat", None, _flat("fats")),
-    ("cal_breakfast", "Breakfast cal", "kcal", "down", None, _meal_type_cal("breakfast")),
-    ("cal_lunch", "Lunch cal", "kcal", "down", None, _meal_type_cal("lunch")),
-    ("cal_dinner", "Dinner cal", "kcal", "down", None, _meal_type_cal("dinner")),
-    ("cal_snack", "Snack cal", "kcal", "down", None, _meal_type_cal("snack")),
 ]
 
 _FITNESS = [
@@ -166,6 +165,9 @@ _FITNESS = [
 # data means the trend reflects logging cadence more than the metric. Labs &
 # vitals are point-in-time (a lab isn't taken daily), so they're never gated —
 # their caveat is recency (latest) and reading count, not density.
+_DENSITY_CATEGORIES = {"Glucose", "Sleep", "Nutrition", "Activity", "SMBG", "Engagement"}
+_MIN_COVERAGE = 0.4  # heuristic: below this share of period days, withhold delta
+
 # Finger-stick reading tags (PatientSMBG.type) → provider-facing label. Order
 # leads with fasting, the most day-to-day-comparable line.
 _SMBG_TAGS = [
@@ -175,9 +177,6 @@ _SMBG_TAGS = [
     ("random", "Random (SMBG)"),
 ]
 
-_DENSITY_CATEGORIES = {"Glucose", "Sleep", "Nutrition", "Activity", "SMBG"}
-_MIN_COVERAGE = 0.4  # heuristic: below this share of period days, withhold delta
-
 # One-line methodology caveat per metric key — what the number means and where
 # it can mislead, in the provider's own explaining-to-the-patient voice.
 _NOTES: dict[str, str] = {
@@ -185,8 +184,7 @@ _NOTES: dict[str, str] = {
     "gmi": "A1c estimated from CGM — not a lab value; it can differ from a lab HbA1c.",
     "avg_glucose": "Mean of all CGM readings in the period.",
     "cv": "Glucose variability; lower is steadier. Under 36% is considered stable.",
-    "time_below": "Share of CGM readings under 70 mg/dL — the hypo risk hiding inside time-in-range.",
-    "time_above": "Share of CGM readings over 180 mg/dL — where out-of-range time is going.",
+    "task_completion": "Share of assigned care-plan tasks the patient completed.",
     "calories": "Sum of logged meals per day — reflects what was logged, not necessarily total intake.",
     "carbs": "Carbohydrates from logged meals per day.",
     "fiber": "Fiber from logged meals per day.",
@@ -196,18 +194,15 @@ _NOTES: dict[str, str] = {
     "weight": "Logged or device weight.",
     "sleep_duration": "Average sleep per tracked night — nights the device wasn't worn are excluded.",
     "sleep_efficiency": "Time asleep vs time in bed, per tracked night.",
-    "deep_sleep": "Wearable estimate of deep sleep — not a clinical sleep study.",
-    "rem_sleep": "Wearable estimate of REM sleep — not a clinical sleep study.",
     "steps": "Average steps on days with activity data; may undercount when the device isn't carried.",
     "smbg_avg": "Average of all finger-sticks — mixes fasting and post-meal, so read the tagged splits below for a cleaner picture.",
     "smbg_fasting": "Average of fasting finger-sticks — the most comparable day-to-day glucose line.",
     "smbg_before_meal": "Average of pre-meal finger-sticks.",
     "smbg_after_meal": "Average of post-meal finger-sticks — expected to run higher than fasting.",
     "smbg_random": "Average of untagged/random finger-sticks.",
-    "cal_breakfast": "Calories logged at breakfast per day.",
-    "cal_lunch": "Calories logged at lunch per day.",
-    "cal_dinner": "Calories logged at dinner per day.",
-    "cal_snack": "Calories logged as snacks per day.",
+    "tir_ranges": "Where glucose readings fall: below 70 / in 70–180 / above 180, averaged over days with CGM data.",
+    "meal_slots": "How each day's logged calories split across meals — reflects what was logged, not total intake.",
+    "sleep_stages": "Average share of the night in each stage. Wearable estimates, not a clinical sleep study.",
 }
 
 
@@ -223,6 +218,29 @@ def _empty_meal(r):
 
 def _empty_fitness(r):
     return ((r.get("metadata") or {}).get("days_with_data") or 0) == 0
+
+
+# Related metrics that are slices of one whole → one stacked bar each, instead
+# of separate trend lines. (category, key, label, unit, segments, empty) where
+# each segment is (label, tone, extractor).
+_COMPOSITIONS = [
+    ("Glucose", "tir_ranges", "Time in ranges", "%", [
+        ("Below 70", "bad", _range_sum("below_54_percent", "below_70_above_54_percent")),
+        ("In range", "good", _nested(["cgm_range_stats", "in_target_70_180_percent"])),
+        ("Above 180", "warn", _range_sum("above_180_below_250_percent", "above_250_percent")),
+    ], None),
+    ("Nutrition", "meal_slots", "Calories by meal", "kcal", [
+        ("Breakfast", "neutral", _meal_type_cal("breakfast")),
+        ("Lunch", "neutral", _meal_type_cal("lunch")),
+        ("Dinner", "neutral", _meal_type_cal("dinner")),
+        ("Snack", "neutral", _meal_type_cal("snack")),
+    ], _empty_meal),
+    ("Sleep", "sleep_stages", "Sleep stages", "%", [
+        ("Deep", "neutral", _nested(["quality", "deep_sleep_percentage"])),
+        ("REM", "neutral", _nested(["quality", "rem_sleep_percentage"])),
+        ("Light", "neutral", _sleep_light),
+    ], _empty_sleep),
+]
 
 
 def _improved(direction: str, delta: float | None) -> bool | None:
@@ -338,6 +356,24 @@ class ProgressService:
             if s:
                 metrics.append(s)
 
+        # Task completion trends like any metric, so a thin-coverage delta is
+        # withheld by the same gating rather than shown as progress.
+        eng_metric = self._build("Engagement", "task_completion", "Task completion",
+                                 "%", "up", 80.0, completion, resolution, period_days)
+        if eng_metric:
+            metrics.append(eng_metric)
+
+        # ── compositions (slices of one whole → one stacked bar) ─────────────
+        reports_by_cat = {
+            "Glucose": glucose_reports, "Nutrition": meal_reports, "Sleep": sleep_reports,
+        }
+        compositions = []
+        for cat, key, label, unit, segdefs, empty in _COMPOSITIONS:
+            comp = self._compose(reports_by_cat.get(cat) or [], cat, key, label, unit,
+                                 segdefs, period_days, empty)
+            if comp:
+                compositions.append(comp)
+
         engagement = Engagement(
             current_streak=cur_streak,
             longest_streak=longest_streak,
@@ -350,7 +386,7 @@ class ProgressService:
         return ProgressView(
             range=range_key, resolution=resolution, start=start, end=end,
             outcomes=self._outcomes(metrics, engagement),
-            metrics=metrics, engagement=engagement,
+            metrics=metrics, engagement=engagement, compositions=compositions,
             care_intents=[IntentAdherence(**a) for a in adherence],
         )
 
@@ -417,6 +453,46 @@ class ProgressService:
         )
 
     @staticmethod
+    def _compose(reports, category, key, label, unit, segdefs, period_days, empty=None):
+        """Average each segment over days with data → one stacked-bar composition."""
+        seg_vals: dict[str, list[float]] = {sl: [] for sl, _t, _ex in segdefs}
+        days: set[date] = set()
+        for report in reports or []:
+            d = _report_date(report)
+            if d is None or (empty and empty(report)):
+                continue
+            got = False
+            for sl, _tone, ex in segdefs:
+                v = ex(report)
+                if v is not None:
+                    seg_vals[sl].append(float(v))
+                    got = True
+            if got:
+                days.add(d)
+        if not days:
+            return None
+        segments = [
+            CompositionSegment(
+                label=sl, tone=tone,
+                value=round(sum(seg_vals[sl]) / len(seg_vals[sl]), 1) if seg_vals[sl] else 0.0,
+            )
+            for sl, tone, _ex in segdefs
+        ]
+        if not any(s.value for s in segments):
+            return None
+        coverage_days = len(days)
+        low_coverage = (
+            category in _DENSITY_CATEGORIES
+            and period_days > 0
+            and coverage_days / period_days < _MIN_COVERAGE
+        )
+        return Composition(
+            category=category, key=key, label=label, unit=unit, segments=segments,
+            note=_NOTES.get(key), coverage_days=coverage_days, period_days=period_days,
+            latest=max(days), low_coverage=low_coverage,
+        )
+
+    @staticmethod
     def _outcomes(metrics: list[MetricSeries], engagement: Engagement) -> list[Outcome]:
         by_key = {m.key: m for m in metrics}
         out: list[Outcome] = []
@@ -429,7 +505,8 @@ class ProgressService:
             if m.delta is not None:
                 sign = "+" if m.delta > 0 else ""
                 delta_txt = f"{sign}{round(m.delta, 1):g}{delta_unit}"
-            out.append(Outcome(key=key, label=label, value=f"{m.current:g}{unit}",
+            val = round(m.current) if abs(m.current) >= 100 else round(m.current, 1)
+            out.append(Outcome(key=key, label=label, value=f"{val:g}{unit}",
                                delta=delta_txt, good=_improved(m.dir, m.delta)))
 
         add("weight", "Weight", " kg", " kg")
