@@ -1,13 +1,11 @@
 #!/usr/bin/env bash
-# Sequential Qdrant upgrade: one minor at a time per upstream guidance.
-# Run on the host next to docker-compose.yml. Snapshot first:
-#   curl -X POST localhost:6333/collections/patient_data/snapshots
+# Usage: snapshot the collection, then run on the host next to docker-compose.yml.
 set -euo pipefail
 
 VERSIONS=(v1.11.5 v1.12.6 v1.13.6 v1.14.1 v1.15.5 v1.16.3 v1.17.1 v1.18.3 v1.19.0)
 COLLECTION=patient_data
 QDRANT_URL=http://localhost:6333
-# v1.18.x migrates RocksDB -> Gridstore on startup; allow a long boot.
+# v1.18.x storage migration runs at boot
 MAX_WAIT_SECONDS=3600
 
 wait_healthy() {

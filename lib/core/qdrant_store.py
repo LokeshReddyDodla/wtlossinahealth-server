@@ -73,10 +73,7 @@ class QdrantStore:
             return
 
         async with self.get_client() as client:
-            # Existence must be a definitive answer: a failed check (timeout,
-            # refused connection, half-started Qdrant) aborts startup rather
-            # than falling through to creation — recreate_collection deletes
-            # the collection first.
+            # a failed existence check must abort startup, never create
             exists = await client.collection_exists(collection_name=QDRANT_COLLECTION)
             if exists:
                 logger.info(
