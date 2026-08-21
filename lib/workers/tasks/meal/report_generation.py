@@ -55,11 +55,13 @@ async def generate_daily_meal_report(
         raise
 
 
-async def _enqueue_daily_meal_report(patient_id: str, report_date: date) -> str | None:
+async def _enqueue_daily_meal_report(
+    patient_id: str, report_date: date, job_id: str | None = None
+) -> str | None:
     """Internal: Enqueue daily meal report generation."""
-    report_date_str = report_date.isoformat()
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    job_id = f"meal:report:{patient_id}:{report_date_str}:{timestamp}"
+    if job_id is None:
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        job_id = f"meal:report:{patient_id}:{report_date.isoformat()}:{timestamp}"
 
     job = await enqueue_job(
         "generate_daily_meal_report",
@@ -70,7 +72,7 @@ async def _enqueue_daily_meal_report(patient_id: str, report_date: date) -> str 
     )
 
     if job:
-        logger.info(f"Enqueued daily meal report for {patient_id} on {report_date_str}")
+        logger.info(f"Enqueued daily meal report for {patient_id} on {report_date}")
     else:
         logger.debug(f"Duplicate meal report skipped: {job_id}")
 

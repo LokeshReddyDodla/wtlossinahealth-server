@@ -222,11 +222,12 @@ async def _generate_monthly_reports(
 
 
 async def _enqueue_sleep_upload(
-    patient_id: str, start_date: datetime, end_date: datetime
+    patient_id: str, start_date: datetime, end_date: datetime, job_id: str | None = None
 ) -> str | None:
     """Internal: Enqueue sleep upload processing."""
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    job_id = f"sleep:upload:{patient_id}:{timestamp}"
+    if job_id is None:
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        job_id = f"sleep:upload:{patient_id}:{timestamp}"
 
     job = await enqueue_job(
         "process_sleep_upload",

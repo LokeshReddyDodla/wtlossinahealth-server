@@ -10,11 +10,14 @@ from lib.workers.tasks.sleep.report_generation import _enqueue_sleep_upload
 
 
 async def enqueue_process_sleep_upload_async(
-    patient_id: str, start_date: datetime, end_date: datetime
+    patient_id: str,
+    start_date: datetime,
+    end_date: datetime,
+    job_id: Optional[str] = None,
 ) -> Optional[str]:
     """Enqueue sleep upload processing (async)."""
     try:
-        return await _enqueue_sleep_upload(patient_id, start_date, end_date)
+        return await _enqueue_sleep_upload(patient_id, start_date, end_date, job_id)
     except Exception as e:
         logger.error(f"Failed to enqueue sleep upload processing: {e}")
         return None

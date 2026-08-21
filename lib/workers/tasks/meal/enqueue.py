@@ -11,11 +11,11 @@ from lib.workers.tasks.meal.vector_generation import _enqueue_meal_vector
 
 
 async def enqueue_daily_meal_report_async(
-    patient_id: str, report_date: date
+    patient_id: str, report_date: date, job_id: Optional[str] = None
 ) -> Optional[str]:
     """Enqueue daily meal report generation (async)."""
     try:
-        return await _enqueue_daily_meal_report(patient_id, report_date)
+        return await _enqueue_daily_meal_report(patient_id, report_date, job_id)
     except Exception as e:
         logger.error(f"Failed to enqueue meal report for {patient_id}: {e}")
         return None
