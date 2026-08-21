@@ -91,6 +91,31 @@ class ProgressRepository:
             out.append((dd, round(float(avg), 1)))
         return out
 
+    async def smbg_by_type_daily(
+        self, pid, start_dt: datetime, end_dt: datetime, session: AsyncSession
+    ) -> dict[str, list[tuple[date, float]]]:
+        """Daily average finger-stick glucose split by reading type
+        (fasting/before_meal/after_meal/random) — the tagged view a provider
+        reads instead of the blended average."""
+        rows = (await session.execute(
+            select(
+                PatientSMBG.type,
+                func.date(PatientSMBG.reading_time).label("d"),
+                func.avg(PatientSMBG.glucose_level),
+            )
+            .where(
+                PatientSMBG.patient_id == pid,
+                PatientSMBG.reading_time >= start_dt,
+                PatientSMBG.reading_time < end_dt,
+            )
+            .group_by(PatientSMBG.type, func.date(PatientSMBG.reading_time))
+        )).all()
+        out: dict[str, list[tuple[date, float]]] = {}
+        for t, d, avg in rows:
+            dd = d if isinstance(d, date) else date.fromisoformat(str(d))
+            out.setdefault(str(t or "random"), []).append((dd, round(float(avg), 1)))
+        return out
+
     async def care_intent_adherence(
         self, pid, start: date, end: date, session: AsyncSession
     ) -> list[dict]:

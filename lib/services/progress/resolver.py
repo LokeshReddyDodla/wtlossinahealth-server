@@ -83,6 +83,30 @@ def _workout_count(r):
     return sum((w.get("session_count") or 1) for w in (r.get("workouts") or []))
 
 
+def _range_sum(*keys: str):
+    """Sum CGM range-coverage percentages (below-range = <54 + 54–70, etc.)."""
+    def get(report: dict):
+        stats = (report or {}).get("cgm_range_stats") or {}
+        vals = [stats.get(k) for k in keys]
+        vals = [float(v) for v in vals if v is not None]
+        return round(sum(vals), 1) if vals else None
+    return get
+
+
+def _meal_type_cal(meal_type: str):
+    """Sum a day's logged calories for one meal slot (breakfast/lunch/…)."""
+    def get(report: dict):
+        total, seen = 0.0, False
+        for m in (report or {}).get("meals") or []:
+            if str(m.get("type") or "").strip().lower().rstrip("s") != meal_type:
+                continue
+            cal = (m.get("total_macro_nutritional_value") or {}).get("calories")
+            if cal is not None:
+                total, seen = total + float(cal), True
+        return round(total, 1) if seen else None
+    return get
+
+
 # key, label, unit, direction, target, extractor(report_dict)
 _GLUCOSE = [
     ("tir", "Time in range", "%", "up", 70.0,
@@ -93,6 +117,10 @@ _GLUCOSE = [
      _nested(["cgm_summary_stats", "average_glucose_mgdl"])),
     ("cv", "Variability (CV)", "%", "down", 36.0,
      _nested(["cgm_summary_stats", "coefficient_of_variation_percent"])),
+    ("time_below", "Time below range", "%", "down", None,
+     _range_sum("below_54_percent", "below_70_above_54_percent")),
+    ("time_above", "Time above range", "%", "down", None,
+     _range_sum("above_180_below_250_percent", "above_250_percent")),
 ]
 
 _SLEEP = [
@@ -118,6 +146,10 @@ _MEAL = [
     ("fiber", "Fiber", "g", "up", 25.0, _flat("fiber")),
     ("protein", "Protein", "g", "up", None, _flat("proteins")),
     ("fat", "Fat", "g", "flat", None, _flat("fats")),
+    ("cal_breakfast", "Breakfast cal", "kcal", "down", None, _meal_type_cal("breakfast")),
+    ("cal_lunch", "Lunch cal", "kcal", "down", None, _meal_type_cal("lunch")),
+    ("cal_dinner", "Dinner cal", "kcal", "down", None, _meal_type_cal("dinner")),
+    ("cal_snack", "Snack cal", "kcal", "down", None, _meal_type_cal("snack")),
 ]
 
 _FITNESS = [
@@ -128,6 +160,55 @@ _FITNESS = [
     ("active_minutes", "Active minutes", "min", "up", 30.0, _flat("exercise_time")),
     ("workouts", "Workouts /period", "", "up", None, _workout_count),
 ]
+
+
+# Categories where a value is expected most days, so a low share of days-with-
+# data means the trend reflects logging cadence more than the metric. Labs &
+# vitals are point-in-time (a lab isn't taken daily), so they're never gated —
+# their caveat is recency (latest) and reading count, not density.
+# Finger-stick reading tags (PatientSMBG.type) → provider-facing label. Order
+# leads with fasting, the most day-to-day-comparable line.
+_SMBG_TAGS = [
+    ("fasting", "Fasting (SMBG)"),
+    ("before_meal", "Before meal (SMBG)"),
+    ("after_meal", "After meal (SMBG)"),
+    ("random", "Random (SMBG)"),
+]
+
+_DENSITY_CATEGORIES = {"Glucose", "Sleep", "Nutrition", "Activity", "SMBG"}
+_MIN_COVERAGE = 0.4  # heuristic: below this share of period days, withhold delta
+
+# One-line methodology caveat per metric key — what the number means and where
+# it can mislead, in the provider's own explaining-to-the-patient voice.
+_NOTES: dict[str, str] = {
+    "tir": "Share of CGM readings in 70–180 mg/dL. Reliable only when the sensor was worn most days.",
+    "gmi": "A1c estimated from CGM — not a lab value; it can differ from a lab HbA1c.",
+    "avg_glucose": "Mean of all CGM readings in the period.",
+    "cv": "Glucose variability; lower is steadier. Under 36% is considered stable.",
+    "time_below": "Share of CGM readings under 70 mg/dL — the hypo risk hiding inside time-in-range.",
+    "time_above": "Share of CGM readings over 180 mg/dL — where out-of-range time is going.",
+    "calories": "Sum of logged meals per day — reflects what was logged, not necessarily total intake.",
+    "carbs": "Carbohydrates from logged meals per day.",
+    "fiber": "Fiber from logged meals per day.",
+    "protein": "Protein from logged meals per day.",
+    "fat": "Fat from logged meals per day.",
+    "a1c": "Lab HbA1c — point-in-time, not continuous. Check the latest date before quoting it.",
+    "weight": "Logged or device weight.",
+    "sleep_duration": "Average sleep per tracked night — nights the device wasn't worn are excluded.",
+    "sleep_efficiency": "Time asleep vs time in bed, per tracked night.",
+    "deep_sleep": "Wearable estimate of deep sleep — not a clinical sleep study.",
+    "rem_sleep": "Wearable estimate of REM sleep — not a clinical sleep study.",
+    "steps": "Average steps on days with activity data; may undercount when the device isn't carried.",
+    "smbg_avg": "Average of all finger-sticks — mixes fasting and post-meal, so read the tagged splits below for a cleaner picture.",
+    "smbg_fasting": "Average of fasting finger-sticks — the most comparable day-to-day glucose line.",
+    "smbg_before_meal": "Average of pre-meal finger-sticks.",
+    "smbg_after_meal": "Average of post-meal finger-sticks — expected to run higher than fasting.",
+    "smbg_random": "Average of untagged/random finger-sticks.",
+    "cal_breakfast": "Calories logged at breakfast per day.",
+    "cal_lunch": "Calories logged at lunch per day.",
+    "cal_dinner": "Calories logged at dinner per day.",
+    "cal_snack": "Calories logged as snacks per day.",
+}
 
 
 # A daily report is written even for a day with no synced data; skip those so an
@@ -199,6 +280,7 @@ class ProgressService:
             tz = timezone.utc
         end = datetime.now(tz).date()
         start = months_ago(end, months)
+        period_days = (end - start).days
         start_dt = datetime.combine(start, time.min)
         end_dt = datetime.combine(end + timedelta(days=1), time.min)
         pid = UUID(patient_id)
@@ -217,7 +299,7 @@ class ProgressService:
             self._safe(self.fitness_report_service.fetch_daily_reports_in_range, patient_id, start, end),
             self._session_bundle(pid, start_dt, end_dt, start, end, postgres_session),
         )
-        completion, (cur_streak, longest_streak), adherence, smbg = session_bundle
+        completion, (cur_streak, longest_streak), adherence, smbg, smbg_by_type = session_bundle
 
         metrics: list[MetricSeries] = []
 
@@ -234,21 +316,27 @@ class ProgressService:
             vitals_points.setdefault(vtype, []).append((d, row["avg"]))
         for vtype, (cat, label, unit, direction, target) in _VITALS.items():
             s = self._build(cat, vtype, label, unit, direction, target,
-                            vitals_points.get(vtype, []), resolution)
+                            vitals_points.get(vtype, []), resolution, period_days)
             if s:
                 metrics.append(s)
 
         # ── report-backed categories (stored daily reports) ──────────────────
-        metrics += self._collect(glucose_reports, "Glucose", _GLUCOSE, resolution)
-        metrics += self._collect(sleep_reports, "Sleep", _SLEEP, resolution, _empty_sleep)
-        metrics += self._collect(meal_reports, "Nutrition", _MEAL, resolution, _empty_meal)
-        metrics += self._collect(fitness_reports, "Activity", _FITNESS, resolution, _empty_fitness)
+        metrics += self._collect(glucose_reports, "Glucose", _GLUCOSE, resolution, period_days)
+        metrics += self._collect(sleep_reports, "Sleep", _SLEEP, resolution, period_days, _empty_sleep)
+        metrics += self._collect(meal_reports, "Nutrition", _MEAL, resolution, period_days, _empty_meal)
+        metrics += self._collect(fitness_reports, "Activity", _FITNESS, resolution, period_days, _empty_fitness)
 
         # ── SMBG (finger-stick glucose, Postgres — for non-CGM patients) ─────
+        # Fasting is the cleanest day-to-day line; the blend is kept for context.
         smbg_series = self._build("SMBG", "smbg_avg", "Avg glucose (SMBG)", "mg/dL",
-                                  "down", None, smbg, resolution)
+                                  "down", None, smbg, resolution, period_days)
         if smbg_series:
             metrics.append(smbg_series)
+        for tag, label in _SMBG_TAGS:
+            s = self._build("SMBG", f"smbg_{tag}", label, "mg/dL", "down", None,
+                            smbg_by_type.get(tag, []), resolution, period_days)
+            if s:
+                metrics.append(s)
 
         engagement = Engagement(
             current_streak=cur_streak,
@@ -274,10 +362,11 @@ class ProgressService:
         streak = await self.repo.streak(pid, session)
         adherence = await self.repo.care_intent_adherence(pid, start, end, session)
         smbg = await self.repo.smbg_daily(pid, start_dt, end_dt, session)
-        return completion, streak, adherence, smbg
+        smbg_by_type = await self.repo.smbg_by_type_daily(pid, start_dt, end_dt, session)
+        return completion, streak, adherence, smbg, smbg_by_type
 
     @staticmethod
-    def _collect(reports, category, defs, resolution, empty=None) -> list[MetricSeries]:
+    def _collect(reports, category, defs, resolution, period_days, empty=None) -> list[MetricSeries]:
         """Group each metric's daily points across a report stream, then build.
         `empty(report)` drops no-data days so they don't count as zeros."""
         points: dict[str, list[tuple[date, float]]] = {}
@@ -292,25 +381,39 @@ class ProgressService:
         out: list[MetricSeries] = []
         for key, label, unit, direction, target, _ex in defs:
             s = ProgressService._build(category, key, label, unit, direction, target,
-                                       points.get(key, []), resolution)
+                                       points.get(key, []), resolution, period_days)
             if s:
                 out.append(s)
         return out
 
     @staticmethod
-    def _build(category, key, label, unit, direction, target, daily_points, resolution):
+    def _build(category, key, label, unit, direction, target, daily_points, resolution, period_days):
         pts = bucketize(daily_points, resolution)
         if not pts or not any(v != 0 for _, v in pts):
             return None  # no data, or an all-zero series that was never synced
         points = [TrendPoint(t=t, value=v) for t, v in pts]
         baseline, current = points[0].value, points[-1].value
-        # A single bucket is a lone reading, not a trend — no baseline to diff, so
-        # no delta (the frontend shows the value without a misleading "vs start").
-        delta = round(current - baseline, 2) if len(points) >= 2 else None
+        days = {d for d, _ in daily_points}
+        coverage_days = len(days)
+        low_coverage = (
+            category in _DENSITY_CATEGORIES
+            and period_days > 0
+            and coverage_days / period_days < _MIN_COVERAGE
+        )
+        # No delta when there's a single bucket (no baseline to diff) or when
+        # coverage is thin — a "vs start" over sparse data tracks logging cadence,
+        # not the metric. The value still shows; only the trend is withheld.
+        delta = (
+            round(current - baseline, 2)
+            if len(points) >= 2 and not low_coverage
+            else None
+        )
         return MetricSeries(
             category=category, key=key, label=label, unit=unit, dir=direction,
             target=target, points=points, current=current, baseline=baseline,
-            delta=delta,
+            delta=delta, note=_NOTES.get(key), coverage_days=coverage_days,
+            period_days=period_days, latest=max(days) if days else None,
+            low_coverage=low_coverage,
         )
 
     @staticmethod
