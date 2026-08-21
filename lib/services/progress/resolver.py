@@ -180,29 +180,29 @@ _SMBG_TAGS = [
 # One-line methodology caveat per metric key — what the number means and where
 # it can mislead, in the provider's own explaining-to-the-patient voice.
 _NOTES: dict[str, str] = {
-    "tir": "Share of CGM readings in 70–180 mg/dL. Reliable only when the sensor was worn most days.",
-    "gmi": "A1c estimated from CGM — not a lab value; it can differ from a lab HbA1c.",
+    "tir": "Share of CGM readings in 70–180 mg/dL. Reliable only when the **sensor was worn most days**.",
+    "gmi": "A1c estimated from CGM — **not a lab value**; it can differ from a lab HbA1c.",
     "avg_glucose": "Mean of all CGM readings in the period.",
-    "cv": "Glucose variability; lower is steadier. Under 36% is considered stable.",
-    "task_completion": "Share of assigned care-plan tasks the patient completed.",
-    "calories": "Sum of logged meals per day — reflects what was logged, not necessarily total intake.",
+    "cv": "Glucose variability; lower is steadier. **Under 36%** is considered stable.",
+    "task_completion": "Share of **assigned care-plan tasks** the patient completed.",
+    "calories": "Sum of logged meals per day — **reflects what was logged**, not necessarily total intake.",
     "carbs": "Carbohydrates from logged meals per day.",
     "fiber": "Fiber from logged meals per day.",
     "protein": "Protein from logged meals per day.",
     "fat": "Fat from logged meals per day.",
-    "a1c": "Lab HbA1c — point-in-time, not continuous. Check the latest date before quoting it.",
+    "a1c": "Lab HbA1c — **point-in-time**, not continuous. Check the latest date before quoting it.",
     "weight": "Logged or device weight.",
-    "sleep_duration": "Average sleep per tracked night — nights the device wasn't worn are excluded.",
+    "sleep_duration": "Average sleep per **tracked night** — nights the device wasn't worn are excluded.",
     "sleep_efficiency": "Time asleep vs time in bed, per tracked night.",
-    "steps": "Average steps on days with activity data; may undercount when the device isn't carried.",
-    "smbg_avg": "Average of all finger-sticks — mixes fasting and post-meal, so read the tagged splits below for a cleaner picture.",
-    "smbg_fasting": "Average of fasting finger-sticks — the most comparable day-to-day glucose line.",
+    "steps": "Average steps on days with activity data; **may undercount** when the device isn't carried.",
+    "smbg_avg": "Average of all finger-sticks — **mixes fasting and post-meal**, so read the tagged splits below for a cleaner picture.",
+    "smbg_fasting": "Average of fasting finger-sticks — the **most comparable** day-to-day glucose line.",
     "smbg_before_meal": "Average of pre-meal finger-sticks.",
-    "smbg_after_meal": "Average of post-meal finger-sticks — expected to run higher than fasting.",
+    "smbg_after_meal": "Average of post-meal finger-sticks — **expected to run higher** than fasting.",
     "smbg_random": "Average of untagged/random finger-sticks.",
-    "tir_ranges": "Where glucose readings fall: below 70 / in 70–180 / above 180, averaged over days with CGM data.",
-    "meal_slots": "How each day's logged calories split across meals — reflects what was logged, not total intake.",
-    "sleep_stages": "Average share of the night in each stage. Wearable estimates, not a clinical sleep study.",
+    "tir_ranges": "Where glucose readings fall: below 70 / in 70–180 / above 180, for the **most recent period** — matching the Time-in-range value beside it.",
+    "meal_slots": "How each day's logged calories split across meals — **reflects what was logged**, not total intake.",
+    "sleep_stages": "Average share of the night in each stage. **Wearable estimates**, not a clinical sleep study.",
 }
 
 
@@ -370,7 +370,7 @@ class ProgressService:
         compositions = []
         for cat, key, label, unit, segdefs, empty in _COMPOSITIONS:
             comp = self._compose(reports_by_cat.get(cat) or [], cat, key, label, unit,
-                                 segdefs, period_days, empty)
+                                 segdefs, resolution, period_days, empty)
             if comp:
                 compositions.append(comp)
 
@@ -453,9 +453,11 @@ class ProgressService:
         )
 
     @staticmethod
-    def _compose(reports, category, key, label, unit, segdefs, period_days, empty=None):
-        """Average each segment over days with data → one stacked-bar composition."""
-        seg_vals: dict[str, list[float]] = {sl: [] for sl, _t, _ex in segdefs}
+    def _compose(reports, category, key, label, unit, segdefs, resolution, period_days, empty=None):
+        """One stacked-bar composition. Each segment is reduced the same way as a
+        metric headline (latest bucket via bucketize), so the bar's "In range"
+        equals the Time-in-range value shown beside it instead of a period mean."""
+        seg_daily: dict[str, list[tuple[date, float]]] = {sl: [] for sl, _t, _ex in segdefs}
         days: set[date] = set()
         for report in reports or []:
             d = _report_date(report)
@@ -465,19 +467,18 @@ class ProgressService:
             for sl, _tone, ex in segdefs:
                 v = ex(report)
                 if v is not None:
-                    seg_vals[sl].append(float(v))
+                    seg_daily[sl].append((d, float(v)))
                     got = True
             if got:
                 days.add(d)
         if not days:
             return None
-        segments = [
-            CompositionSegment(
-                label=sl, tone=tone,
-                value=round(sum(seg_vals[sl]) / len(seg_vals[sl]), 1) if seg_vals[sl] else 0.0,
-            )
-            for sl, tone, _ex in segdefs
-        ]
+        segments = []
+        for sl, tone, _ex in segdefs:
+            buckets = bucketize(seg_daily[sl], resolution)
+            segments.append(CompositionSegment(
+                label=sl, tone=tone, value=round(buckets[-1][1], 1) if buckets else 0.0,
+            ))
         if not any(s.value for s in segments):
             return None
         coverage_days = len(days)
