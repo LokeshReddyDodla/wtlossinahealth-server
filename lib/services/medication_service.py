@@ -216,11 +216,11 @@ class MedicationService:
         *,
         postgres_session: AsyncSession,
     ) -> PatientPrescription:
-        """Edit a confirmed prescription — replace medications, update metadata.
+        """Edit a confirmed prescription — reconcile medications, update metadata.
 
-        All current active/paused/scheduled medications are discontinued, and
-        new medications are created from the payload. Completed/discontinued
-        medications are left untouched (history preserved).
+        Unchanged meds are kept as-is; changed ones are discontinued and recreated;
+        meds dropped from the payload are discontinued; new ones are created. This
+        avoids churning (and duplicating) medications that didn't actually change.
         """
         from lib.utils.http_exceptions import raise_http_exception
 
@@ -258,23 +258,35 @@ class MedicationService:
         prescription.advice = data.advice
         prescription.updated_at = datetime.now().replace(tzinfo=None)
 
-        # Discontinue all active medications under this prescription
         now = datetime.now().replace(tzinfo=None)
-        for med in (prescription.medications or []):
-            if med.status in ("active", "paused", "as_needed", "scheduled"):
+        current_active = [
+            m for m in (prescription.medications or [])
+            if m.status in ("active", "paused", "as_needed", "scheduled")
+        ]
+        kept: set = set()
+        for med_data in data.medicines:
+            doses_json = [d.model_dump() for d in med_data.doses]
+            match = next(
+                (
+                    m for m in current_active
+                    if m.medication_id not in kept
+                    and self._medication_unchanged(m, med_data, doses_json)
+                ),
+                None,
+            )
+            if match:
+                kept.add(match.medication_id)
+            else:
+                postgres_session.add(
+                    self._new_medication_row(patient_id, prescription.prescription_id, med_data)
+                )
+
+        for med in current_active:
+            if med.medication_id not in kept:
                 med.status = "discontinued"
                 med.discontinued_at = now
 
         await postgres_session.flush()
-
-        # Create new medications from payload
-        for med_data in data.medicines:
-            await self._create_medication(
-                patient_id=patient_id,
-                prescription_id=prescription.prescription_id,
-                med_data=med_data,
-                session=postgres_session,
-            )
 
         await postgres_session.commit()
         await postgres_session.refresh(
@@ -328,8 +340,8 @@ class MedicationService:
         from lib.utils.s3_utils import upload_file_to_s3
 
         prescription = await self._load_prescription(prescription_id, patient_id, postgres_session)
-        if prescription.status == "draft":
-            raise_http_exception(status_code=400, message="Issue the prescription before storing its document")
+        if prescription.status != "confirmed":
+            raise_http_exception(status_code=400, message="Only a confirmed prescription can store a document")
 
         # Unique per prescription so multiple prescriptions don't overwrite each other;
         # re-sending the same one overwrites its own file (latest version).
@@ -362,8 +374,8 @@ class MedicationService:
         from lib.utils.http_exceptions import raise_http_exception
 
         prescription = await self._load_prescription(prescription_id, patient_id, postgres_session)
-        if prescription.status == "draft":
-            raise_http_exception(status_code=400, message="Issue the prescription before sending it")
+        if prescription.status != "confirmed":
+            raise_http_exception(status_code=400, message="Only a confirmed prescription can be sent")
 
         document_url = prescription.document_url or (prescription.file_urls[0] if prescription.file_urls else None)
         if not document_url:
@@ -373,12 +385,22 @@ class MedicationService:
         rx_date = prescription.prescription_date or (prescription.created_at.date() if prescription.created_at else date.today())
         caption = f"Prescription · {doctor_name} · {rx_date.strftime('%d %b %Y')}"
 
+        # Chat is best-effort (no chat/admin sender → no-op), so always fire a
+        # notification too — otherwise the patient could get nothing.
         await self._deliver_prescription_chat(
             patient_id=patient_id,
             sender_id=sender_id,
             document_url=document_url,
             doctor_name=doctor_name,
             caption=caption,
+        )
+        await self._notify_patient(
+            patient_id,
+            title="Prescription ready",
+            body=f"{doctor_name} sent you a prescription. Tap to view.",
+            event_type="prescription_sent",
+            prescription_id=str(prescription_id),
+            document_url=document_url,
         )
         return document_url
 
@@ -432,7 +454,7 @@ class MedicationService:
         The status difference (completed vs discontinued) tells the agent WHY it ended.
         """
         existing = await self._find_active_by_name(
-            patient_id, med_data.name, session
+            patient_id, med_data.name, session, exclude_prescription_id=prescription_id
         )
         doses_json = [d.model_dump() for d in med_data.doses]
         now = datetime.now().replace(tzinfo=None)
@@ -444,11 +466,15 @@ class MedicationService:
                 med.status = "discontinued"
             med.discontinued_at = now
 
-        schedule_json = (
-            med_data.schedule.model_dump(mode="json") if med_data.schedule else None
-        )
+        medication = self._new_medication_row(patient_id, prescription_id, med_data)
+        session.add(medication)
+        return medication
 
-        medication = PatientMedication(
+    @staticmethod
+    def _new_medication_row(
+        patient_id: str, prescription_id: UUID, med_data: ConfirmedMedicine
+    ) -> PatientMedication:
+        return PatientMedication(
             patient_id=patient_id,
             prescription_id=prescription_id,
             name=med_data.name,
@@ -459,14 +485,51 @@ class MedicationService:
             food_timing=med_data.food_timing,
             purpose=med_data.purpose,
             instructions=med_data.instructions,
-            doses=doses_json,
-            schedule=schedule_json,
+            doses=[d.model_dump() for d in med_data.doses],
+            schedule=med_data.schedule.model_dump(mode="json") if med_data.schedule else None,
             start_date=med_data.start_date,
             end_date=med_data.end_date,
-            status=self._initial_status(med_data),
+            status=MedicationService._initial_status(med_data),
         )
-        session.add(medication)
-        return medication
+
+    @staticmethod
+    def _medication_unchanged(
+        existing: PatientMedication, new: ConfirmedMedicine, new_doses_json: list[dict]
+    ) -> bool:
+        """Full-fidelity equality for the edit diff — every editable clinical field.
+        Compares duration (end−start days), not absolute dates, since the composer
+        re-stamps start_date to today on every open."""
+        def norm(s: str | None) -> str:
+            return "".join((s or "").lower().split())
+
+        def duration(start, end) -> int | None:
+            return (end - start).days if start and end else None
+
+        if norm(existing.name) != norm(new.name):
+            return False
+        if norm(existing.strength) != norm(new.strength):
+            return False
+        if sorted((d.get("slot"), d.get("quantity", 1)) for d in (existing.doses or [])) != sorted(
+            (d.get("slot"), d.get("quantity", 1)) for d in new_doses_json
+        ):
+            return False
+        if (existing.schedule or {}) != (new.schedule.model_dump(mode="json") if new.schedule else {}):
+            return False
+        pairs = [
+            (existing.food_timing, new.food_timing),
+            (existing.formulation, new.formulation),
+            (existing.route, new.route),
+            (existing.brand_name, new.brand_name),
+            (existing.purpose, new.purpose),
+            (existing.instructions, new.instructions),
+        ]
+        if any((a or "") != (b or "") for a, b in pairs):
+            return False
+        if (existing.status == "as_needed") != bool(new.is_sos):
+            return False
+        if duration(existing.start_date, existing.end_date) != duration(new.start_date, new.end_date):
+            return False
+        return True
 
     @staticmethod
     def _is_same_medication(
@@ -518,15 +581,21 @@ class MedicationService:
         patient_id: str,
         name: str,
         session: AsyncSession,
+        exclude_prescription_id: UUID | None = None,
     ) -> list[PatientMedication]:
-        """Find all active/paused medications matching a generic name (case-insensitive)."""
-        result = await session.execute(
-            select(PatientMedication).where(
-                PatientMedication.patient_id == patient_id,
-                PatientMedication.status.in_(["active", "as_needed", "paused"]),
-                PatientMedication.name.ilike(name.strip()),
-            )
-        )
+        """Find all active/paused medications matching a generic name (case-insensitive).
+
+        exclude_prescription_id keeps sibling meds created earlier in the same
+        confirm from being found (autoflush) and wrongly superseded.
+        """
+        conditions = [
+            PatientMedication.patient_id == patient_id,
+            PatientMedication.status.in_(["active", "as_needed", "paused"]),
+            PatientMedication.name.ilike(name.strip()),
+        ]
+        if exclude_prescription_id is not None:
+            conditions.append(PatientMedication.prescription_id != exclude_prescription_id)
+        result = await session.execute(select(PatientMedication).where(*conditions))
         return list(result.scalars().all())
 
     # ── Read operations ──────────────────────────────────────────────────
@@ -829,6 +898,11 @@ class MedicationService:
                 await self._sync_qdrant(pid, postgres_session)
             except Exception:
                 logger.exception("Qdrant sync failed for patient %s", pid)
+
+        # Newly activated meds need today's TAKE_MEDICATION_* tasks generated,
+        # otherwise "check your tasks" points at tasks that don't exist yet.
+        for pid in {pid for pid, _ in activated_meds}:
+            await self._refresh_medication_tasks(UUID(pid))
 
         # Notify patients about newly activated medications
         for pid, med_name in activated_meds:
