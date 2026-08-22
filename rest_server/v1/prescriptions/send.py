@@ -56,7 +56,6 @@ async def store_prescription_document(
         patient_id=str(verified_pid),
         prescription_id=prescription_id,
         file_bytes=file_bytes,
-        file_name=file.filename or "prescription.pdf",
     )
     return SuccessResponse(message="Prescription document stored", data={"document_url": document_url})
 
