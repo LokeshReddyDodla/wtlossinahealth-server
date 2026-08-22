@@ -60,9 +60,14 @@ class PrescriptionSafetyService:
         self.postgres_store = postgres_store
 
     async def check(
-        self, patient_id: str, medicines: list
+        self, patient_id: str, medicines: list, is_current_regimen: bool = False
     ) -> PrescriptionSafetyResult:
-        """medicines: objects/dicts with at least `name` (ConfirmedMedicine works)."""
+        """medicines: objects/dicts with at least `name` (ConfirmedMedicine works).
+
+        is_current_regimen: the medicines ARE the patient's active list (a
+        self-audit), so the exact-name "already active" check is skipped —
+        every med would otherwise match itself.
+        """
         new_names = [_med_name(m) for m in medicines if _med_name(m)]
 
         allergies, conditions, pregnant, active = await self._load_context(patient_id)
@@ -76,12 +81,13 @@ class PrescriptionSafetyService:
                         AllergyConflict(drug=name, allergy=a["name"], reaction=a["reaction"], severity="high")
                     )
         duplicates: list[DuplicateTherapy] = []
-        active_names = {_norm(m) for m in active}
-        for name in new_names:
-            if _norm(name) in active_names:
-                duplicates.append(
-                    DuplicateTherapy(new_drug=name, existing_drug=name, reason="Already on the active list")
-                )
+        if not is_current_regimen:
+            active_names = {_norm(m) for m in active}
+            for name in new_names:
+                if _norm(name) in active_names:
+                    duplicates.append(
+                        DuplicateTherapy(new_drug=name, existing_drug=name, reason="Already on the active list")
+                    )
 
         # ── LLM: interactions + class duplicates + cross-reactivity ───────
         llm = await self._llm_check(patient_id, new_names, active, [a["name"] for a in allergies], conditions, pregnant)

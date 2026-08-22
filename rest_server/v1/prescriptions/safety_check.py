@@ -46,5 +46,9 @@ async def safety_check(
         patient_id=UUID(patient_id),
         care_provider_access_service=care_provider_access_service,
     )
-    result = await safety_service.check(str(verified_pid), payload.medicines)
+    result = await safety_service.check(
+        str(verified_pid),
+        payload.medicines,
+        is_current_regimen=payload.is_current_regimen,
+    )
     return SuccessResponse(message="Safety check complete", data=result.model_dump())
