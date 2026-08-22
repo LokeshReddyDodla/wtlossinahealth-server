@@ -21,6 +21,9 @@ class PrescriptionSafetyRequest(BaseModel):
     """Medicines to check — only `name` is required (ExtractedMedicine)."""
 
     medicines: list[ExtractedMedicine] = Field(default_factory=list)
+    # True when the medicines ARE the patient's active regimen (self-audit),
+    # which suppresses the exact-name "already active" duplicate check.
+    is_current_regimen: bool = False
 
 
 class DrugInteraction(BaseModel):
