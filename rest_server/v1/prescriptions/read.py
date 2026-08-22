@@ -78,6 +78,7 @@ async def list_prescriptions(
             medications=[
                 MedicationService.to_response(m, today)
                 for m in (p.medications or [])
+                if m.status != "discontinued"
             ],
             created_at=p.created_at,
         ).model_dump(mode="json")
@@ -150,6 +151,7 @@ async def get_prescription(
         medications=[
             MedicationService.to_response(m, today)
             for m in (prescription.medications or [])
+            if m.status != "discontinued"
         ],
         created_at=prescription.created_at,
     ).model_dump(mode="json")

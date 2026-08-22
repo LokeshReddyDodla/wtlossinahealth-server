@@ -660,6 +660,10 @@ class MedicationService:
         slot_stats = await self._slot_logging_stats(patient_id, today, postgres_session)
         active, paused, as_needed, completed = [], [], [], []
         for med in medications:
+            # Discontinued meds are internal churn (a dose/strength change
+            # replaces the row); the patient never sees them.
+            if med.status == "discontinued":
+                continue
             resp = self.to_response(med, today)
             resp.adherence_logged_pct, resp.adherence_last_logged_days = (
                 self._med_adherence(med, slot_stats, today)
@@ -668,7 +672,7 @@ class MedicationService:
                 as_needed.append(resp)
             elif med.status == "paused":
                 paused.append(resp)
-            elif med.status in ("completed", "discontinued"):
+            elif med.status == "completed":
                 completed.append(resp)
             else:  # active, scheduled
                 active.append(resp)
