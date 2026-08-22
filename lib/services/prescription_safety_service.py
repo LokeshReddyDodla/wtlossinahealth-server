@@ -37,8 +37,8 @@ meaningful safety issues:
 - interactions: drug–drug interactions between any of the new medicines, or
   between a new medicine and a current one. Give the drug pair, a severity
   (low/moderate/high), and a one-sentence explanation.
-- duplicates: a new medicine that duplicates the therapeutic class of a current
-  medicine (e.g. two ACE inhibitors), even when the names differ.
+- duplicates: two DIFFERENT medicines (across the new and current lists) in the
+  same therapeutic class (e.g. two ACE inhibitors), even when the names differ.
 - allergy_conflicts: a new medicine the patient is likely allergic to, including
   cross-reactivity within a drug class (e.g. a cephalosporin with a penicillin
   allergy). Severity is high.
@@ -47,6 +47,8 @@ Rules:
 - Report ONLY genuine concerns. If there are none, return empty lists.
 - Do NOT invent interactions to seem thorough. Conservative and correct.
 - Use the exact medicine names as given.
+- Never report a medicine as a duplicate of itself or of another medicine with
+  the same name — that is not duplicate therapy.
 """
 
 
@@ -90,7 +92,10 @@ class PrescriptionSafetyService:
                     )
 
         # ── LLM: interactions + class duplicates + cross-reactivity ───────
-        llm = await self._llm_check(patient_id, new_names, active, [a["name"] for a in allergies], conditions, pregnant)
+        # In a self-audit the medicines ARE the active list; passing it again as
+        # "current" would make the model compare each drug against itself.
+        llm_active = [] if is_current_regimen else active
+        llm = await self._llm_check(patient_id, new_names, llm_active, [a["name"] for a in allergies], conditions, pregnant)
 
         # merge, de-duping deterministic vs model on (drug, allergy)/(name) keys
         seen_allergy = {(_norm(c.drug), _norm(c.allergy)) for c in allergy_conflicts}
@@ -157,21 +162,38 @@ class PrescriptionSafetyService:
             "pregnant": pregnant,
         }
         trace_id = str(uuid4())
+        user_prompt = f"Check this prescription context:\n{payload}"
+        self.gateway.set_langfuse_context(user_id=patient_id)
+        self.gateway.langfuse_trace_input(
+            trace_id=trace_id,
+            name="prescription_safety_check",
+            input_text=user_prompt,
+            metadata={"new_medicines": len(new_names), "current_medicines": len(active)},
+        )
         try:
             result, meta = await self.gateway.extract(
                 messages=[
                     {"role": "system", "content": _SYSTEM_PROMPT},
-                    {"role": "user", "content": f"Check this prescription context:\n{payload}"},
+                    {"role": "user", "content": user_prompt},
                 ],
                 response_model=PrescriptionSafetyResult,
                 task=ModelTask.STRUCTURED_ANALYSIS,
-                model_id="claude-sonnet-4-6",
+                model_id="gpt-5.4-nano",
                 trace_id=trace_id,
             )
             logger.info(
                 "Rx safety check: %d interactions, %d dupes, %d allergy (%dms)",
                 len(result.interactions), len(result.duplicates), len(result.allergy_conflicts),
                 meta.latency_ms,
+            )
+            self.gateway.langfuse_trace_output(
+                trace_id=trace_id,
+                output_text=result.model_dump_json(),
+                metadata={
+                    "interactions": len(result.interactions),
+                    "duplicates": len(result.duplicates),
+                    "allergy_conflicts": len(result.allergy_conflicts),
+                },
             )
             return result
         except Exception:
