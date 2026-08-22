@@ -81,6 +81,10 @@ class ChatNotificationService(BaseChatService):
         return [p for p in participants if str(p["id"]) != sender_id]
 
     def _get_notification_body(self, message_type: str, content: str) -> str:
+        # Prefer the message's own text (e.g. "Your prescription … is ready") over a
+        # generic media label when the sender provided one.
+        if content and content.strip():
+            return content
         if message_type == "image":
             return "You received an image"
         elif message_type == "file":

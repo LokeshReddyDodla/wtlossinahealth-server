@@ -385,31 +385,33 @@ class MedicationService:
         rx_date = prescription.prescription_date or (prescription.created_at.date() if prescription.created_at else date.today())
         caption = f"Prescription · {doctor_name} · {rx_date.strftime('%d %b %Y')}"
 
-        # Chat is best-effort (no chat/admin sender → no-op), so always fire a
-        # notification too — otherwise the patient could get nothing.
-        await self._deliver_prescription_chat(
+        # The chat message carries its own push (body = the sentence below). Only
+        # fall back to a standalone notification when there's no chat to post to
+        # (e.g. an admin sender), so the patient never gets a duplicate push.
+        delivered = await self._deliver_prescription_chat(
             patient_id=patient_id,
             sender_id=sender_id,
             document_url=document_url,
             doctor_name=doctor_name,
             caption=caption,
         )
-        await self._notify_patient(
-            patient_id,
-            title="Prescription ready",
-            body=f"{doctor_name} sent you a prescription. Tap to view.",
-            event_type="prescription_sent",
-            prescription_id=str(prescription_id),
-            document_url=document_url,
-        )
+        if not delivered:
+            await self._notify_patient(
+                patient_id,
+                title="Prescription ready",
+                body=f"{doctor_name} sent you a prescription. Tap to view.",
+                event_type="prescription_sent",
+                prescription_id=str(prescription_id),
+                document_url=document_url,
+            )
         return document_url
 
     @staticmethod
     async def _deliver_prescription_chat(
         patient_id: str, sender_id: str, document_url: str, doctor_name: str, caption: str
-    ) -> None:
-        """Post the prescription into the patient↔CP direct chat. Best-effort:
-        chat delivery must not fail the send."""
+    ) -> bool:
+        """Post the prescription into the patient↔CP direct chat. Returns True if a
+        message was posted. Best-effort: chat delivery must not fail the send."""
         try:
             from lib.core.container import container
             from lib.schemas.chat_message import ChatMessageCreate, MediaSchema, MetadataSchema
@@ -422,7 +424,7 @@ class MedicationService:
             chat_id = await chat_mgmt.find_direct_chat(patient_id, sender_id)
             if not chat_id:
                 logger.info("No direct chat for patient %s / sender %s; skipping chat delivery", patient_id, sender_id)
-                return
+                return False
 
             await chat_messaging.add_message(
                 ChatMessageCreate(
@@ -433,8 +435,10 @@ class MedicationService:
                     metadata=MetadataSchema(type="file", status="sent"),
                 )
             )
+            return True
         except Exception:
             logger.exception("Prescription chat delivery failed for patient %s", patient_id)
+            return False
 
     async def _create_medication(
         self,
