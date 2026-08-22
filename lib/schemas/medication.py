@@ -73,6 +73,8 @@ class ExtractedMedicine(BaseModel):
 class ExtractedPrescription(BaseModel):
     doctor_name: str | None = None
     prescription_date: date | None = None
+    diagnosis: list[str] = Field(default_factory=list)
+    advice: list[str] = Field(default_factory=list)
     medicines: list[ExtractedMedicine] = Field(default_factory=list)
     follow_up_required: bool = False
     follow_up_date: date | None = None
@@ -108,6 +110,8 @@ class ConfirmPrescriptionRequest(BaseModel):
     prescription_id: str | None = None  # if confirming an existing draft
     doctor_name: str | None = None
     prescription_date: date | None = None
+    diagnosis: list[str] = Field(default_factory=list)
+    advice: list[str] = Field(default_factory=list)
     file_urls: list[str] = Field(default_factory=list)
     medicines: list[ConfirmedMedicine] = Field(..., min_length=1)
     follow_up_required: bool = False
@@ -137,6 +141,11 @@ class MedicationResponse(BaseModel):
     status: str
     days_remaining: int | None = None
     created_at: datetime
+    # Dose-logging signal over the trailing window, derived from the day's
+    # medication tasks for the slots this med is dosed in. "logged", not
+    # proof-of-intake. None when there's no task history to judge.
+    adherence_logged_pct: int | None = None
+    adherence_last_logged_days: int | None = None
 
     class Config:
         from_attributes = True
@@ -146,6 +155,8 @@ class PrescriptionResponse(BaseModel):
     prescription_id: str
     doctor_name: str | None = None
     prescription_date: date | None = None
+    diagnosis: list[str] = Field(default_factory=list)
+    advice: list[str] = Field(default_factory=list)
     file_urls: list[str] = Field(default_factory=list)
     status: str
     extracted_data: dict | None = None

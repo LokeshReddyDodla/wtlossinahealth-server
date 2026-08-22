@@ -65,6 +65,7 @@ from lib.services.patient_facility_transfer_service import PatientFacilityTransf
 from lib.services.vector import MealVectorService
 from lib.services.vector.medication import MedicationVectorService
 from lib.services.prescription_extraction_service import PrescriptionExtractionService
+from lib.services.prescription_safety_service import PrescriptionSafetyService
 from lib.services.consultation_extraction_service import ConsultationExtractionService
 from lib.services.consultation_service import ConsultationService
 from lib.services.package_service import PackageService
@@ -607,6 +608,15 @@ container.register(
     PrescriptionExtractionService,
     lambda: PrescriptionExtractionService(
         gateway=cast(ModelGateway, container.resolve(ModelGateway)),
+    ),
+)
+
+# 🔹 Prescription Safety Service (v1 — LLM interactions + deterministic checks)
+container.register(
+    PrescriptionSafetyService,
+    lambda: PrescriptionSafetyService(
+        gateway=cast(ModelGateway, container.resolve(ModelGateway)),
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
     ),
 )
 
