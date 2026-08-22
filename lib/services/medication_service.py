@@ -319,7 +319,6 @@ class MedicationService:
         patient_id: str,
         prescription_id: str,
         file_bytes: bytes,
-        file_name: str,
         *,
         postgres_session: AsyncSession,
     ) -> str:
@@ -332,10 +331,12 @@ class MedicationService:
         if prescription.status == "draft":
             raise_http_exception(status_code=400, message="Issue the prescription before storing its document")
 
+        # Unique per prescription so multiple prescriptions don't overwrite each other;
+        # re-sending the same one overwrites its own file (latest version).
         document_url = upload_file_to_s3(
             file_bytes=file_bytes,
             bucket_name="user-assets.aihealth.clinic",
-            file_name=file_name,
+            file_name=f"prescription-{prescription_id}.pdf",
             content_type="application/pdf",
             folder_path=f"patients/{patient_id}/documents/prescription",
         )
@@ -368,17 +369,22 @@ class MedicationService:
         if not document_url:
             raise_http_exception(status_code=400, message="No document available to send")
 
+        doctor_name = prescription.doctor_name or "your doctor"
+        rx_date = prescription.prescription_date or (prescription.created_at.date() if prescription.created_at else date.today())
+        caption = f"Prescription · {doctor_name} · {rx_date.strftime('%d %b %Y')}"
+
         await self._deliver_prescription_chat(
             patient_id=patient_id,
             sender_id=sender_id,
             document_url=document_url,
-            doctor_name=prescription.doctor_name or "your doctor",
+            doctor_name=doctor_name,
+            caption=caption,
         )
         return document_url
 
     @staticmethod
     async def _deliver_prescription_chat(
-        patient_id: str, sender_id: str, document_url: str, doctor_name: str
+        patient_id: str, sender_id: str, document_url: str, doctor_name: str, caption: str
     ) -> None:
         """Post the prescription into the patient↔CP direct chat. Best-effort:
         chat delivery must not fail the send."""
@@ -401,7 +407,7 @@ class MedicationService:
                     chat_id=chat_id,
                     sender_id=sender_id,
                     content=f"Your prescription from {doctor_name} is ready.",
-                    media=MediaSchema(type="file", url=document_url, caption="Prescription (PDF)"),
+                    media=MediaSchema(type="file", url=document_url, caption=caption),
                     metadata=MetadataSchema(type="file", status="sent"),
                 )
             )
