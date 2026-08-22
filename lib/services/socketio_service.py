@@ -125,21 +125,20 @@ async def sendMessage(sid, data):
 
     timestamp = datetime.datetime.now(datetime.timezone.utc)
 
-    # Create a message object
-    message_data = ChatMessageCreate(
-        chat_id=chat_id,
-        sender_id=sender_id,
-        content=content,
-        media=media,
-        reply_to=reply_to,
-        timestamp=timestamp,
-        metadata=metadata,
-        severity="low",
-        is_flagged=False,
-    )
-
     try:
-        # Save message and update unread counts
+        # MediaSchema validation (host allowlist, PDF-only) raises at
+        # construction, so it must stay inside the try.
+        message_data = ChatMessageCreate(
+            chat_id=chat_id,
+            sender_id=sender_id,
+            content=content,
+            media=media,
+            reply_to=reply_to,
+            timestamp=timestamp,
+            metadata=metadata,
+            severity="low",
+            is_flagged=False,
+        )
         await chat_messaging_service.add_message(message_data)
 
     except Exception as e:
