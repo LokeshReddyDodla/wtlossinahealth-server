@@ -44,6 +44,9 @@ class PatientPrescription(Base):
     # Raw LLM extraction payload; present only while status is draft.
     extracted_data = Column(JSONB, nullable=True)
 
+    # The signed PDF sent to the patient (set by the send-to-patient action).
+    document_url = Column(String, nullable=True)
+
     uploaded_by_id = Column(UUID(as_uuid=True), nullable=True)
     uploaded_by_type = Column(String, nullable=True)
 

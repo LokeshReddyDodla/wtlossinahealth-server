@@ -299,6 +299,115 @@ class MedicationService:
 
         return prescription
 
+    async def _load_prescription(self, prescription_id: str, patient_id: str, session: AsyncSession) -> PatientPrescription:
+        from lib.utils.http_exceptions import raise_http_exception
+
+        result = await session.execute(
+            select(PatientPrescription).where(
+                PatientPrescription.prescription_id == prescription_id,
+                PatientPrescription.patient_id == patient_id,
+            )
+        )
+        prescription = result.scalars().first()
+        if not prescription:
+            raise_http_exception(status_code=404, message="Prescription not found")
+        return prescription
+
+    @with_postgres_session
+    async def store_prescription_document(
+        self,
+        patient_id: str,
+        prescription_id: str,
+        file_bytes: bytes,
+        file_name: str,
+        *,
+        postgres_session: AsyncSession,
+    ) -> str:
+        """Upload the signed PDF and store its URL on the prescription. Called on
+        every issue, so the exact signed document is always retrievable."""
+        from lib.utils.http_exceptions import raise_http_exception
+        from lib.utils.s3_utils import upload_file_to_s3
+
+        prescription = await self._load_prescription(prescription_id, patient_id, postgres_session)
+        if prescription.status == "draft":
+            raise_http_exception(status_code=400, message="Issue the prescription before storing its document")
+
+        document_url = upload_file_to_s3(
+            file_bytes=file_bytes,
+            bucket_name="user-assets.aihealth.clinic",
+            file_name=file_name,
+            content_type="application/pdf",
+            folder_path=f"patients/{patient_id}/documents/prescription",
+        )
+        if not document_url:
+            raise_http_exception(status_code=400, message="Failed to upload prescription document")
+
+        prescription.document_url = document_url
+        prescription.updated_at = datetime.now().replace(tzinfo=None)
+        await postgres_session.commit()
+        return document_url
+
+    @with_postgres_session
+    async def deliver_prescription(
+        self,
+        patient_id: str,
+        prescription_id: str,
+        sender_id: str,
+        *,
+        postgres_session: AsyncSession,
+    ) -> str:
+        """Deliver an already-stored prescription document to the patient's chat.
+        Falls back to the original upload for prescriptions with no signed PDF."""
+        from lib.utils.http_exceptions import raise_http_exception
+
+        prescription = await self._load_prescription(prescription_id, patient_id, postgres_session)
+        if prescription.status == "draft":
+            raise_http_exception(status_code=400, message="Issue the prescription before sending it")
+
+        document_url = prescription.document_url or (prescription.file_urls[0] if prescription.file_urls else None)
+        if not document_url:
+            raise_http_exception(status_code=400, message="No document available to send")
+
+        await self._deliver_prescription_chat(
+            patient_id=patient_id,
+            sender_id=sender_id,
+            document_url=document_url,
+            doctor_name=prescription.doctor_name or "your doctor",
+        )
+        return document_url
+
+    @staticmethod
+    async def _deliver_prescription_chat(
+        patient_id: str, sender_id: str, document_url: str, doctor_name: str
+    ) -> None:
+        """Post the prescription into the patient↔CP direct chat. Best-effort:
+        chat delivery must not fail the send."""
+        try:
+            from lib.core.container import container
+            from lib.schemas.chat_message import ChatMessageCreate, MediaSchema, MetadataSchema
+            from lib.services.chat.chat_management_service import ChatManagementService
+            from lib.services.chat.chat_messaging_service import ChatMessagingService
+
+            chat_mgmt = container.resolve(ChatManagementService)
+            chat_messaging = container.resolve(ChatMessagingService)
+
+            chat_id = await chat_mgmt.find_direct_chat(patient_id, sender_id)
+            if not chat_id:
+                logger.info("No direct chat for patient %s / sender %s; skipping chat delivery", patient_id, sender_id)
+                return
+
+            await chat_messaging.add_message(
+                ChatMessageCreate(
+                    chat_id=chat_id,
+                    sender_id=sender_id,
+                    content=f"Your prescription from {doctor_name} is ready.",
+                    media=MediaSchema(type="file", url=document_url, caption="Prescription (PDF)"),
+                    metadata=MetadataSchema(type="file", status="sent"),
+                )
+            )
+        except Exception:
+            logger.exception("Prescription chat delivery failed for patient %s", patient_id)
+
     async def _create_medication(
         self,
         patient_id: str,

@@ -158,6 +158,7 @@ class PrescriptionResponse(BaseModel):
     diagnosis: list[str] = Field(default_factory=list)
     advice: list[str] = Field(default_factory=list)
     file_urls: list[str] = Field(default_factory=list)
+    document_url: str | None = None
     status: str
     extracted_data: dict | None = None
     uploaded_by_id: str | None = None
