@@ -1,8 +1,15 @@
 from datetime import datetime
 from typing import List, Literal, Optional
+from urllib.parse import urlparse
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, model_validator
+
+# Chat media must live on our own asset bucket — never an arbitrary external
+# URL a client could inject. Non-image attachments are limited to PDFs so the
+# chat can't become a vector for active/binary file types.
+MEDIA_HOST = "user-assets.aihealth.clinic"
+ALLOWED_FILE_EXTENSIONS = {"pdf"}
 
 
 class MediaSchema(BaseModel):
@@ -13,6 +20,17 @@ class MediaSchema(BaseModel):
     caption: Optional[str] = Field(
         None, description="Optional caption for the media."
     )
+
+    @model_validator(mode="after")
+    def _validate_media(self) -> "MediaSchema":
+        parsed = urlparse(str(self.url))
+        if parsed.hostname != MEDIA_HOST:
+            raise ValueError(f"Media must be hosted on {MEDIA_HOST}")
+        if self.type == "file":
+            ext = parsed.path.rsplit(".", 1)[-1].lower()
+            if ext not in ALLOWED_FILE_EXTENSIONS:
+                raise ValueError("Only PDF documents can be shared in chat")
+        return self
 
 
 class MetadataSchema(BaseModel):
