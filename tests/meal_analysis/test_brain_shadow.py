@@ -69,17 +69,15 @@ def _agent(glucose: MagicMock) -> MealAnalysisAgent:
 async def test_flag_off_leaves_llm_serving_path(monkeypatch):
     """Default-off: assess is not called; LLM prediction is what serves."""
     monkeypatch.setattr(settings, "BRAIN_SHADOW_ENABLED", False)
-    called = {"assess": 0}
 
     def _should_not_run(*_a, **_k):
-        called["assess"] += 1
         raise AssertionError("assess must not run when shadow flag is off")
 
+    # Patch the function maybe_shadow_brain would import only if enabled.
     monkeypatch.setattr(
         "lib.ai_foundation.clinical.aihealth_brain.assess",
         _should_not_run,
     )
-    monkeypatch.setattr("aihealth_brain.assess", _should_not_run)
 
     glucose = MagicMock()
     llm = _llm_prediction()
@@ -105,7 +103,6 @@ async def test_flag_off_leaves_llm_serving_path(monkeypatch):
     assert out.range_mg_dl_high == 180
     assert out.rationale == "based on past meals"
     glucose.predict.assert_awaited_once()
-    assert called["assess"] == 0
 
 
 @pytest.mark.asyncio

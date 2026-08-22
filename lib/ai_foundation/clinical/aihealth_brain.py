@@ -16,8 +16,9 @@ from __future__ import annotations
 
 import importlib.util
 import logging
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 logger = logging.getLogger(__name__)
 

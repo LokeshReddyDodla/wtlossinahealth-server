@@ -20,6 +20,7 @@ from typing import Any
 
 from lib.ai_foundation.agents.base import BaseAgent
 from lib.ai_foundation.agents.state import AgentInput, AgentOutput
+from lib.ai_foundation.clinical.metabolic.service import MetabolicService
 from lib.ai_foundation.config import settings
 from lib.ai_foundation.events.bus import EventBus
 from lib.ai_foundation.memory.base import MemoryStore
@@ -45,7 +46,6 @@ from .contracts import (
 from .extractor import MealExtractor
 from .glucose_predictor import GlucosePredictor
 from .plan_checker import check_plan
-from lib.ai_foundation.clinical.metabolic.service import MetabolicService
 from .repeat_detector import detect_repeat
 from .scorer import MealScorer, estimate_glycemic_load
 
