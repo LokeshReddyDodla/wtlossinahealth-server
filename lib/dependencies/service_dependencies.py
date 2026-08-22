@@ -339,6 +339,11 @@ def get_consultation_extraction_service():
     return cast(ConsultationExtractionService, container.resolve(ConsultationExtractionService))
 
 
+def get_prescription_safety_service():
+    from lib.services.prescription_safety_service import PrescriptionSafetyService  # avoid circular
+    return cast(PrescriptionSafetyService, container.resolve(PrescriptionSafetyService))
+
+
 def get_consultation_service():
     from lib.services.consultation_service import ConsultationService  # avoid circular
     return cast(ConsultationService, container.resolve(ConsultationService))

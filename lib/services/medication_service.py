@@ -27,6 +27,14 @@ from lib.utils.postgres_session_decorator import with_postgres_session
 
 logger = logging.getLogger(__name__)
 
+# Dose slot → the DailyTask type that tracks whether that slot was logged.
+_SLOT_TASK_TYPE = {
+    "morning": "TAKE_MEDICATION_MORNING",
+    "afternoon": "TAKE_MEDICATION_AFTERNOON",
+    "evening": "TAKE_MEDICATION_EVENING",
+    "night": "TAKE_MEDICATION_NIGHT",
+}
+
 
 class MedicationService:
     def __init__(
@@ -66,6 +74,8 @@ class MedicationService:
             if existing:
                 # Update extraction data on existing draft
                 existing.extracted_data = extracted_data
+                existing.diagnosis = extracted_data.get("diagnosis") or []
+                existing.advice = extracted_data.get("advice") or []
                 existing.updated_at = datetime.now().replace(tzinfo=None)
                 await postgres_session.commit()
                 return existing
@@ -74,6 +84,8 @@ class MedicationService:
             patient_id=patient_id,
             file_urls=file_urls,
             status="draft",
+            diagnosis=extracted_data.get("diagnosis") or [],
+            advice=extracted_data.get("advice") or [],
             extracted_data=extracted_data,
             uploaded_by_id=uploaded_by_id,
             uploaded_by_type=uploaded_by_type,
@@ -138,7 +150,9 @@ class MedicationService:
             prescription.follow_up_required = data.follow_up_required
             prescription.follow_up_date = data.follow_up_date
             prescription.notes = data.notes
-            prescription.extracted_data = None  # clear draft data
+            prescription.diagnosis = data.diagnosis
+            prescription.advice = data.advice
+            prescription.extracted_data = None
             prescription.updated_at = datetime.now().replace(tzinfo=None)
         else:
             # Direct confirm without draft
@@ -148,6 +162,8 @@ class MedicationService:
                 prescription_date=data.prescription_date,
                 file_urls=data.file_urls,
                 status="confirmed",
+                diagnosis=data.diagnosis,
+                advice=data.advice,
                 follow_up_required=data.follow_up_required,
                 follow_up_date=data.follow_up_date,
                 notes=data.notes,
@@ -238,6 +254,8 @@ class MedicationService:
         prescription.follow_up_required = data.follow_up_required
         prescription.follow_up_date = data.follow_up_date
         prescription.notes = data.notes
+        prescription.diagnosis = data.diagnosis
+        prescription.advice = data.advice
         prescription.updated_at = datetime.now().replace(tzinfo=None)
 
         # Discontinue all active medications under this prescription
@@ -448,9 +466,16 @@ class MedicationService:
         medications = result.scalars().all()
 
         today = date.today()
+        # Dose-logging over the last 14 days. Medication tasks are per time-slot
+        # (not per drug), so each med's "% logged" is derived from the slots it's
+        # dosed in — honest as "logged", not proof-of-intake.
+        slot_stats = await self._slot_logging_stats(patient_id, today, postgres_session)
         active, paused, as_needed, completed = [], [], [], []
         for med in medications:
             resp = self.to_response(med, today)
+            resp.adherence_logged_pct, resp.adherence_last_logged_days = (
+                self._med_adherence(med, slot_stats, today)
+            )
             if med.status == "as_needed":
                 as_needed.append(resp)
             elif med.status == "paused":
@@ -883,6 +908,45 @@ class MedicationService:
             )
         )
         return result.scalars().first()
+
+    @staticmethod
+    async def _slot_logging_stats(patient_id, today: date, session: AsyncSession) -> dict:
+        """Per medication-slot dose-logging over the last 14 days:
+        {task_type: {done, total, last: date}}."""
+        from lib.models.gamification import DailyTask
+
+        since = today - timedelta(days=14)
+        rows = (
+            await session.execute(
+                select(DailyTask.task_type, DailyTask.status, DailyTask.task_date).where(
+                    DailyTask.patient_id == patient_id,
+                    DailyTask.task_type.in_(list(_SLOT_TASK_TYPE.values())),
+                    DailyTask.task_date >= since,
+                )
+            )
+        ).all()
+        stats: dict = {}
+        for ttype, status, tdate in rows:
+            s = stats.setdefault(ttype, {"done": 0, "total": 0, "last": None})
+            s["total"] += 1
+            if status == "completed":
+                s["done"] += 1
+                if s["last"] is None or tdate > s["last"]:
+                    s["last"] = tdate
+        return stats
+
+    @staticmethod
+    def _med_adherence(med: PatientMedication, slot_stats: dict, today: date):
+        """(logged_pct, days_since_last_logged) from the slots this med is dosed in."""
+        slots = {d.get("slot") for d in (med.doses or []) if isinstance(d, dict) and d.get("slot")}
+        ttypes = [_SLOT_TASK_TYPE[s] for s in slots if s in _SLOT_TASK_TYPE]
+        total = sum(slot_stats.get(t, {}).get("total", 0) for t in ttypes)
+        if total == 0:
+            return None, None
+        done = sum(slot_stats.get(t, {}).get("done", 0) for t in ttypes)
+        lasts = [slot_stats[t]["last"] for t in ttypes if slot_stats.get(t, {}).get("last")]
+        last_days = (today - max(lasts)).days if lasts else None
+        return round(100 * done / total), last_days
 
     @staticmethod
     def to_response(med: PatientMedication, today: date) -> MedicationResponse:

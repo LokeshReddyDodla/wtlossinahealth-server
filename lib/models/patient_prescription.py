@@ -38,6 +38,10 @@ class PatientPrescription(Base):
 
     status = Column(String, nullable=False, default="draft")
 
+    diagnosis = Column(JSONB, nullable=True, default=list)
+    advice = Column(JSONB, nullable=True, default=list)
+
+    # Raw LLM extraction payload; present only while status is draft.
     extracted_data = Column(JSONB, nullable=True)
 
     uploaded_by_id = Column(UUID(as_uuid=True), nullable=True)
