@@ -103,6 +103,10 @@ class ConfirmedMedicine(BaseModel):
     def validate_dates(self):
         if self.end_date and self.end_date < self.start_date:
             raise ValueError("end_date must be on or after start_date")
+        # A scheduled (non-SOS) med needs at least one dose slot, or it generates
+        # no reminders and can't be tracked.
+        if not self.is_sos and not self.doses:
+            raise ValueError("A non-SOS medicine needs at least one dose")
         return self
 
 
