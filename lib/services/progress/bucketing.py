@@ -8,13 +8,13 @@ patient with gaps still trends.
 from datetime import date, timedelta
 from statistics import mean
 
-# range key → months of history; ≤3 months trends weekly, longer trends monthly.
+# range key → months of history; ≤6 months trends weekly, a year trends monthly.
 _MONTHS = {"1M": 1, "3M": 3, "6M": 6, "1Y": 12}
 
 
 def window_for(range_key: str) -> tuple[int, str]:
     months = _MONTHS[range_key]
-    return months, "weekly" if months <= 3 else "monthly"
+    return months, "weekly" if months <= 6 else "monthly"
 
 
 def months_ago(d: date, n: int) -> date:
@@ -42,6 +42,7 @@ def bucketize(points, resolution: str) -> list[tuple[str, float]]:
 
 if __name__ == "__main__":
     assert window_for("1M") == (1, "weekly")
+    assert window_for("6M") == (6, "weekly")
     assert window_for("1Y") == (12, "monthly")
     assert months_ago(date(2026, 3, 15), 6) == date(2025, 9, 15)
     assert months_ago(date(2026, 1, 31), 1) == date(2025, 12, 28)  # day clamps to 28

@@ -168,6 +168,14 @@ _FITNESS = [
 _DENSITY_CATEGORIES = {"Glucose", "Sleep", "Nutrition", "Activity", "SMBG", "Engagement"}
 _MIN_COVERAGE = 0.4  # heuristic: below this share of period days, withhold delta
 
+# A CGM day worn below this floor reads 0/100% on a few readings, not a real day.
+# total_readings is the fallback when sensor_active_percent is absent.
+_MIN_CGM_ACTIVE_PCT = 30.0
+_MIN_CGM_READINGS = 24
+
+# Raw daily scatter ships only for short ranges; longer ranges bucket to bound payload.
+_DAILY_MAX_PERIOD_DAYS = 100
+
 # Finger-stick reading tags (PatientSMBG.type) → provider-facing label. Order
 # leads with fasting, the most day-to-day-comparable line.
 _SMBG_TAGS = [
@@ -220,6 +228,17 @@ def _empty_fitness(r):
     return ((r.get("metadata") or {}).get("days_with_data") or 0) == 0
 
 
+def _empty_cgm(r):
+    # Gate on wear, not on the value, so a fully-worn day that was genuinely
+    # all-out-of-range still counts.
+    meta = r.get("metadata") or {}
+    active = meta.get("sensor_active_percent")
+    if active is not None:
+        return active < _MIN_CGM_ACTIVE_PCT
+    readings = meta.get("total_readings")
+    return readings is not None and readings < _MIN_CGM_READINGS
+
+
 # Related metrics that are slices of one whole → one stacked bar each, instead
 # of separate trend lines. (category, key, label, unit, segments, empty) where
 # each segment is (label, tone, extractor).
@@ -228,7 +247,7 @@ _COMPOSITIONS = [
         ("Below 70", "bad", _range_sum("below_54_percent", "below_70_above_54_percent")),
         ("In range", "good", _nested(["cgm_range_stats", "in_target_70_180_percent"])),
         ("Above 180", "warn", _range_sum("above_180_below_250_percent", "above_250_percent")),
-    ], None),
+    ], _empty_cgm),
     ("Nutrition", "meal_slots", "Calories by meal", "kcal", [
         ("Breakfast", "neutral", _meal_type_cal("breakfast")),
         ("Lunch", "neutral", _meal_type_cal("lunch")),
@@ -339,7 +358,7 @@ class ProgressService:
                 metrics.append(s)
 
         # ── report-backed categories (stored daily reports) ──────────────────
-        metrics += self._collect(glucose_reports, "Glucose", _GLUCOSE, resolution, period_days)
+        metrics += self._collect(glucose_reports, "Glucose", _GLUCOSE, resolution, period_days, _empty_cgm)
         metrics += self._collect(sleep_reports, "Sleep", _SLEEP, resolution, period_days, _empty_sleep)
         metrics += self._collect(meal_reports, "Nutrition", _MEAL, resolution, period_days, _empty_meal)
         metrics += self._collect(fitness_reports, "Activity", _FITNESS, resolution, period_days, _empty_fitness)
@@ -428,11 +447,11 @@ class ProgressService:
         if not pts or not any(v != 0 for _, v in pts):
             return None  # no data, or an all-zero series that was never synced
         points = [TrendPoint(t=t, value=v) for t, v in pts]
-        # Daily scatter for the client trend line — only on weekly-resolution
-        # (≤3M) ranges to bound payload size. Dedupe by day (last wins) so a
-        # canonicalized-after-GROUP-BY vital can't emit two points for one day.
+        # Daily scatter for the client trend line — short ranges only, to bound
+        # payload size. Dedupe by day (last wins) so a canonicalized-after-
+        # GROUP-BY vital can't emit two points for one day.
         daily: list[TrendPoint] = []
-        if resolution == "weekly":
+        if period_days <= _DAILY_MAX_PERIOD_DAYS:
             by_day: dict[date, float] = {}
             for d, v in daily_points:
                 if v is not None:
