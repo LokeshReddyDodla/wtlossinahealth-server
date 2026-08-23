@@ -20,8 +20,6 @@ from typing import Any
 
 from lib.ai_foundation.agents.base import BaseAgent
 from lib.ai_foundation.agents.state import AgentInput, AgentOutput
-from lib.ai_foundation.clinical.metabolic.service import MetabolicService
-from lib.ai_foundation.config import settings
 from lib.ai_foundation.events.bus import EventBus
 from lib.ai_foundation.memory.base import MemoryStore
 from lib.ai_foundation.models.gateway import ModelGateway
@@ -30,7 +28,6 @@ from lib.ai_foundation.retrieval.base import RetrievalRequest
 from lib.ai_foundation.retrieval.qdrant import QdrantRetriever
 
 from .alternatives import AlternativesEngine
-from .brain_shadow import maybe_shadow_brain
 from .context_loader import MealContextLoader
 from .contracts import (
     ConfidenceLevel,
@@ -46,6 +43,7 @@ from .contracts import (
 from .extractor import MealExtractor
 from .glucose_predictor import GlucosePredictor
 from .plan_checker import check_plan
+from lib.ai_foundation.clinical.metabolic.service import MetabolicService
 from .repeat_detector import detect_repeat
 from .scorer import MealScorer, estimate_glycemic_load
 
@@ -283,11 +281,10 @@ class MealAnalysisAgent(BaseAgent):
         trace_id: str,
         meal_hour: int | None = None,
     ) -> GlucosePrediction | None:
-        served: GlucosePrediction | None = None
-        live_pre = _fresh_pre_meal_glucose(context)
         if self._metabolic:
             try:
                 m = extraction.total_macros
+                live_pre = _fresh_pre_meal_glucose(context)
                 meal = self._metabolic.build_meal_dict(
                     {"carb": m.carbs, "protein": m.protein, "fat": m.fat, "fiber": m.fiber, "cal": m.calories, "pre": live_pre},
                     hour=meal_hour,
@@ -300,7 +297,7 @@ class MealAnalysisAgent(BaseAgent):
                                 patient_id, raw["basis"], raw["range_mg_dl_low"], raw["range_mg_dl_high"],
                                 raw.get("rise_mg_dl_low"), raw.get("rise_mg_dl_high"),
                                 raw.get("pre_meal_mg_dl"), raw["confidence"], raw.get("_source"))
-                    served = GlucosePrediction(
+                    return GlucosePrediction(
                         range_mg_dl_low=raw["range_mg_dl_low"],
                         range_mg_dl_high=raw["range_mg_dl_high"],
                         basis=raw["basis"],
@@ -315,42 +312,27 @@ class MealAnalysisAgent(BaseAgent):
                         evidence=raw.get("evidence", []),
                         rationale=raw["rationale"],
                     )
-                else:
-                    c = contract.model_dump() if hasattr(contract, "model_dump") else contract
-                    v31 = (c.get("v31") or {}) if raw else {}
-                    logger.info("metabolic engine suppressed for %s: raw=%s, show_number=%s, has_cgm=%s, "
-                                "confidence_tier=%s, rise=%s-%s, mode=%s — falling back to LLM",
-                                patient_id, raw is not None, raw.get("_show_number") if raw else None,
-                                v31.get("has_cgm"), v31.get("confidence_tier"),
-                                raw.get("range_mg_dl_low") if raw else None,
-                                raw.get("range_mg_dl_high") if raw else None,
-                                c.get("output_mode") if raw else None)
+                c = contract.model_dump() if hasattr(contract, "model_dump") else contract
+                v31 = (c.get("v31") or {}) if raw else {}
+                logger.info("metabolic engine suppressed for %s: raw=%s, show_number=%s, has_cgm=%s, "
+                            "confidence_tier=%s, rise=%s-%s, mode=%s — falling back to LLM",
+                            patient_id, raw is not None, raw.get("_show_number") if raw else None,
+                            v31.get("has_cgm"), v31.get("confidence_tier"),
+                            raw.get("range_mg_dl_low") if raw else None,
+                            raw.get("range_mg_dl_high") if raw else None,
+                            c.get("output_mode") if raw else None)
             except Exception:
                 logger.exception("metabolic engine failed for %s, falling back to LLM", patient_id)
         else:
             logger.info("metabolic service not injected, using LLM for glucose prediction")
 
-        if served is None:
-            served = await self._glucose.predict(
-                extraction=extraction,
-                context=context,
-                glycemic_load=glycemic_load,
-                slot=slot,
-                trace_id=trace_id,
-            )
-
-        # Shadow only: BRAIN_SHADOW_ENABLED never writes `served`.
-        # See lib/ai_foundation/clinical/INTEGRATION.md.
-        maybe_shadow_brain(
-            enabled=settings.BRAIN_SHADOW_ENABLED,
-            patient_id=patient_id,
+        return await self._glucose.predict(
             extraction=extraction,
             context=context,
-            live_pre=live_pre,
-            meal_hour=meal_hour,
+            glycemic_load=glycemic_load,
+            slot=slot,
             trace_id=trace_id,
         )
-        return served
 
     async def quick_analyze(
         self,
