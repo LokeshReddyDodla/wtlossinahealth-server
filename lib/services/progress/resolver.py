@@ -172,6 +172,9 @@ _MIN_COVERAGE = 0.4  # heuristic: below this share of period days, withhold delt
 # total_readings is the fallback when sensor_active_percent is absent.
 _MIN_CGM_ACTIVE_PCT = 30.0
 _MIN_CGM_READINGS = 24
+# A daily mean glucose below this is not a real day but a sensor artifact
+# (e.g. zero-value readings); a genuine all-high day has a plausible mean and stays.
+_MIN_PLAUSIBLE_GLUCOSE = 54.0
 
 # Raw daily scatter ships only for short ranges; longer ranges bucket to bound payload.
 _DAILY_MAX_PERIOD_DAYS = 100
@@ -229,14 +232,19 @@ def _empty_fitness(r):
 
 
 def _empty_cgm(r):
-    # Gate on wear, not on the value, so a fully-worn day that was genuinely
-    # all-out-of-range still counts.
+    # Gate on wear and plausibility, never on in-range % itself, so a fully-worn
+    # genuinely-all-out-of-range day still counts.
     meta = r.get("metadata") or {}
     active = meta.get("sensor_active_percent")
     if active is not None:
-        return active < _MIN_CGM_ACTIVE_PCT
-    readings = meta.get("total_readings")
-    return readings is not None and readings < _MIN_CGM_READINGS
+        if active < _MIN_CGM_ACTIVE_PCT:
+            return True
+    else:
+        readings = meta.get("total_readings")
+        if readings is not None and readings < _MIN_CGM_READINGS:
+            return True
+    avg = (r.get("cgm_summary_stats") or {}).get("average_glucose_mgdl")
+    return avg is not None and avg < _MIN_PLAUSIBLE_GLUCOSE
 
 
 # Related metrics that are slices of one whole → one stacked bar each, instead
