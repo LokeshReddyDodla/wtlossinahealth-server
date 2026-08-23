@@ -17,7 +17,7 @@ To override: set environment variables with AI_ prefix:
 
 from __future__ import annotations
 
-from pydantic import AliasChoices, Field
+from pydantic import Field
 from pydantic_settings import BaseSettings
 
 
@@ -148,19 +148,6 @@ class AIFoundationSettings(BaseSettings):
     METABOLIC_FOLLOWUP_MAX_AGE_DAYS: int = Field(default=7, description="Max days to look back for unfollowed advice")
     METABOLIC_CGM_STALE_DAYS: int = Field(default=2, description="Days after which CGM data triggers a freshness nudge")
     METABOLIC_MAX_NUDGES: int = Field(default=2, description="Max nudges per assessment turn (safety always survives cap)")
-    # Shadow only. Never assigned onto the patient-visible GlucosePrediction.
-    # See lib/ai_foundation/clinical/INTEGRATION.md.
-    BRAIN_SHADOW_ENABLED: bool = Field(
-        default=False,
-        description=(
-            "When true, meal preview also calls aihealth_brain.assess and "
-            "writes a brain_shadow log row. The serving glucose number is "
-            "unchanged."
-        ),
-        validation_alias=AliasChoices(
-            "BRAIN_SHADOW_ENABLED", "AI_BRAIN_SHADOW_ENABLED"
-        ),
-    )
 
     # ── Context Window Management ────────────────────────────────────────
 
