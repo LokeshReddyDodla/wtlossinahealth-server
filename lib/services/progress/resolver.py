@@ -29,6 +29,7 @@ from lib.schemas.progress import (
     ProgressView,
     TrendPoint,
 )
+from lib.services.day_view.mappers import select_glucose_targets
 from lib.services.gamification.time_utils import (
     get_patient_timezone,
     resolve_timezone_name,
@@ -49,7 +50,8 @@ _VITALS: dict[str, tuple[str, str, str, str, float | None]] = {
     "a1c": ("Labs & vitals", "HbA1c", "%", "down", 7.0),
     "systolic_bp": ("Labs & vitals", "Systolic BP", "mmHg", "down", 130.0),
     "diastolic_bp": ("Labs & vitals", "Diastolic BP", "mmHg", "down", 80.0),
-    "heart_rate": ("Labs & vitals", "Heart rate", "bpm", "down", None),
+    # Average daily HR has no clear improving direction; resting HR carries that.
+    "heart_rate": ("Labs & vitals", "Heart rate", "bpm", "flat", None),
     "resting_heart_rate": ("Labs & vitals", "Resting HR", "bpm", "down", None),
     "spo2": ("Labs & vitals", "SpO₂", "%", "up", None),
     "blood_oxygen": ("Labs & vitals", "SpO₂", "%", "up", None),
@@ -109,17 +111,28 @@ def _meal_type_cal(meal_type: str):
     return get
 
 
-# key, label, unit, direction, target, extractor(report_dict)
-_GLUCOSE = [
-    ("tir", "Time in range", "%", "up", 70.0,
-     _nested(["cgm_range_stats", "in_target_70_180_percent"])),
-    ("gmi", "Est. A1c (GMI)", "%", "down", 7.0,
-     _nested(["cgm_summary_stats", "gmi"])),
-    ("avg_glucose", "Avg glucose", "mg/dL", "down", None,
-     _nested(["cgm_summary_stats", "average_glucose_mgdl"])),
-    ("cv", "Variability (CV)", "%", "down", 36.0,
-     _nested(["cgm_summary_stats", "coefficient_of_variation_percent"])),
-]
+# HbA1c / GMI target by glucose-tier (2019 consensus / ADA): standard <7%,
+# older/high-risk relaxes to <8%, pregnancy tightens to <6%.
+_A1C_TARGET_BY_TIER = {"standard": 7.0, "older_high_risk": 8.0, "pregnancy": 6.0}
+
+
+def _glucose_defs(targets, a1c_target):
+    """Per-patient glucose metrics — pregnancy reads the 63–140 in-range field and
+    tighter A1c; older/high-risk relaxes the TIR floor and A1c. key, label, unit,
+    direction, target, extractor(report_dict)."""
+    preg = targets.in_range == (63.0, 140.0)
+    tir_field = "in_target_63_140_percent" if preg else "in_target_70_180_percent"
+    tir_label = "Time in range (63–140)" if preg else "Time in range"
+    return [
+        ("tir", tir_label, "%", "up", targets.tir_min,
+         _nested(["cgm_range_stats", tir_field])),
+        ("gmi", "Est. A1c (GMI)", "%", "down", a1c_target,
+         _nested(["cgm_summary_stats", "gmi"])),
+        ("avg_glucose", "Avg glucose", "mg/dL", "down", None,
+         _nested(["cgm_summary_stats", "average_glucose_mgdl"])),
+        ("cv", "Variability (CV)", "%", "down", 36.0,
+         _nested(["cgm_summary_stats", "coefficient_of_variation_percent"])),
+    ]
 
 _SLEEP = [
     ("sleep_duration", "Sleep duration", "h", "up", 7.0,
@@ -141,15 +154,27 @@ def _sleep_light(r: dict):
         return None
     return round(max(0.0, 100 - (deep or 0) - (rem or 0)), 1)
 
-# Weight-loss / T2D framing: fewer calories & carbs = improving, more fiber &
-# protein = improving.
-_MEAL = [
-    ("calories", "Calories", "kcal", "down", None, _flat("calories")),
-    ("carbs", "Carbs", "g", "down", None, _flat("carbohydrates")),
-    ("fiber", "Fiber", "g", "up", 25.0, _flat("fiber")),
-    ("protein", "Protein", "g", "up", None, _flat("proteins")),
-    ("fat", "Fat", "g", "flat", None, _flat("fats")),
-]
+# Diabetes types where reducing dietary carbs is a care goal.
+_CARB_REDUCE_DX = {"T2", "PRE", "GESTATIONAL", "LADA", "MODY"}
+
+
+def _meal_defs(bmi, diabetes_type):
+    """Per-patient intake metrics. Fewer calories is only "better" with a
+    weight-reduction indication (overweight or a glycemic condition); for an
+    underweight patient more is better, otherwise intake trends neutral. Fiber
+    and protein are goods regardless. key, label, unit, dir, target, extractor."""
+    carb_sensitive = (diabetes_type or "").upper() in _CARB_REDUCE_DX
+    overweight = bmi is not None and bmi >= 25
+    underweight = bmi is not None and bmi < 18.5
+    cal_dir = "up" if underweight else ("down" if (overweight or carb_sensitive) else "flat")
+    carb_dir = "down" if (carb_sensitive and not underweight) else "flat"
+    return [
+        ("calories", "Calories", "kcal", cal_dir, None, _flat("calories")),
+        ("carbs", "Carbs", "g", carb_dir, None, _flat("carbohydrates")),
+        ("fiber", "Fiber", "g", "up", 25.0, _flat("fiber")),
+        ("protein", "Protein", "g", "up", None, _flat("proteins")),
+        ("fat", "Fat", "g", "flat", None, _flat("fats")),
+    ]
 
 _FITNESS = [
     ("steps", "Steps /day", "", "up", 8000.0, _flat("steps")),
@@ -167,6 +192,9 @@ _FITNESS = [
 # their caveat is recency (latest) and reading count, not density.
 _DENSITY_CATEGORIES = {"Glucose", "Sleep", "Nutrition", "Activity", "SMBG", "Engagement"}
 _MIN_COVERAGE = 0.4  # heuristic: below this share of period days, withhold delta
+# CGM metrics follow the 2019 consensus: a TIR/GMI trend is reliable only with
+# ~70% sensor wear across the window.
+_CGM_MIN_COVERAGE = 0.7
 
 # A CGM day worn below this floor reads 0/100% on a few readings, not a real day.
 # total_readings is the fallback when sensor_active_percent is absent.
@@ -211,7 +239,7 @@ _NOTES: dict[str, str] = {
     "smbg_before_meal": "Average of pre-meal finger-sticks.",
     "smbg_after_meal": "Average of post-meal finger-sticks — **expected to run higher** than fasting.",
     "smbg_random": "Average of untagged/random finger-sticks.",
-    "tir_ranges": "Where glucose readings fall: below 70 / in 70–180 / above 180, for the **most recent period** — matching the Time-in-range value beside it.",
+    "tir_ranges": "Where glucose readings fall across the target bands for the **most recent period** — matching the Time-in-range value beside it.",
     "meal_slots": "How each day's logged calories split across meals — **reflects what was logged**, not total intake.",
     "sleep_stages": "Average share of the night in each stage. **Wearable estimates**, not a clinical sleep study.",
 }
@@ -247,27 +275,40 @@ def _empty_cgm(r):
     return avg is not None and avg < _MIN_PLAUSIBLE_GLUCOSE
 
 
-# Related metrics that are slices of one whole → one stacked bar each, instead
-# of separate trend lines. (category, key, label, unit, segments, empty) where
-# each segment is (label, tone, extractor).
-_COMPOSITIONS = [
-    ("Glucose", "tir_ranges", "Time in ranges", "%", [
+def _glucose_range_segments(preg: bool):
+    """The stacked bar's bands must match the tier the headline TIR uses: 63–140
+    for pregnancy, 70–180 otherwise. (label, tone, extractor)."""
+    if preg:
+        return [
+            ("Below 63", "bad", _range_sum("below_54_percent", "below_63_above_54_percent")),
+            ("In range", "good", _nested(["cgm_range_stats", "in_target_63_140_percent"])),
+            ("Above 140", "warn", _range_sum("above_140_percent")),
+        ]
+    return [
         ("Below 70", "bad", _range_sum("below_54_percent", "below_70_above_54_percent")),
         ("In range", "good", _nested(["cgm_range_stats", "in_target_70_180_percent"])),
         ("Above 180", "warn", _range_sum("above_180_below_250_percent", "above_250_percent")),
-    ], _empty_cgm),
-    ("Nutrition", "meal_slots", "Calories by meal", "kcal", [
-        ("Breakfast", "neutral", _meal_type_cal("breakfast")),
-        ("Lunch", "neutral", _meal_type_cal("lunch")),
-        ("Dinner", "neutral", _meal_type_cal("dinner")),
-        ("Snack", "neutral", _meal_type_cal("snack")),
-    ], _empty_meal),
-    ("Sleep", "sleep_stages", "Sleep stages", "%", [
-        ("Deep", "neutral", _nested(["quality", "deep_sleep_percentage"])),
-        ("REM", "neutral", _nested(["quality", "rem_sleep_percentage"])),
-        ("Light", "neutral", _sleep_light),
-    ], _empty_sleep),
-]
+    ]
+
+
+# Related metrics that are slices of one whole → one stacked bar each, instead
+# of separate trend lines. (category, key, label, unit, segments, empty) where
+# each segment is (label, tone, extractor).
+def _composition_defs(preg: bool):
+    return [
+        ("Glucose", "tir_ranges", "Time in ranges", "%", _glucose_range_segments(preg), _empty_cgm),
+        ("Nutrition", "meal_slots", "Calories by meal", "kcal", [
+            ("Breakfast", "neutral", _meal_type_cal("breakfast")),
+            ("Lunch", "neutral", _meal_type_cal("lunch")),
+            ("Dinner", "neutral", _meal_type_cal("dinner")),
+            ("Snack", "neutral", _meal_type_cal("snack")),
+        ], _empty_meal),
+        ("Sleep", "sleep_stages", "Sleep stages", "%", [
+            ("Deep", "neutral", _nested(["quality", "deep_sleep_percentage"])),
+            ("REM", "neutral", _nested(["quality", "rem_sleep_percentage"])),
+            ("Light", "neutral", _sleep_light),
+        ], _empty_sleep),
+    ]
 
 
 def _improved(direction: str, delta: float | None) -> bool | None:
@@ -344,7 +385,10 @@ class ProgressService:
             self._safe(self.fitness_report_service.fetch_daily_reports_in_range, patient_id, start, end),
             self._session_bundle(pid, start_dt, end_dt, start, end, postgres_session),
         )
-        completion, (cur_streak, longest_streak), adherence, smbg, smbg_by_type = session_bundle
+        completion, (cur_streak, longest_streak), adherence, smbg, smbg_by_type, profile = session_bundle
+        age, is_pregnant, diabetes_type, bmi = profile
+        targets = select_glucose_targets(age, is_pregnant)
+        a1c_target = _A1C_TARGET_BY_TIER.get(targets.tier, 7.0)
 
         metrics: list[MetricSeries] = []
 
@@ -360,15 +404,17 @@ class ProgressService:
                 continue
             vitals_points.setdefault(vtype, []).append((d, row["avg"]))
         for vtype, (cat, label, unit, direction, target) in _VITALS.items():
+            if vtype == "a1c":
+                target = a1c_target
             s = self._build(cat, vtype, label, unit, direction, target,
                             vitals_points.get(vtype, []), resolution, period_days)
             if s:
                 metrics.append(s)
 
         # ── report-backed categories (stored daily reports) ──────────────────
-        metrics += self._collect(glucose_reports, "Glucose", _GLUCOSE, resolution, period_days, _empty_cgm)
+        metrics += self._collect(glucose_reports, "Glucose", _glucose_defs(targets, a1c_target), resolution, period_days, _empty_cgm)
         metrics += self._collect(sleep_reports, "Sleep", _SLEEP, resolution, period_days, _empty_sleep)
-        metrics += self._collect(meal_reports, "Nutrition", _MEAL, resolution, period_days, _empty_meal)
+        metrics += self._collect(meal_reports, "Nutrition", _meal_defs(bmi, diabetes_type), resolution, period_days, _empty_meal)
         metrics += self._collect(fitness_reports, "Activity", _FITNESS, resolution, period_days, _empty_fitness)
 
         # ── SMBG (finger-stick glucose, Postgres — for non-CGM patients) ─────
@@ -395,7 +441,7 @@ class ProgressService:
             "Glucose": glucose_reports, "Nutrition": meal_reports, "Sleep": sleep_reports,
         }
         compositions = []
-        for cat, key, label, unit, segdefs, empty in _COMPOSITIONS:
+        for cat, key, label, unit, segdefs, empty in _composition_defs(is_pregnant):
             comp = self._compose(reports_by_cat.get(cat) or [], cat, key, label, unit,
                                  segdefs, resolution, period_days, empty)
             if comp:
@@ -426,7 +472,8 @@ class ProgressService:
         adherence = await self.repo.care_intent_adherence(pid, start, end, session)
         smbg = await self.repo.smbg_daily(pid, start_dt, end_dt, session)
         smbg_by_type = await self.repo.smbg_by_type_daily(pid, start_dt, end_dt, session)
-        return completion, streak, adherence, smbg, smbg_by_type
+        profile = await self.repo.clinical_profile(pid, session)
+        return completion, streak, adherence, smbg, smbg_by_type, profile
 
     @staticmethod
     def _collect(reports, category, defs, resolution, period_days, empty=None) -> list[MetricSeries]:
@@ -471,10 +518,11 @@ class ProgressService:
         baseline, current = points[0].value, points[-1].value
         days = {d for d, _ in daily_points}
         coverage_days = len(days)
+        min_cov = _CGM_MIN_COVERAGE if category == "Glucose" else _MIN_COVERAGE
         low_coverage = (
             category in _DENSITY_CATEGORIES
             and period_days > 0
-            and coverage_days / period_days < _MIN_COVERAGE
+            and coverage_days / period_days < min_cov
         )
         # No delta when there's a single bucket (no baseline to diff) or when
         # coverage is thin — a "vs start" over sparse data tracks logging cadence,
@@ -522,10 +570,11 @@ class ProgressService:
         if not any(s.value for s in segments):
             return None
         coverage_days = len(days)
+        min_cov = _CGM_MIN_COVERAGE if category == "Glucose" else _MIN_COVERAGE
         low_coverage = (
             category in _DENSITY_CATEGORIES
             and period_days > 0
-            and coverage_days / period_days < _MIN_COVERAGE
+            and coverage_days / period_days < min_cov
         )
         return Composition(
             category=category, key=key, label=label, unit=unit, segments=segments,

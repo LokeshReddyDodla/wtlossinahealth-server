@@ -11,11 +11,13 @@ from datetime import date, datetime
 
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from lib.core.clickhouse_store import ClickHouseStore
 from lib.models.care_intent import CareIntent
 from lib.models.care_intent_event import CareIntentEvent
 from lib.models.gamification import DailyTask, PlayerProfile
+from lib.models.patient import Patient
 from lib.models.patient_smbg import PatientSMBG
 
 logger = logging.getLogger(__name__)
@@ -60,6 +62,29 @@ class ProgressRepository:
             if total:
                 out.append((task_date, round((done or 0) / total * 100, 1)))
         return out
+
+    async def clinical_profile(
+        self, pid, session: AsyncSession
+    ) -> tuple[float | None, bool, str | None, float | None]:
+        """(age, is_pregnant, diabetes_type, bmi) — the facts that set glucose
+        target tiers and whether reducing calories/carbs is a care goal.
+        Pregnancy is true if flagged in either reproductive_health or history."""
+        patient = (await session.execute(
+            select(Patient).options(
+                selectinload(Patient.reproductive_health),
+                selectinload(Patient.diabetic_history),
+            ).where(Patient.patient_id == pid)
+        )).scalar_one_or_none()
+        if patient is None:
+            return None, False, None, None
+        repro = patient.reproductive_health
+        history = patient.diabetic_history
+        is_pregnant = bool((repro and repro.is_pregnant) or (history and history.is_pregnant))
+        diabetes_type = history.type_of_diabetes if history else None
+        h = patient.height_cm or patient.height
+        w = patient.weight_kg or patient.weight
+        bmi = round(w / (h / 100) ** 2, 1) if h and w and h > 0 else None
+        return patient.age, is_pregnant, diabetes_type, bmi
 
     async def streak(self, pid, session: AsyncSession) -> tuple[int, int]:
         profile = (await session.execute(
