@@ -428,6 +428,19 @@ class ProgressService:
         if not pts or not any(v != 0 for _, v in pts):
             return None  # no data, or an all-zero series that was never synced
         points = [TrendPoint(t=t, value=v) for t, v in pts]
+        # Daily scatter for the client trend line — only on weekly-resolution
+        # (≤3M) ranges to bound payload size. Dedupe by day (last wins) so a
+        # canonicalized-after-GROUP-BY vital can't emit two points for one day.
+        daily: list[TrendPoint] = []
+        if resolution == "weekly":
+            by_day: dict[date, float] = {}
+            for d, v in daily_points:
+                if v is not None:
+                    by_day[d] = float(v)
+            daily = [
+                TrendPoint(t=d.isoformat(), value=round(v, 2))
+                for d, v in sorted(by_day.items())
+            ]
         baseline, current = points[0].value, points[-1].value
         days = {d for d, _ in daily_points}
         coverage_days = len(days)
@@ -446,7 +459,7 @@ class ProgressService:
         )
         return MetricSeries(
             category=category, key=key, label=label, unit=unit, dir=direction,
-            target=target, points=points, current=current, baseline=baseline,
+            target=target, points=points, daily=daily, current=current, baseline=baseline,
             delta=delta, note=_NOTES.get(key), coverage_days=coverage_days,
             period_days=period_days, latest=max(days) if days else None,
             low_coverage=low_coverage,

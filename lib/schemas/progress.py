@@ -28,6 +28,9 @@ class MetricSeries(BaseModel):
     dir: Direction
     target: float | None = None
     points: list[TrendPoint]
+    # Raw daily points (deduped by day) for short ranges only; empty on long
+    # ranges to bound payload — the bucketed `points` carry the long view.
+    daily: list[TrendPoint] = []
     current: float | None = None
     baseline: float | None = None
     delta: float | None = None
