@@ -43,13 +43,13 @@ class PatientBriefService:
         durable queue and the caller polls."""
         doc = await self._latest(patient_id)
         if not self._has_brief(doc):
-            if self._is_generating(doc):
+            if await self._is_generating(doc):
                 return {"status": "generating"}
             if self._in_cooldown(doc):
                 return {"status": "error"}
             queued = await self._queue_generation(patient_id)
             return {"status": "generating" if queued else "error"}
-        refreshing = self._is_generating(doc)
+        refreshing = await self._is_generating(doc)
         if (
             self._age(doc) > _TTL
             and not refreshing
@@ -64,9 +64,9 @@ class PatientBriefService:
         doc = await self._latest(patient_id)
         if self._has_brief(doc) and self._age(doc) < _DEBOUNCE:
             return {"status": "ready", **self._view(doc), "refreshing": False}
-        refreshing = self._is_generating(doc) or await self._queue_generation(
-            patient_id
-        )
+        refreshing = await self._is_generating(doc)
+        if not refreshing:
+            refreshing = await self._queue_generation(patient_id)
         if not self._has_brief(doc):
             return {"status": "generating" if refreshing else "error"}
         return {"status": "ready", **self._view(doc), "refreshing": refreshing}
@@ -102,12 +102,17 @@ class PatientBriefService:
             and datetime.now(timezone.utc) - failed < _FAIL_COOLDOWN
         )
 
-    def _is_generating(self, doc: dict | None) -> bool:
+    async def _is_generating(self, doc: dict | None) -> bool:
         started = _as_utc(doc.get("generation_started_at")) if doc else None
-        return (
-            started is not None
-            and datetime.now(timezone.utc) - started < _GENERATION_LEASE
-        )
+        if started is None:
+            return False
+        if datetime.now(timezone.utc) - started < _GENERATION_LEASE:
+            return True
+
+        await self.mark_failed(str(doc["patient_id"]))
+        doc["failed_at"] = datetime.now(timezone.utc)
+        doc.pop("generation_started_at", None)
+        return False
 
     async def _queue_generation(self, patient_id: str) -> bool:
         now = datetime.now(timezone.utc)
