@@ -8,7 +8,6 @@ opens (or refreshes) — cost scales with usage, not census.
 One brief per patient; the generation history lives in Langfuse.
 """
 
-import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -21,6 +20,8 @@ logger = logging.getLogger(__name__)
 _TTL = timedelta(hours=18)
 _DEBOUNCE = timedelta(seconds=120)
 _FAIL_COOLDOWN = timedelta(seconds=60)
+_GENERATION_LEASE = timedelta(minutes=10)
+_INTERNAL_FIELDS = {"failed_at", "generation_started_at"}
 
 
 def _as_utc(dt: datetime | None) -> datetime | None:
@@ -30,30 +31,32 @@ def _as_utc(dt: datetime | None) -> datetime | None:
 
 
 class PatientBriefService:
-    def __init__(self, briefs_collection, health_query_agent: HealthQueryAgent):
+    def __init__(
+        self, briefs_collection, health_query_agent: HealthQueryAgent
+    ):
         self._col = briefs_collection
         self._agent = health_query_agent
-        # Strong refs so background regenerations aren't GC'd mid-flight.
-        self._bg_tasks: set[asyncio.Task] = set()
-        # Patients with a generation in flight — dedupes concurrent views/polls
-        # so a first-ever view being polled doesn't spawn a regen every poll.
-        self._generating: set[str] = set()
 
     async def get(self, patient_id: str) -> dict:
         """Never blocks on the LLM. Returns the cached brief immediately (status
         'ready'); on a first-ever or stale view it kicks generation in the
-        background and the caller polls."""
+        durable queue and the caller polls."""
         doc = await self._latest(patient_id)
         if not self._has_brief(doc):
-            if patient_id in self._generating:
+            if self._is_generating(doc):
                 return {"status": "generating"}
             if self._in_cooldown(doc):
                 return {"status": "error"}
-            self._ensure_generating(patient_id)
-            return {"status": "generating"}
-        if self._age(doc) > _TTL and not self._in_cooldown(doc):
-            self._ensure_generating(patient_id)
-        return {"status": "ready", **self._view(doc), "refreshing": patient_id in self._generating}
+            queued = await self._queue_generation(patient_id)
+            return {"status": "generating" if queued else "error"}
+        refreshing = self._is_generating(doc)
+        if (
+            self._age(doc) > _TTL
+            and not refreshing
+            and not self._in_cooldown(doc)
+        ):
+            refreshing = await self._queue_generation(patient_id)
+        return {"status": "ready", **self._view(doc), "refreshing": refreshing}
 
     async def refresh(self, patient_id: str) -> dict:
         """Force a fresh brief (the provider clicked refresh), debounced so a
@@ -61,17 +64,21 @@ class PatientBriefService:
         doc = await self._latest(patient_id)
         if self._has_brief(doc) and self._age(doc) < _DEBOUNCE:
             return {"status": "ready", **self._view(doc), "refreshing": False}
-        self._ensure_generating(patient_id)
+        refreshing = self._is_generating(doc) or await self._queue_generation(
+            patient_id
+        )
         if not self._has_brief(doc):
-            return {"status": "generating"}
-        return {"status": "ready", **self._view(doc), "refreshing": True}
+            return {"status": "generating" if refreshing else "error"}
+        return {"status": "ready", **self._view(doc), "refreshing": refreshing}
 
     # ── internals ────────────────────────────────────────────────────────────
 
     async def ensure_indexes(self) -> None:
         """Create the patient_id index that serves every lookup. Idempotent.
         Called once at startup (app.main), like the other Mongo-backed services."""
-        await self._col.create_index("patient_id", name="patient_briefs_patient_idx")
+        await self._col.create_index(
+            "patient_id", name="patient_briefs_patient_idx"
+        )
 
     async def _latest(self, patient_id: str) -> dict | None:
         return await self._col.find_one(
@@ -82,7 +89,7 @@ class PatientBriefService:
         return bool(doc and doc.get("generated_at"))
 
     def _view(self, doc: dict) -> dict:
-        return {k: v for k, v in doc.items() if k != "failed_at"}
+        return {k: v for k, v in doc.items() if k not in _INTERNAL_FIELDS}
 
     def _age(self, doc: dict) -> timedelta:
         gen = _as_utc(doc.get("generated_at")) or datetime.now(timezone.utc)
@@ -90,9 +97,41 @@ class PatientBriefService:
 
     def _in_cooldown(self, doc: dict | None) -> bool:
         failed = _as_utc(doc.get("failed_at")) if doc else None
-        return failed is not None and datetime.now(timezone.utc) - failed < _FAIL_COOLDOWN
+        return (
+            failed is not None
+            and datetime.now(timezone.utc) - failed < _FAIL_COOLDOWN
+        )
 
-    async def _regenerate(self, patient_id: str) -> dict:
+    def _is_generating(self, doc: dict | None) -> bool:
+        started = _as_utc(doc.get("generation_started_at")) if doc else None
+        return (
+            started is not None
+            and datetime.now(timezone.utc) - started < _GENERATION_LEASE
+        )
+
+    async def _queue_generation(self, patient_id: str) -> bool:
+        now = datetime.now(timezone.utc)
+        await self._col.update_one(
+            {"patient_id": patient_id},
+            {
+                "$set": {"generation_started_at": now},
+                "$unset": {"failed_at": ""},
+            },
+            upsert=True,
+        )
+        try:
+            from lib.workers.tasks.patient_brief.tasks import (
+                enqueue_patient_brief,
+            )
+
+            await enqueue_patient_brief(patient_id, requested_at=now)
+            return True
+        except Exception:
+            logger.exception("patient brief enqueue failed: %s", patient_id)
+            await self.mark_failed(patient_id)
+            return False
+
+    async def regenerate(self, patient_id: str) -> dict:
         result = await self._agent.run_provider_brief(patient_id=patient_id)
         doc = {
             "patient_id": patient_id,
@@ -102,26 +141,17 @@ class PatientBriefService:
             "generated_at": datetime.now(timezone.utc),
         }
         # One brief per patient — replace the current one in a single write.
-        await self._col.replace_one({"patient_id": patient_id}, doc, upsert=True)
+        await self._col.replace_one(
+            {"patient_id": patient_id}, doc, upsert=True
+        )
         return doc
 
-    def _ensure_generating(self, patient_id: str) -> None:
-        if patient_id in self._generating:
-            return
-        self._generating.add(patient_id)
-        task = asyncio.create_task(self._safe_regen(patient_id))
-        self._bg_tasks.add(task)
-        task.add_done_callback(self._bg_tasks.discard)
-
-    async def _safe_regen(self, patient_id: str) -> None:
-        try:
-            await self._regenerate(patient_id)
-        except Exception:
-            logger.exception("background brief regen failed: %s", patient_id)
-            await self._col.update_one(
-                {"patient_id": patient_id},
-                {"$set": {"failed_at": datetime.now(timezone.utc)}},
-                upsert=True,
-            )
-        finally:
-            self._generating.discard(patient_id)
+    async def mark_failed(self, patient_id: str) -> None:
+        await self._col.update_one(
+            {"patient_id": patient_id},
+            {
+                "$set": {"failed_at": datetime.now(timezone.utc)},
+                "$unset": {"generation_started_at": ""},
+            },
+            upsert=True,
+        )
