@@ -607,8 +607,9 @@ class CareProviderProfileService:
         self, email: str, password: str, *, postgres_session: AsyncSession
     ) -> CareProviderModel:
         try:
+            # Case-insensitive, trimmed email match.
             stmt = select(CareProviderModel).where(
-                CareProviderModel.email == email
+                func.lower(CareProviderModel.email) == email.strip().lower()
             )
             result = await postgres_session.execute(stmt)
             care_provider = result.scalars().first()
