@@ -88,14 +88,12 @@ class ReportsWorkerSettings(WorkerSettings):
 
     redis_settings = WorkerSettings.redis_settings
     functions = WorkerSettings.functions
+    on_startup = startup
+    on_shutdown = shutdown
     queue_name = Queues.REPORTS
     max_jobs = 50
     job_timeout = timedelta(minutes=15)
     max_tries = 2
-    # arq honours per-function keep_result only on success; a max-tries
-    # failure stores the result under the WORKER setting, and a lingering
-    # result key blocks every re-enqueue of that job id (refresh_patient's
-    # stable per-patient id would black out for the retention window).
     keep_result = timedelta(seconds=0)
 
 
