@@ -7,8 +7,10 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from arq.worker import get_kwargs
 
 from lib.services.patient_brief.service import PatientBriefService
+from lib.workers.arq.worker import ReportsWorkerSettings, shutdown, startup
 from lib.workers.tasks.patient_brief.tasks import generate_patient_brief
 
 
@@ -53,6 +55,13 @@ class _OkAgent:
             verdict="Stable — keep monitoring",
             narrative="All good.",
         )
+
+
+def test_reports_worker_registers_context_hooks():
+    settings = get_kwargs(ReportsWorkerSettings)
+
+    assert settings["on_startup"] is startup
+    assert settings["on_shutdown"] is shutdown
 
 
 def _stub_enqueue(monkeypatch):
