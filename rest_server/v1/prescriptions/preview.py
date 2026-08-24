@@ -1,7 +1,8 @@
 """POST /prescriptions/{patient_id}/preview — upload, extract, and save as draft."""
 
+import os
 from typing import List
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import Depends, UploadFile, File, status
 from fastapi.exceptions import HTTPException
@@ -69,10 +70,13 @@ async def preview_prescription(
         file_urls = []
         for file in files:
             file_bytes = await file.read()
+            # Unique object key: the raw filename as the key would let a same-named
+            # file overwrite another in storage and collide with the draft dedup.
+            ext = os.path.splitext(file.filename or "")[1].lower() or ".jpg"
             file_url = upload_file_to_s3(
                 file_bytes=file_bytes,
                 bucket_name=_S3_BUCKET,
-                file_name=file.filename or "prescription.jpg",
+                file_name=f"{uuid4().hex}{ext}",
                 content_type=file.content_type or "image/jpeg",
                 folder_path=f"patients/{pid}/documents/prescription",
             )
