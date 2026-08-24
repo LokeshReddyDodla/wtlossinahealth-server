@@ -106,7 +106,8 @@ class ConfirmedMedicine(BaseModel):
         # A scheduled (non-SOS) med needs at least one dose slot, or it generates
         # no reminders and can't be tracked.
         if not self.is_sos and not self.doses:
-            raise ValueError("A non-SOS medicine needs at least one dose")
+            who = self.name.strip() if self.name and self.name.strip() else "This medicine"
+            raise ValueError(f"{who} needs at least one dose, or mark it as taken as needed (SOS)")
         return self
 
 
