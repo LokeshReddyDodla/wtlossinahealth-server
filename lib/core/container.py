@@ -412,16 +412,13 @@ container.register(
     ),
 )
 
-# 🔹 Patient Brief Service (provider AI brief — lazy, cached, manual refresh)
+# 🔹 Patient Brief Service (provider AI brief — lazy, cached, durable queue)
 container.register(
     PatientBriefService,
     lambda: PatientBriefService(
         briefs_collection=container.resolve("patient_briefs_collection"),
         health_query_agent=cast(HealthQueryAgent, container.resolve(HealthQueryAgent)),
     ),
-    # Singleton: the in-flight dedup and background-task refs are in-memory state
-    # that only holds if every request shares one instance.
-    scope=Scope.singleton,
 )
 
 # 🔹 Patient Panel Signal (materialized read model — the enriched roster + Panel)
