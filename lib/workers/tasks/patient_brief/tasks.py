@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from lib.services.patient_brief.service import PatientBriefService
@@ -13,8 +13,9 @@ _MAX_TRIES = 2
 async def generate_patient_brief(
     ctx: dict[str, Any], patient_id: str
 ) -> TaskResult:
-    service = ctx["container"].resolve(PatientBriefService)
+    service = None
     try:
+        service = ctx["container"].resolve(PatientBriefService)
         brief = await service.regenerate(patient_id)
         return TaskResult(
             success=True,
@@ -25,7 +26,20 @@ async def generate_patient_brief(
         )
     except Exception:
         if int(ctx.get("job_try", 1)) >= _MAX_TRIES:
-            await service.mark_failed(patient_id)
+            if service is not None:
+                await service.mark_failed(patient_id)
+            else:
+                collection = ctx["container"].resolve(
+                    "patient_briefs_collection"
+                )
+                await collection.update_one(
+                    {"patient_id": patient_id},
+                    {
+                        "$set": {"failed_at": datetime.now(timezone.utc)},
+                        "$unset": {"generation_started_at": ""},
+                    },
+                    upsert=True,
+                )
         raise
 
 

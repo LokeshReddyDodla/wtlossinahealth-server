@@ -2,6 +2,7 @@
 poll — after the worker exhausts retries it enters cooldown and get() returns a
 terminal 'error' the frontend stops polling on."""
 
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -142,3 +143,52 @@ async def test_worker_marks_failure_only_after_final_retry():
             {"container": container, "job_try": 2}, "p4"
         )
     service.mark_failed.assert_awaited_once_with("p4")
+
+
+@pytest.mark.asyncio
+async def test_worker_clears_lease_when_service_construction_fails():
+    collection = _FakeCollection()
+    await collection.update_one(
+        {"patient_id": "p7"},
+        {
+            "$set": {
+                "generation_started_at": object(),
+            }
+        },
+        upsert=True,
+    )
+
+    def resolve(dependency):
+        if dependency == "patient_briefs_collection":
+            return collection
+        raise RuntimeError("dependency construction failed")
+
+    with pytest.raises(RuntimeError, match="dependency construction"):
+        await generate_patient_brief.__wrapped__(
+            {"container": SimpleNamespace(resolve=resolve), "job_try": 2},
+            "p7",
+        )
+
+    assert "generation_started_at" not in collection.doc
+    assert "failed_at" in collection.doc
+
+
+@pytest.mark.asyncio
+async def test_expired_lease_ends_polling_instead_of_requeueing():
+    collection = _FakeCollection()
+    await collection.update_one(
+        {"patient_id": "p8"},
+        {
+            "$set": {
+                "generation_started_at": datetime.now(timezone.utc)
+                - timedelta(minutes=11)
+            }
+        },
+        upsert=True,
+    )
+    svc = PatientBriefService(collection, _OkAgent())
+
+    result = await svc.get("p8")
+
+    assert result == {"status": "error"}
+    assert "generation_started_at" not in collection.doc
