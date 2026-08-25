@@ -48,6 +48,7 @@ class RefType(str, Enum):
     DOCUMENT = "document"
     CGM_REPORT = "cgm_report"
     INSIGHT = "insight"
+    BODY_COMPOSITION = "body_composition"
 
 
 class Ref(BaseModel):
@@ -80,6 +81,7 @@ _DIRECT_DATA_TYPES: dict[RefType, str] = {
     RefType.MOOD: "mood_entry",
     RefType.SYMPTOM: "symptom_entry",
     RefType.DOCUMENT: "patient_document",
+    RefType.BODY_COMPOSITION: "body_composition",
 }
 
 
@@ -185,6 +187,8 @@ def _direct_title(ref_type: RefType, payload: dict[str, Any]) -> str:
         return payload.get("symptom_name") or payload.get("title") or "Symptom"
     if ref_type is RefType.DOCUMENT:
         return payload.get("document_name") or payload.get("title") or "Document"
+    if ref_type is RefType.BODY_COMPOSITION:
+        return "Body composition scan"
     return ref_type.value
 
 

@@ -9,6 +9,7 @@ is nothing usable. Confirmed records are immutable — corrections supersede the
 
 from __future__ import annotations
 
+import logging
 from collections import Counter
 from datetime import datetime
 from typing import Any
@@ -34,6 +35,8 @@ from lib.services.body_composition.metrics import (
     convert_to_canonical_unit,
 )
 from lib.utils.http_exceptions import raise_http_exception
+
+logger = logging.getLogger(__name__)
 
 # An upload auto-confirms only above this whole-extraction confidence and with no
 # blocking issues; anything weaker routes to a human via needs_review.
@@ -143,6 +146,26 @@ class BodyCompositionService:
     def __init__(self, postgres_store: PostgresStore) -> None:
         self.postgres_store = postgres_store
 
+    async def _enqueue_vector(self, patient_id: UUID, record_id: UUID) -> None:
+        try:
+            from lib.workers.tasks.body_composition.vector_generation import (
+                enqueue_body_composition_vector,
+            )
+
+            await enqueue_body_composition_vector(str(patient_id), str(record_id))
+        except Exception:
+            logger.exception("Failed to enqueue body-composition vector for %s", record_id)
+
+    async def _enqueue_vector_delete(self, record_id: UUID) -> None:
+        try:
+            from lib.workers.tasks.body_composition.vector_generation import (
+                enqueue_delete_body_composition_vector,
+            )
+
+            await enqueue_delete_body_composition_vector(str(record_id))
+        except Exception:
+            logger.exception("Failed to enqueue body-composition vector delete for %s", record_id)
+
     async def create_draft(
         self,
         *,
@@ -203,6 +226,8 @@ class BodyCompositionService:
             session.add(row)
             await session.commit()
             await session.refresh(row)
+        if record_status is RecordStatus.CONFIRMED:
+            await self._enqueue_vector(patient_id, row.record_id)
         return self._serialize(row)
 
     async def confirm(
@@ -243,6 +268,7 @@ class BodyCompositionService:
             row.confirmed_at = datetime.now().replace(tzinfo=None)
             await session.commit()
             await session.refresh(row)
+        await self._enqueue_vector(patient_id, record_id)
         return self._serialize(row)
 
     async def supersede(
@@ -298,6 +324,9 @@ class BodyCompositionService:
             old.superseded_by_id = new.record_id
             await session.commit()
             await session.refresh(new)
+            new_id = new.record_id
+        await self._enqueue_vector(patient_id, new_id)
+        await self._enqueue_vector_delete(record_id)
         return self._serialize(new)
 
     async def list_records(
@@ -351,6 +380,7 @@ class BodyCompositionService:
                 )
             row.status = RecordStatus.ARCHIVED.value
             await session.commit()
+        await self._enqueue_vector_delete(record_id)
 
     async def get_trends(
         self, patient_id: UUID, *, limit: int = 24
