@@ -155,6 +155,30 @@ async def confirm_body_composition(
     )
 
 
+@router.post("/{record_id}/supersede", response_model=SuccessResponse)
+async def supersede_body_composition(
+    patient_id: UUID,
+    record_id: UUID,
+    payload: ConfirmBodyCompositionRequest,
+    service: BodyCompositionService = Depends(get_body_composition_service),
+    actor: Actor = Depends(_actor(CareProviderPermissionAction.UPDATE)),
+    access_service: CareProviderAccessService = Depends(
+        get_care_provider_access_service
+    ),
+):
+    resolved_patient_id = await _patient_id(patient_id, actor, access_service)
+    record = await service.supersede(
+        patient_id=resolved_patient_id,
+        record_id=record_id,
+        data=payload.data,
+        confirmed_by_id=UUID(str(actor.id)) if actor.id else None,
+        confirmed_by_type=actor.role.value,
+    )
+    return SuccessResponse(
+        message="Body-composition record corrected", data=record
+    )
+
+
 @router.get("", response_model=SuccessResponse)
 async def list_body_composition(
     patient_id: UUID,

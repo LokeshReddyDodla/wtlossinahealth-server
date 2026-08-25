@@ -1,4 +1,11 @@
-"""Persistence and deterministic rules for canonical Body Composition data."""
+"""Persistence and deterministic rules for canonical Body Composition data.
+
+Normalization, validation, and column projection all route through the metric
+registry (`metrics.py`) so a metric is defined once and flows everywhere. Records
+follow a confidence-gated lifecycle: an upload lands as `confirmed` only when the
+extraction is trustworthy and clean, otherwise `needs_review`; `failed` when there
+is nothing usable. Confirmed records are immutable — corrections supersede them.
+"""
 
 from __future__ import annotations
 
@@ -16,44 +23,23 @@ from lib.models.patient_body_composition_record import (
 )
 from lib.schemas.body_composition import (
     BodyCompositionExtraction,
+    BodyCompositionMeasurement,
     IngestChannel,
+    RecordStatus,
+)
+from lib.services.body_composition.metrics import (
+    CANONICAL_KEYS,
+    SPEC_BY_KEY,
+    canonical_key,
+    convert_to_canonical_unit,
 )
 from lib.utils.http_exceptions import raise_http_exception
 
-_ALIASES = {
-    "smm": "skeletal_muscle_mass",
-    "pbf": "percent_body_fat",
-    "body_fat_percentage": "percent_body_fat",
-    "bfm": "body_fat_mass",
-    "ecw_ratio": "ecw_tbw_ratio",
-    "ecw_tbw": "ecw_tbw_ratio",
-    "bmr": "basal_metabolic_rate",
-}
-_MASS_KEYS = {
-    "weight",
-    "protein",
-    "minerals",
-    "bone_mineral_content",
-    "soft_lean_mass",
-    "fat_free_mass",
-    "skeletal_muscle_mass",
-    "body_fat_mass",
-    "body_cell_mass",
-    "target_weight",
-    "weight_control",
-    "fat_control",
-    "muscle_control",
-}
-_BOUNDS = {
-    "weight": (10, 500),
-    "skeletal_muscle_mass": (1, 150),
-    "body_fat_mass": (0, 300),
-    "percent_body_fat": (0, 80),
-    "bmi": (5, 100),
-    "ecw_tbw_ratio": (0.2, 0.7),
-    "phase_angle": (0, 20),
-    "visceral_fat_area": (0, 1000),
-}
+# An upload auto-confirms only above this whole-extraction confidence and with no
+# blocking issues; anything weaker routes to a human via needs_review.
+_AUTO_CONFIRM_CONFIDENCE = 0.9
+_FIELD_CONFIDENCE_MIN = 0.85
+
 _MANUFACTURERS = {
     "inbody": "InBody",
     "tanita": "Tanita",
@@ -62,11 +48,9 @@ _MANUFACTURERS = {
     "omron": "Omron",
     "evolt": "Evolt",
 }
-
-
-def _metric_key(value: str) -> str:
-    key = value.strip().lower().replace("-", "_").replace(" ", "_")
-    return _ALIASES.get(key, key)
+_COMPOSITION_KEYS = frozenset(
+    {"body_fat_mass", "percent_body_fat", "fat_free_mass", "soft_lean_mass"}
+)
 
 
 def _manufacturer(value: str | None) -> str | None:
@@ -76,60 +60,83 @@ def _manufacturer(value: str | None) -> str | None:
     return _MANUFACTURERS.get(clean.casefold(), clean)
 
 
-def _normalize(data: BodyCompositionExtraction) -> BodyCompositionExtraction:
+def _naive(value: datetime | None) -> datetime | None:
+    if value and value.tzinfo:
+        return value.replace(tzinfo=None)
+    return value
+
+
+def _normalize(
+    data: BodyCompositionExtraction,
+) -> tuple[BodyCompositionExtraction, list[BodyCompositionMeasurement]]:
+    """Canonicalize keys/units and split unmappable vendor metrics out.
+
+    Returns the extraction with canonical measurements only, plus the long tail of
+    measurements we couldn't map to a canonical key (kept for audit, not projected).
+    """
     normalized = data.model_copy(deep=True)
     normalized.manufacturer = _manufacturer(normalized.manufacturer)
+    normalized.test_datetime = _naive(normalized.test_datetime)
+
+    canonical: list[BodyCompositionMeasurement] = []
+    vendor: list[BodyCompositionMeasurement] = []
     for measurement in normalized.measurements:
-        measurement.key = _metric_key(measurement.key)
-        unit = (measurement.unit or "").strip().lower()
-        if measurement.key in _MASS_KEYS and unit in {
-            "lb",
-            "lbs",
-            "pound",
-            "pounds",
-        }:
-            measurement.value = round(measurement.value * 0.45359237, 4)
-            measurement.unit = "kg"
-            if measurement.reference_low is not None:
-                measurement.reference_low = round(
-                    measurement.reference_low * 0.45359237, 4
-                )
-            if measurement.reference_high is not None:
-                measurement.reference_high = round(
-                    measurement.reference_high * 0.45359237, 4
-                )
-    return normalized
+        key = canonical_key(measurement.key)
+        measurement.key = key
+        if key not in CANONICAL_KEYS:
+            vendor.append(measurement)
+            continue
+        spec = SPEC_BY_KEY[key]
+        source_unit = measurement.unit
+        measurement.value, measurement.unit = convert_to_canonical_unit(
+            spec, measurement.value, source_unit
+        )
+        if measurement.reference_low is not None:
+            measurement.reference_low, _ = convert_to_canonical_unit(
+                spec, measurement.reference_low, source_unit
+            )
+        if measurement.reference_high is not None:
+            measurement.reference_high, _ = convert_to_canonical_unit(
+                spec, measurement.reference_high, source_unit
+            )
+        canonical.append(measurement)
+
+    normalized.measurements = canonical
+    return normalized, vendor
 
 
 def _validation_issues(
     data: BodyCompositionExtraction, *, include_confidence: bool
 ) -> list[str]:
-    keys = [measurement.key for measurement in data.measurements]
-    issues = [
-        f"duplicate:{key}" for key, count in Counter(keys).items() if count > 1
-    ]
-    for measurement in data.measurements:
-        bounds = _BOUNDS.get(measurement.key)
-        if bounds and not bounds[0] <= measurement.value <= bounds[1]:
-            issues.append(f"implausible:{measurement.key}")
-        if include_confidence and measurement.confidence < 0.85:
-            issues.append(f"low_confidence:{measurement.key}")
+    keys = [m.key for m in data.measurements]
+    issues = [f"duplicate:{k}" for k, n in Counter(keys).items() if n > 1]
+    for m in data.measurements:
+        spec = SPEC_BY_KEY[m.key]
+        low = spec.low if spec.signed else max(spec.low, 0)
+        if not low <= m.value <= spec.high:
+            issues.append(f"implausible:{m.key}")
+        if include_confidence and m.confidence < _FIELD_CONFIDENCE_MIN:
+            issues.append(f"low_confidence:{m.key}")
 
     available = set(keys)
     if "weight" not in available:
         issues.append("missing:weight")
-    if not available.intersection(
-        {
-            "body_fat_mass",
-            "percent_body_fat",
-            "fat_free_mass",
-            "soft_lean_mass",
-        }
-    ):
+    if not available & _COMPOSITION_KEYS:
         issues.append("missing:composition_measurement")
-    if include_confidence and data.extraction_confidence < 0.8:
+    if _naive(data.test_datetime) and data.test_datetime > datetime.now():
+        issues.append("invalid:test_datetime_future")
+    if include_confidence and data.extraction_confidence < _AUTO_CONFIRM_CONFIDENCE:
         issues.append("low_confidence:overall")
     return sorted(set(issues))
+
+
+def _project_columns(data: BodyCompositionExtraction) -> dict[str, float]:
+    """Canonical measurements → {typed column: value} (last value wins on dup)."""
+    return {
+        SPEC_BY_KEY[m.key].column: m.value
+        for m in data.measurements
+        if m.key in CANONICAL_KEYS
+    }
 
 
 class BodyCompositionService:
@@ -148,29 +155,42 @@ class BodyCompositionService:
         uploaded_by_id: UUID | None,
         uploaded_by_type: str,
     ) -> dict[str, Any]:
-        data = _normalize(data)
+        data, vendor = _normalize(data)
+        blocking = _validation_issues(data, include_confidence=False)
         issues = _validation_issues(data, include_confidence=True)
-        test_datetime = data.test_datetime
-        if test_datetime and test_datetime.tzinfo:
-            test_datetime = test_datetime.replace(tzinfo=None)
+
+        if not data.measurements:
+            record_status = RecordStatus.FAILED
+        elif blocking or issues:
+            record_status = RecordStatus.NEEDS_REVIEW
+        else:
+            record_status = RecordStatus.CONFIRMED
 
         row = PatientBodyCompositionRecord(
             patient_id=patient_id,
-            status="draft",
+            status=record_status.value,
             ingest_channel=ingest_channel.value,
             manufacturer=data.manufacturer,
             device_model=data.device_model,
             measurement_method=data.measurement_method.value,
-            test_datetime=test_datetime,
+            test_datetime=data.test_datetime,
             source_file_url=source_file_url,
             original_filename=original_filename,
             content_type=content_type,
             data=data.model_dump(mode="json"),
+            vendor_metrics=[m.model_dump(mode="json") for m in vendor],
             validation_issues=issues,
             extraction_confidence=data.extraction_confidence,
             uploaded_by_id=uploaded_by_id,
             uploaded_by_type=uploaded_by_type,
         )
+        for column, value in _project_columns(data).items():
+            setattr(row, column, value)
+        if record_status is RecordStatus.CONFIRMED:
+            row.confirmed_by_id = uploaded_by_id
+            row.confirmed_by_type = uploaded_by_type
+            row.confirmed_at = datetime.now().replace(tzinfo=None)
+
         async with self.postgres_store.get_session() as session:
             session.add(row)
             await session.commit()
@@ -186,7 +206,7 @@ class BodyCompositionService:
         confirmed_by_id: UUID | None,
         confirmed_by_type: str,
     ) -> dict[str, Any]:
-        data = _normalize(data)
+        data, vendor = _normalize(data)
         blocking = _validation_issues(data, include_confidence=False)
         if blocking:
             raise_http_exception(
@@ -200,21 +220,15 @@ class BodyCompositionService:
             if (
                 not row
                 or row.patient_id != patient_id
-                or row.status != "draft"
+                or row.status
+                not in {RecordStatus.DRAFT.value, RecordStatus.NEEDS_REVIEW.value}
             ):
                 raise_http_exception(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    message="Body-composition draft not found",
+                    message="Body-composition record is not awaiting review",
                 )
-            test_datetime = data.test_datetime
-            if test_datetime and test_datetime.tzinfo:
-                test_datetime = test_datetime.replace(tzinfo=None)
-            row.status = "confirmed"
-            row.data = data.model_dump(mode="json")
-            row.manufacturer = data.manufacturer
-            row.device_model = data.device_model
-            row.measurement_method = data.measurement_method.value
-            row.test_datetime = test_datetime
+            self._apply_extraction(row, data, vendor)
+            row.status = RecordStatus.CONFIRMED.value
             row.validation_issues = []
             row.confirmed_by_id = confirmed_by_id
             row.confirmed_by_type = confirmed_by_type
@@ -222,6 +236,61 @@ class BodyCompositionService:
             await session.commit()
             await session.refresh(row)
         return self._serialize(row)
+
+    async def supersede(
+        self,
+        *,
+        patient_id: UUID,
+        record_id: UUID,
+        data: BodyCompositionExtraction,
+        confirmed_by_id: UUID | None,
+        confirmed_by_type: str,
+    ) -> dict[str, Any]:
+        """Correct a confirmed record by replacing it — the original stays intact."""
+        data, vendor = _normalize(data)
+        blocking = _validation_issues(data, include_confidence=False)
+        if blocking:
+            raise_http_exception(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                message="Body-composition values need correction",
+                detail=", ".join(blocking),
+            )
+
+        now = datetime.now().replace(tzinfo=None)
+        async with self.postgres_store.get_session() as session:
+            old = await session.get(PatientBodyCompositionRecord, record_id)
+            if (
+                not old
+                or old.patient_id != patient_id
+                or old.status != RecordStatus.CONFIRMED.value
+            ):
+                raise_http_exception(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    message="Confirmed body-composition record not found",
+                )
+            new = PatientBodyCompositionRecord(
+                patient_id=patient_id,
+                status=RecordStatus.CONFIRMED.value,
+                ingest_channel=old.ingest_channel,
+                source_file_url=old.source_file_url,
+                original_filename=old.original_filename,
+                content_type=old.content_type,
+                uploaded_by_id=old.uploaded_by_id,
+                uploaded_by_type=old.uploaded_by_type,
+                confirmed_by_id=confirmed_by_id,
+                confirmed_by_type=confirmed_by_type,
+                confirmed_at=now,
+                supersedes_id=old.record_id,
+            )
+            self._apply_extraction(new, data, vendor)
+            new.validation_issues = []
+            session.add(new)
+            await session.flush()
+            old.status = RecordStatus.SUPERSEDED.value
+            old.superseded_by_id = new.record_id
+            await session.commit()
+            await session.refresh(new)
+        return self._serialize(new)
 
     async def list_records(
         self, patient_id: UUID, *, limit: int = 50
@@ -231,7 +300,12 @@ class BodyCompositionService:
                 select(PatientBodyCompositionRecord)
                 .where(
                     PatientBodyCompositionRecord.patient_id == patient_id,
-                    PatientBodyCompositionRecord.status != "archived",
+                    PatientBodyCompositionRecord.status.notin_(
+                        (
+                            RecordStatus.ARCHIVED.value,
+                            RecordStatus.SUPERSEDED.value,
+                        )
+                    ),
                 )
                 .order_by(
                     PatientBodyCompositionRecord.test_datetime.desc().nullslast(),
@@ -249,21 +323,15 @@ class BodyCompositionService:
         return self._serialize(row)
 
     async def get_latest(self, patient_id: UUID) -> dict[str, Any] | None:
-        async with self.postgres_store.get_session() as session:
-            result = await session.execute(
-                select(PatientBodyCompositionRecord)
-                .where(
-                    PatientBodyCompositionRecord.patient_id == patient_id,
-                    PatientBodyCompositionRecord.status == "confirmed",
-                )
-                .order_by(
-                    PatientBodyCompositionRecord.test_datetime.desc().nullslast(),
-                    PatientBodyCompositionRecord.created_at.desc(),
-                )
-                .limit(1)
-            )
-            row = result.scalars().first()
+        row = await self._latest_confirmed(patient_id)
         return self._serialize(row) if row else None
+
+    async def get_latest_metrics(
+        self, patient_id: UUID
+    ) -> dict[str, float] | None:
+        """Flattened canonical metrics from the latest confirmed record — for BMIQ."""
+        row = await self._latest_confirmed(patient_id)
+        return self._metrics(row) if row else None
 
     async def archive(self, patient_id: UUID, record_id: UUID) -> None:
         async with self.postgres_store.get_session() as session:
@@ -273,7 +341,7 @@ class BodyCompositionService:
                     status_code=status.HTTP_404_NOT_FOUND,
                     message="Body-composition record not found",
                 )
-            row.status = "archived"
+            row.status = RecordStatus.ARCHIVED.value
             await session.commit()
 
     async def get_trends(
@@ -284,7 +352,8 @@ class BodyCompositionService:
                 select(PatientBodyCompositionRecord)
                 .where(
                     PatientBodyCompositionRecord.patient_id == patient_id,
-                    PatientBodyCompositionRecord.status == "confirmed",
+                    PatientBodyCompositionRecord.status
+                    == RecordStatus.CONFIRMED.value,
                 )
                 .order_by(
                     PatientBodyCompositionRecord.test_datetime.desc().nullslast(),
@@ -293,7 +362,6 @@ class BodyCompositionService:
                 .limit(limit)
             )
             rows = list(reversed(result.scalars().all()))
-
         return self._compute_trends(rows)
 
     @staticmethod
@@ -302,15 +370,17 @@ class BodyCompositionService:
     ) -> dict[str, Any]:
         series: dict[str, list[dict[str, Any]]] = {}
         for row in rows:
-            for measurement in (row.data or {}).get("measurements", []):
-                series.setdefault(measurement["key"], []).append(
+            when = row.test_datetime.isoformat() if row.test_datetime else None
+            for key, spec in SPEC_BY_KEY.items():
+                value = getattr(row, spec.column)
+                if value is None:
+                    continue
+                series.setdefault(key, []).append(
                     {
                         "record_id": str(row.record_id),
-                        "test_datetime": row.test_datetime.isoformat()
-                        if row.test_datetime
-                        else None,
-                        "value": measurement["value"],
-                        "unit": measurement.get("unit"),
+                        "test_datetime": when,
+                        "value": value,
+                        "unit": spec.unit,
                         "measurement_method": row.measurement_method,
                         "manufacturer": row.manufacturer,
                         "device_model": row.device_model,
@@ -325,9 +395,7 @@ class BodyCompositionService:
             )
             comparison = {
                 "comparable": same_method,
-                "reason": None
-                if same_method
-                else "measurement_method_changed",
+                "reason": None if same_method else "measurement_method_changed",
                 "previous_method": previous.measurement_method,
                 "latest_method": latest.measurement_method,
                 "device_changed": (
@@ -341,12 +409,53 @@ class BodyCompositionService:
             "comparison": comparison,
         }
 
+    @staticmethod
+    def _apply_extraction(
+        row: PatientBodyCompositionRecord,
+        data: BodyCompositionExtraction,
+        vendor: list[BodyCompositionMeasurement],
+    ) -> None:
+        row.manufacturer = data.manufacturer
+        row.device_model = data.device_model
+        row.measurement_method = data.measurement_method.value
+        row.test_datetime = data.test_datetime
+        row.data = data.model_dump(mode="json")
+        row.vendor_metrics = [m.model_dump(mode="json") for m in vendor]
+        row.extraction_confidence = data.extraction_confidence
+        for spec in SPEC_BY_KEY.values():
+            setattr(row, spec.column, None)
+        for column, value in _project_columns(data).items():
+            setattr(row, column, value)
+
+    async def _latest_confirmed(
+        self, patient_id: UUID
+    ) -> PatientBodyCompositionRecord | None:
+        async with self.postgres_store.get_session() as session:
+            result = await session.execute(
+                select(PatientBodyCompositionRecord)
+                .where(
+                    PatientBodyCompositionRecord.patient_id == patient_id,
+                    PatientBodyCompositionRecord.status
+                    == RecordStatus.CONFIRMED.value,
+                )
+                .order_by(
+                    PatientBodyCompositionRecord.test_datetime.desc().nullslast(),
+                    PatientBodyCompositionRecord.created_at.desc(),
+                )
+                .limit(1)
+            )
+            return result.scalars().first()
+
     async def _get_row(
         self, patient_id: UUID, record_id: UUID
     ) -> PatientBodyCompositionRecord:
         async with self.postgres_store.get_session() as session:
             row = await session.get(PatientBodyCompositionRecord, record_id)
-        if not row or row.patient_id != patient_id or row.status == "archived":
+        if (
+            not row
+            or row.patient_id != patient_id
+            or row.status == RecordStatus.ARCHIVED.value
+        ):
             raise_http_exception(
                 status_code=status.HTTP_404_NOT_FOUND,
                 message="Body-composition record not found",
@@ -354,7 +463,16 @@ class BodyCompositionService:
         return row
 
     @staticmethod
-    def _serialize(row: PatientBodyCompositionRecord) -> dict[str, Any]:
+    def _metrics(row: PatientBodyCompositionRecord) -> dict[str, float]:
+        return {
+            key: getattr(row, spec.column)
+            for key, spec in SPEC_BY_KEY.items()
+            if getattr(row, spec.column) is not None
+        }
+
+    @classmethod
+    def _serialize(cls, row: PatientBodyCompositionRecord) -> dict[str, Any]:
+        data = row.data or {}
         return {
             "record_id": str(row.record_id),
             "patient_id": str(row.patient_id),
@@ -368,9 +486,17 @@ class BodyCompositionService:
             else None,
             "source_file_url": row.source_file_url,
             "original_filename": row.original_filename,
-            "data": row.data,
+            "metrics": cls._metrics(row),
+            "data": data,
+            "segmental": data.get("segmental", []),
+            "vendor_metrics": row.vendor_metrics or [],
             "validation_issues": row.validation_issues or [],
-            "created_at": row.created_at.isoformat()
-            if row.created_at
+            "extraction_confidence": row.extraction_confidence,
+            "supersedes_id": str(row.supersedes_id)
+            if row.supersedes_id
             else None,
+            "superseded_by_id": str(row.superseded_by_id)
+            if row.superseded_by_id
+            else None,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
         }

@@ -24,6 +24,15 @@ class IngestChannel(str, Enum):
     MANUAL = "manual"
 
 
+class RecordStatus(str, Enum):
+    DRAFT = "draft"                 # extracted, not yet trusted
+    NEEDS_REVIEW = "needs_review"   # low confidence / soft issues — provider must confirm
+    CONFIRMED = "confirmed"         # clinical record, immutable (corrections supersede)
+    FAILED = "failed"              # unreadable / no usable measurements
+    SUPERSEDED = "superseded"      # replaced by a corrected record
+    ARCHIVED = "archived"          # soft-deleted
+
+
 class BodyRegion(str, Enum):
     RIGHT_ARM = "right_arm"
     LEFT_ARM = "left_arm"
@@ -83,7 +92,7 @@ class ConfirmBodyCompositionRequest(BaseModel):
 class BodyCompositionRecordResponse(BaseModel):
     record_id: str
     patient_id: str
-    status: str
+    status: RecordStatus
     ingest_channel: IngestChannel
     manufacturer: str | None = None
     device_model: str | None = None
@@ -91,6 +100,14 @@ class BodyCompositionRecordResponse(BaseModel):
     test_datetime: datetime | None = None
     source_file_url: str | None = None
     original_filename: str | None = None
+    # Flattened canonical metric → value (in canonical units), from typed columns —
+    # the shape the frontend and BMIQ read directly.
+    metrics: dict[str, float] = Field(default_factory=dict)
     data: BodyCompositionExtraction
+    segmental: list[SegmentalComposition] = Field(default_factory=list)
+    vendor_metrics: list[BodyCompositionMeasurement] = Field(default_factory=list)
     validation_issues: list[str] = Field(default_factory=list)
+    extraction_confidence: float = 0.0
+    supersedes_id: str | None = None
+    superseded_by_id: str | None = None
     created_at: datetime
