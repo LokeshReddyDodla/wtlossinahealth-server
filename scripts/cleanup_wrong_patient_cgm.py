@@ -16,10 +16,12 @@ async def cleanup(patient_id: str, dry_run: bool) -> None:
     from lib.core.container import container
     from lib.core.clickhouse_store import ClickHouseStore
     from lib.core.mongo_store import MongoStore
+    from lib.core.postgres_store import PostgresStore
     from lib.core.qdrant_store import QdrantStore
 
     ch = container.resolve(ClickHouseStore)
     mongo = container.resolve(MongoStore)
+    pg = container.resolve(PostgresStore)
 
     # ── 1. ClickHouse: raw CGM readings ──
     count = ch.client.execute(
@@ -89,9 +91,8 @@ async def cleanup(patient_id: str, dry_run: bool) -> None:
             logger.info("  deleted")
 
     # ── 5. Postgres: clear last_cgm_reading_at on connected apps ──
-    from lib.core.postgres_store import get_session
     from sqlalchemy import text
-    async with get_session() as session:
+    async with pg.get_session() as session:
         for table in ("patient_libreview", "patient_sinocare"):
             r = await session.execute(
                 text(f"""
@@ -111,7 +112,7 @@ async def cleanup(patient_id: str, dry_run: bool) -> None:
     # ── 6. Derived dirty set: clear pending CGM drains ──
     try:
         from lib.derived.registry import DataDomain
-        async with get_session() as session:
+        async with pg.get_session() as session:
             r = await session.execute(
                 text("""
                     DELETE FROM derived_dirty
