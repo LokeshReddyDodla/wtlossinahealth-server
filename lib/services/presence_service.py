@@ -2,15 +2,19 @@
 import datetime
 import logging
 
-from sqlalchemy import select, update
+from uuid import UUID
+
+from sqlalchemy import update
 
 from lib.core.cache_store import CacheStore
 from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.database import postgres_store
-from lib.models.associations import patient_care_provider_association
 from lib.models.user_device import UserDevice
+from lib.services.care_provider_access_service import CareProviderAccessService
 
 logger = logging.getLogger(__name__)
+
+_access_service = CareProviderAccessService(postgres_store)
 
 # TTL so a leaked counter can't strand a patient "online" if a server dies
 # before its disconnect fires.
@@ -49,14 +53,53 @@ async def online_map(patient_ids: list[str]) -> dict[str, bool]:
     return {pid: _count(val) for pid, val in zip(patient_ids, values)}
 
 
-async def _care_provider_rooms(patient_id: str) -> list[str]:
+def _room(patient_id: str) -> str:
+    return f"presence:{patient_id}"
+
+
+async def _accessible(care_provider_id: str, patient_ids: list[str]) -> list[str]:
+    """Filter to patients this viewer may see — same scope as the REST reads."""
+    try:
+        cp_uuid = UUID(str(care_provider_id))
+        pid_uuids = [UUID(p) for p in patient_ids]
+    except (TypeError, ValueError):
+        return []
     async with postgres_store.get_session() as session:
-        result = await session.execute(
-            select(patient_care_provider_association.c.care_provider_id).where(
-                patient_care_provider_association.c.patient_id == patient_id
-            )
+        allowed = await _access_service.get_accessible_patients(
+            care_provider_id=cp_uuid,
+            patient_ids=pid_uuids,
+            postgres_session=session,
         )
-        return [str(cp_id) for (cp_id,) in result.all()]
+    return [str(p) for p in allowed]
+
+
+async def subscribe(sio, sid, patient_ids: list[str]) -> None:
+    """Join the authorized subset's presence rooms and return their current state."""
+    ids = [str(p) for p in patient_ids if p]
+    if not ids:
+        return
+    session = await sio.get_session(sid)
+    user_id = session.get("user_id") if session else None
+    role = session.get("role") if session else None
+    if not user_id or role == ProfileTypeEnum.PATIENT.value:
+        return
+    # Global admin sees every patient; a care provider is scoped.
+    if role != ProfileTypeEnum.ADMIN.value:
+        ids = await _accessible(user_id, ids)
+    for pid in ids:
+        await sio.enter_room(sid, _room(pid))
+    states = await online_map(ids)
+    await sio.emit(
+        "presence_bulk",
+        [{"patient_id": pid, "online": online} for pid, online in states.items()],
+        room=sid,
+    )
+
+
+async def unsubscribe(sio, sid, patient_ids: list[str]) -> None:
+    for pid in patient_ids:
+        if pid:
+            await sio.leave_room(sid, _room(str(pid)))
 
 
 async def _stamp_last_active(patient_id: str, ts: datetime.datetime) -> None:
@@ -82,8 +125,7 @@ async def _emit(sio, patient_id: str, online: bool, ts: datetime.datetime) -> No
         "online": online,
         "last_active_at": ts.isoformat(),
     }
-    for room in await _care_provider_rooms(patient_id):
-        await sio.emit("presence", payload, room=room)
+    await sio.emit("presence", payload, room=_room(str(patient_id)))
 
 
 async def patient_connected(sio, patient_id: str) -> None:
