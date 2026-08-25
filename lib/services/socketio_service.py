@@ -3,8 +3,9 @@ import datetime
 from decouple import config
 from socketio import AsyncRedisManager, AsyncServer
 
-from lib.core.constants import EmitMessageKeyEnum
+from lib.core.constants import EmitMessageKeyEnum, ProfileTypeEnum
 from lib.schemas.chat_message import ChatMessageCreate
+from lib.services import presence_service
 from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.chat.chat_messaging_service import ChatMessagingService
 from lib.services.chat.chat_notification_service import ChatNotificationService
@@ -88,14 +89,21 @@ async def connect(sid, environ):
         )  # Reject connection with an exception
 
     room_id = payload.get("sub")  # user_id
+    role = payload.get("role")
     await sio.enter_room(sid, room_id)
-    await sio.save_session(sid, {"user_id": room_id})
+    await sio.save_session(sid, {"user_id": room_id, "role": role})
     print(f"Client {sid} connected to chat {room_id}")
+
+    if role == ProfileTypeEnum.PATIENT.value:
+        await presence_service.patient_connected(sio, room_id)
 
 
 @sio.event
 async def disconnect(sid):
     print(f"Client {sid} disconnected")
+    session = await sio.get_session(sid)
+    if session and session.get("role") == ProfileTypeEnum.PATIENT.value:
+        await presence_service.patient_disconnected(sio, session["user_id"])
     rooms = sio.rooms(sid)
     for room in rooms:
         await sio.leave_room(sid, room)

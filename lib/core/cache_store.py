@@ -106,6 +106,10 @@ class CacheStore:
         key = f"{self.__namespace}:{key.strip()}"
         return await self.__aclient.incr(key)
 
+    async def adecr_key(self, key: str) -> int:
+        key = f"{self.__namespace}:{key.strip()}"
+        return await self.__aclient.decr(key)
+
     async def aexpire_key(self, key: str, seconds: int) -> bool:
         key = f"{self.__namespace}:{key.strip()}"
         return await self.__aclient.expire(key, seconds)
