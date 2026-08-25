@@ -1,0 +1,26 @@
+{
+  "_comment": "GLP-1 / GIP-GLP-1 receptor agonists. Detection is substring, case-insensitive, against the patient's medication names. Add brands (incl. India-specific) here — no code change. Molecule names catch generics; brand names catch prescriptions written by brand.",
+  "names": [
+    "glp",
+    "semaglutide",
+    "liraglutide",
+    "dulaglutide",
+    "tirzepatide",
+    "exenatide",
+    "lixisenatide",
+    "albiglutide",
+    "ozempic",
+    "rybelsus",
+    "wegovy",
+    "mounjaro",
+    "zepbound",
+    "trulicity",
+    "victoza",
+    "saxenda",
+    "byetta",
+    "bydureon",
+    "adlyxin",
+    "soliqua",
+    "xultophy"
+  ]
+}

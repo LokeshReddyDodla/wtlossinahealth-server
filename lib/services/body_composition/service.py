@@ -9,13 +9,14 @@ is nothing usable. Confirmed records are immutable — corrections supersede the
 
 from __future__ import annotations
 
+import logging
 from collections import Counter
 from datetime import datetime
 from typing import Any
 from uuid import UUID
 
 from fastapi import status
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 
 from lib.core.postgres_store import PostgresStore
 from lib.models.patient_body_composition_record import (
@@ -34,6 +35,8 @@ from lib.services.body_composition.metrics import (
     convert_to_canonical_unit,
 )
 from lib.utils.http_exceptions import raise_http_exception
+
+logger = logging.getLogger(__name__)
 
 # An upload auto-confirms only above this whole-extraction confidence and with no
 # blocking issues; anything weaker routes to a human via needs_review.
@@ -143,6 +146,41 @@ class BodyCompositionService:
     def __init__(self, postgres_store: PostgresStore) -> None:
         self.postgres_store = postgres_store
 
+    async def _enqueue_vector(self, patient_id: UUID, record_id: UUID) -> None:
+        try:
+            from lib.workers.tasks.body_composition.vector_generation import (
+                enqueue_body_composition_vector,
+            )
+
+            await enqueue_body_composition_vector(str(patient_id), str(record_id))
+        except Exception:
+            logger.exception("Failed to enqueue body-composition vector for %s", record_id)
+
+    async def _enqueue_vector_delete(self, record_id: UUID) -> None:
+        try:
+            from lib.workers.tasks.body_composition.vector_generation import (
+                enqueue_delete_body_composition_vector,
+            )
+
+            await enqueue_delete_body_composition_vector(str(record_id))
+        except Exception:
+            logger.exception("Failed to enqueue body-composition vector delete for %s", record_id)
+
+    async def _sync_profile_weight(self, patient_id: UUID, record_id: UUID) -> None:
+        """Mirror the vitals path: a scan's weight is a real measurement, so the
+        profile's weight (and thus BMI everywhere) follows it — but only when this
+        scan is the patient's newest, so a backdated historical upload can't clobber
+        the current weight."""
+        try:
+            latest = await self._latest_confirmed(patient_id)
+            if not latest or latest.record_id != record_id or latest.weight_kg is None:
+                return
+            from lib.utils.sync_profile_weight import sync_profile_weight
+
+            await sync_profile_weight(str(patient_id), float(latest.weight_kg))
+        except Exception:
+            logger.exception("Failed to sync profile weight from body composition %s", record_id)
+
     async def create_draft(
         self,
         *,
@@ -154,10 +192,17 @@ class BodyCompositionService:
         content_type: str,
         uploaded_by_id: UUID | None,
         uploaded_by_type: str,
+        content_hash: str | None = None,
     ) -> dict[str, Any]:
         data, vendor = _normalize(data)
         blocking = _validation_issues(data, include_confidence=False)
         issues = _validation_issues(data, include_confidence=True)
+
+        duplicate = await self._find_duplicate(
+            patient_id, data.test_datetime, data.manufacturer, content_hash
+        )
+        if duplicate:
+            return {**self._serialize(duplicate), "duplicate": True}
 
         if not data.measurements:
             record_status = RecordStatus.FAILED
@@ -181,6 +226,7 @@ class BodyCompositionService:
             vendor_metrics=[m.model_dump(mode="json") for m in vendor],
             validation_issues=issues,
             extraction_confidence=data.extraction_confidence,
+            content_hash=content_hash,
             uploaded_by_id=uploaded_by_id,
             uploaded_by_type=uploaded_by_type,
         )
@@ -195,6 +241,9 @@ class BodyCompositionService:
             session.add(row)
             await session.commit()
             await session.refresh(row)
+        if record_status is RecordStatus.CONFIRMED:
+            await self._enqueue_vector(patient_id, row.record_id)
+            await self._sync_profile_weight(patient_id, row.record_id)
         return self._serialize(row)
 
     async def confirm(
@@ -235,6 +284,8 @@ class BodyCompositionService:
             row.confirmed_at = datetime.now().replace(tzinfo=None)
             await session.commit()
             await session.refresh(row)
+        await self._enqueue_vector(patient_id, record_id)
+        await self._sync_profile_weight(patient_id, record_id)
         return self._serialize(row)
 
     async def supersede(
@@ -290,6 +341,10 @@ class BodyCompositionService:
             old.superseded_by_id = new.record_id
             await session.commit()
             await session.refresh(new)
+            new_id = new.record_id
+        await self._enqueue_vector(patient_id, new_id)
+        await self._enqueue_vector_delete(record_id)
+        await self._sync_profile_weight(patient_id, new_id)
         return self._serialize(new)
 
     async def list_records(
@@ -343,6 +398,7 @@ class BodyCompositionService:
                 )
             row.status = RecordStatus.ARCHIVED.value
             await session.commit()
+        await self._enqueue_vector_delete(record_id)
 
     async def get_trends(
         self, patient_id: UUID, *, limit: int = 24
@@ -426,6 +482,48 @@ class BodyCompositionService:
             setattr(row, spec.column, None)
         for column, value in _project_columns(data).items():
             setattr(row, column, value)
+
+    async def _find_duplicate(
+        self,
+        patient_id: UUID,
+        test_datetime: datetime | None,
+        manufacturer: str | None,
+        content_hash: str | None,
+    ) -> PatientBodyCompositionRecord | None:
+        """An active scan that is the same as this upload — matched by clinical
+        identity (patient + test time + manufacturer) or, when the report prints
+        no test date, by source-file hash."""
+        conditions = []
+        if test_datetime is not None:
+            conditions.append(
+                and_(
+                    PatientBodyCompositionRecord.test_datetime == test_datetime,
+                    PatientBodyCompositionRecord.manufacturer == manufacturer,
+                )
+            )
+        if content_hash:
+            conditions.append(
+                PatientBodyCompositionRecord.content_hash == content_hash
+            )
+        if not conditions:
+            return None
+        async with self.postgres_store.get_session() as session:
+            result = await session.execute(
+                select(PatientBodyCompositionRecord)
+                .where(
+                    PatientBodyCompositionRecord.patient_id == patient_id,
+                    PatientBodyCompositionRecord.status.in_(
+                        (
+                            RecordStatus.DRAFT.value,
+                            RecordStatus.NEEDS_REVIEW.value,
+                            RecordStatus.CONFIRMED.value,
+                        )
+                    ),
+                    or_(*conditions),
+                )
+                .limit(1)
+            )
+            return result.scalars().first()
 
     async def _latest_confirmed(
         self, patient_id: UUID

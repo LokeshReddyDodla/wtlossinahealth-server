@@ -149,6 +149,7 @@ class EventTrigger(str, Enum):
     SMBG_LOGGED = "smbg_logged"
     CGM_THRESHOLD_CROSSED = "cgm_threshold_crossed"
     SYMPTOM_LOGGED = "symptom_logged"
+    BODY_COMPOSITION_CONFIRMED = "body_composition_confirmed"
 
 
 # Trigger → data_types fetched for the LLM context. Every trigger fetches
@@ -194,6 +195,14 @@ TRIGGER_DATA_TYPES: dict[EventTrigger, list[HealthDataType]] = {
         HealthDataType.FITNESS_OVERVIEW,
         HealthDataType.PATIENT_WORKOUT,
         HealthDataType.MOOD_ENTRY,
+    ],
+    EventTrigger.BODY_COMPOSITION_CONFIRMED: [
+        HealthDataType.BODY_COMPOSITION,
+        HealthDataType.CGM_SUMMARY,
+        HealthDataType.MEAL,
+        HealthDataType.FITNESS_OVERVIEW,
+        HealthDataType.PATIENT_WORKOUT,
+        HealthDataType.SMBG,
     ],
 }
 
@@ -249,11 +258,16 @@ class SymptomLoggedAnchor(_AnchorBase):
     symptom_entry_id: str
 
 
+class BodyCompositionConfirmedAnchor(_AnchorBase):
+    record_id: str
+
+
 TriggerAnchor = (
     MealLoggedAnchor
     | SMBGLoggedAnchor
     | CGMThresholdCrossedAnchor
     | SymptomLoggedAnchor
+    | BodyCompositionConfirmedAnchor
 )
 
 
@@ -262,6 +276,7 @@ _ANCHOR_MODELS: dict[EventTrigger, type[BaseModel]] = {
     EventTrigger.SMBG_LOGGED: SMBGLoggedAnchor,
     EventTrigger.CGM_THRESHOLD_CROSSED: CGMThresholdCrossedAnchor,
     EventTrigger.SYMPTOM_LOGGED: SymptomLoggedAnchor,
+    EventTrigger.BODY_COMPOSITION_CONFIRMED: BodyCompositionConfirmedAnchor,
 }
 
 

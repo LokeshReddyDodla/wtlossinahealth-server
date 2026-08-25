@@ -12,6 +12,7 @@ from .sleep import SleepVectorService, build_sleep_text
 from .vitals import VitalsVectorService, VitalsTextReprBuilder
 from .workout import WorkoutVectorService, WorkoutTextReprBuilder
 from .inbody import InbodyVectorService, InbodyTextReprBuilder
+from .body_composition import BodyCompositionVectorService, BodyCompositionTextReprBuilder
 
 __all__ = [
     "BaseVectorService",
@@ -35,4 +36,6 @@ __all__ = [
     "WorkoutTextReprBuilder",
     "InbodyVectorService",
     "InbodyTextReprBuilder",
+    "BodyCompositionVectorService",
+    "BodyCompositionTextReprBuilder",
 ]

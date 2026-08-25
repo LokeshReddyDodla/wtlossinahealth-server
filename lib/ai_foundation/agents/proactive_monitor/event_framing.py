@@ -68,12 +68,14 @@ _EVENT_CLASS: dict[EventTrigger, tuple[InsightCategory, InsightSeverity]] = {
     EventTrigger.MEAL_LOGGED: (InsightCategory.GENERAL, InsightSeverity.INFO),
     EventTrigger.SMBG_LOGGED: (InsightCategory.GENERAL, InsightSeverity.ATTENTION),
     EventTrigger.SYMPTOM_LOGGED: (InsightCategory.GENERAL, InsightSeverity.ATTENTION),
+    EventTrigger.BODY_COMPOSITION_CONFIRMED: (InsightCategory.GENERAL, InsightSeverity.INFO),
 }
 
 _EVENT_TIER: dict[EventTrigger, ReasoningTier] = {
     EventTrigger.MEAL_LOGGED: ReasoningTier.STANDARD,
     EventTrigger.SMBG_LOGGED: ReasoningTier.STANDARD,
     EventTrigger.SYMPTOM_LOGGED: ReasoningTier.STANDARD,
+    EventTrigger.BODY_COMPOSITION_CONFIRMED: ReasoningTier.STANDARD,
 }
 
 # Neutral, interpretation-free descriptions — the brain forms its own view.
@@ -87,6 +89,11 @@ _EVENT_FRAME: dict[EventTrigger, str] = {
     EventTrigger.SYMPTOM_LOGGED:
         "just logged a symptom. Connect it to their recent data (e.g. a glucose "
         "dip) and respond with a brief, supportive note — do not attempt triage.",
+    EventTrigger.BODY_COMPOSITION_CONFIRMED:
+        "just had a new body-composition scan recorded. Compare it with their "
+        "prior scans and note any meaningful shift in muscle, fat, or visceral "
+        "fat and their progress toward goals — respond with a brief, grounded "
+        "observation.",
 }
 
 
@@ -97,6 +104,7 @@ _EVENT_REF: dict[EventTrigger, tuple[RefType, str]] = {
     EventTrigger.MEAL_LOGGED: (RefType.MEAL, "meal_id"),
     EventTrigger.SMBG_LOGGED: (RefType.SMBG, "reading_id"),
     EventTrigger.SYMPTOM_LOGGED: (RefType.SYMPTOM, "symptom_entry_id"),
+    EventTrigger.BODY_COMPOSITION_CONFIRMED: (RefType.BODY_COMPOSITION, "record_id"),
 }
 
 

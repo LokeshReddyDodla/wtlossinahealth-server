@@ -24,6 +24,7 @@ from lib.ai_foundation.agents.proactive_monitor.contracts import (
     SEVERITY_RANK,
     TRIGGER_DATA_TYPES,
     TriggerAnchor,
+    BodyCompositionConfirmedAnchor,
     parse_anchor,
 )
 from lib.ai_foundation.agents.proactive_monitor.notify import (
@@ -43,6 +44,8 @@ def _extract_entity(anchor: TriggerAnchor) -> tuple[str | None, str | None]:
         return "smbg", anchor.reading_id
     if isinstance(anchor, SymptomLoggedAnchor):
         return "symptom", anchor.symptom_entry_id
+    if isinstance(anchor, BodyCompositionConfirmedAnchor):
+        return "body_composition", anchor.record_id
     return None, None
 
 

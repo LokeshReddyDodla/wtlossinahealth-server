@@ -1,5 +1,6 @@
 """Device-neutral Body Composition API."""
 
+import hashlib
 import os
 from uuid import UUID, uuid4
 
@@ -126,10 +127,14 @@ async def preview_body_composition(
         content_type=content_type,
         uploaded_by_id=UUID(str(actor.id)) if actor.id else None,
         uploaded_by_type=actor.role.value,
+        content_hash=hashlib.sha256(file_bytes).hexdigest(),
     )
-    return SuccessResponse(
-        message="Body-composition report extracted for review", data=record
+    message = (
+        "This scan is already imported"
+        if record.get("duplicate")
+        else "Body-composition report extracted for review"
     )
+    return SuccessResponse(message=message, data=record)
 
 
 @router.post("/confirm", response_model=SuccessResponse)
