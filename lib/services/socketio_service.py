@@ -110,6 +110,16 @@ async def disconnect(sid):
 
 
 @sio.event
+async def subscribe_presence(sid, data):
+    await presence_service.subscribe(sio, sid, data.get("patient_ids") or [])
+
+
+@sio.event
+async def unsubscribe_presence(sid, data):
+    await presence_service.unsubscribe(sio, sid, data.get("patient_ids") or [])
+
+
+@sio.event
 async def sendMessage(sid, data):
     chat_id = data.get("chat_id")
     sender_id = data.get("sender_id")
