@@ -220,8 +220,8 @@ async def _process_patient_message(
             await _react_to_message(phone, message_id, "")
         await _send_whatsapp_message(
             phone,
-            "Welcome! It looks like you're not registered with AiHealth yet. "
-            "Please download the AiHealth app and sign up to get started.",
+            "Welcome! It looks like you're not registered with AI-Health yet. "
+            "Please download the AI-Health app and sign up to get started.",
         )
         return
 
@@ -357,8 +357,8 @@ async def twilio_receive_message(
     if not patient:
         await _send_twilio_message(
             From,
-            "Welcome! It looks like you're not registered with AiHealth yet. "
-            "Please download the AiHealth app and sign up to get started.",
+            "Welcome! It looks like you're not registered with AI-Health yet. "
+            "Please download the AI-Health app and sign up to get started.",
         )
         return Response(content="<Response></Response>", media_type="application/xml")
 

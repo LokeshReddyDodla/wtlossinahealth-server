@@ -18,7 +18,7 @@ from lib.services.token_usage_service import TokenUsageService
 from lib.utils.http_exceptions import raise_http_exception
 
 
-OSTEOFLAG_SYSTEM_PROMPT = """You are AiHealth OsteoFlag, a clinical decision support assistant for opportunistic osteoporosis risk screening using chest X-ray derived signals.
+OSTEOFLAG_SYSTEM_PROMPT = """You are AI-Health OsteoFlag, a clinical decision support assistant for opportunistic osteoporosis risk screening using chest X-ray derived signals.
 
 You do NOT diagnose.
 You ONLY flag risk and recommend confirmatory assessment when appropriate.

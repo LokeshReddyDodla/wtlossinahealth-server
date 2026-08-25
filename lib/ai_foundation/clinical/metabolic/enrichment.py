@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""AiHealth Engine v3.1 upgrades — additive output enrichment (the Mukhtar gap fixes).
+"""AI-Health Engine v3.1 upgrades — additive output enrichment (the Mukhtar gap fixes).
 
 This wraps the EngineV2 output WITHOUT touching the validated core, so it is safe to
 run in shadow and cannot break the spike model, the safety gate, or the attribution.
