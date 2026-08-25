@@ -18,9 +18,23 @@ from lib.models.care_intent import CareIntent
 from lib.models.care_intent_event import CareIntentEvent
 from lib.models.gamification import DailyTask, PlayerProfile
 from lib.models.patient import Patient
+from lib.models.patient_body_composition_record import (
+    PatientBodyCompositionRecord,
+)
 from lib.models.patient_smbg import PatientSMBG
 
 logger = logging.getLogger(__name__)
+
+# Confirmed body-composition columns surfaced as progress series, keyed by the
+# canonical metric key the frontend/registry already uses.
+_BODY_COMPOSITION_COLUMNS = {
+    "weight": "weight_kg",
+    "skeletal_muscle_mass": "skeletal_muscle_mass_kg",
+    "percent_body_fat": "percent_body_fat",
+    "visceral_fat_level": "visceral_fat_level",
+    "body_fat_mass": "body_fat_mass_kg",
+    "skeletal_muscle_index": "skeletal_muscle_index",
+}
 
 
 class ProgressRepository:
@@ -139,6 +153,42 @@ class ProgressRepository:
         for t, d, avg in rows:
             dd = d if isinstance(d, date) else date.fromisoformat(str(d))
             out.setdefault(str(t or "random"), []).append((dd, round(float(avg), 1)))
+        return out
+
+    async def body_composition_daily(
+        self, pid, start_dt: datetime, end_dt: datetime, session: AsyncSession
+    ) -> dict[str, list[tuple[date, float]]]:
+        """Confirmed body-composition scans in range as per-metric point series.
+
+        Each scan is one point (episodic, not daily); values are read straight
+        from the promoted typed columns, so no recomputation or interpretation.
+        """
+        model = PatientBodyCompositionRecord
+        when = func.coalesce(model.test_datetime, model.created_at)
+        rows = (await session.execute(
+            select(
+                when.label("when"),
+                *[getattr(model, col) for col in _BODY_COMPOSITION_COLUMNS.values()],
+            )
+            .where(
+                model.patient_id == pid,
+                model.status == "confirmed",
+                when >= start_dt,
+                when < end_dt,
+            )
+            .order_by(when)
+        )).all()
+
+        out: dict[str, list[tuple[date, float]]] = {}
+        for row in rows:
+            when_value = row[0]
+            if when_value is None:
+                continue
+            d = when_value.date() if isinstance(when_value, datetime) else when_value
+            for idx, key in enumerate(_BODY_COMPOSITION_COLUMNS, start=1):
+                value = row[idx]
+                if value is not None:
+                    out.setdefault(key, []).append((d, round(float(value), 2)))
         return out
 
     async def care_intent_adherence(

@@ -311,6 +311,19 @@ def _composition_defs(preg: bool):
     ]
 
 
+# Confirmed body-composition scans as progress series. Direction reflects only
+# well-established evidence (muscle up, visceral fat down); weight and body-fat
+# stay neutral because their goal is patient-specific, not a fixed target.
+_BODY_COMPOSITION = [
+    ("weight", "Weight", "kg", "flat"),
+    ("skeletal_muscle_mass", "Skeletal muscle mass", "kg", "up"),
+    ("skeletal_muscle_index", "Skeletal muscle index", "kg/m²", "up"),
+    ("percent_body_fat", "Body fat", "%", "flat"),
+    ("body_fat_mass", "Body fat mass", "kg", "flat"),
+    ("visceral_fat_level", "Visceral fat", "", "down"),
+]
+
+
 def _improved(direction: str, delta: float | None) -> bool | None:
     if delta is None:
         return None
@@ -385,7 +398,7 @@ class ProgressService:
             self._safe(self.fitness_report_service.fetch_daily_reports_in_range, patient_id, start, end),
             self._session_bundle(pid, start_dt, end_dt, start, end, postgres_session),
         )
-        completion, (cur_streak, longest_streak), adherence, smbg, smbg_by_type, profile = session_bundle
+        completion, (cur_streak, longest_streak), adherence, smbg, smbg_by_type, body_composition, profile = session_bundle
         age, is_pregnant, diabetes_type, bmi = profile
         targets = select_glucose_targets(age, is_pregnant)
         a1c_target = _A1C_TARGET_BY_TIER.get(targets.tier, 7.0)
@@ -426,6 +439,13 @@ class ProgressService:
         for tag, label in _SMBG_TAGS:
             s = self._build("SMBG", f"smbg_{tag}", label, "mg/dL", "down", None,
                             smbg_by_type.get(tag, []), resolution, period_days)
+            if s:
+                metrics.append(s)
+
+        # ── body composition (confirmed scans, Postgres — episodic points) ───
+        for key, label, unit, direction in _BODY_COMPOSITION:
+            s = self._build("Body composition", key, label, unit, direction, None,
+                            body_composition.get(key, []), resolution, period_days)
             if s:
                 metrics.append(s)
 
@@ -472,8 +492,9 @@ class ProgressService:
         adherence = await self.repo.care_intent_adherence(pid, start, end, session)
         smbg = await self.repo.smbg_daily(pid, start_dt, end_dt, session)
         smbg_by_type = await self.repo.smbg_by_type_daily(pid, start_dt, end_dt, session)
+        body_composition = await self.repo.body_composition_daily(pid, start_dt, end_dt, session)
         profile = await self.repo.clinical_profile(pid, session)
-        return completion, streak, adherence, smbg, smbg_by_type, profile
+        return completion, streak, adherence, smbg, smbg_by_type, body_composition, profile
 
     @staticmethod
     def _collect(reports, category, defs, resolution, period_days, empty=None) -> list[MetricSeries]:
