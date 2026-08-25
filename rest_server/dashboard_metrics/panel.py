@@ -13,6 +13,7 @@ from lib.core.constants import ProfileTypeEnum
 from lib.derived import enqueue_refresh_patient
 from lib.dependencies.actor import Actor, get_current_actor
 from lib.dependencies.service_dependencies import get_patient_panel_service
+from lib.services import presence_service
 from lib.services.patient_panel.service import PatientPanelService
 from lib.utils.care_provider_permissions import (
     CareProviderFeature,
@@ -83,6 +84,9 @@ async def get_patient_panel(
         limit=size,
     )
     await _refresh_stale_rows(rows)
+    online = await presence_service.online_map([str(r["patient_id"]) for r in rows])
+    for row in rows:
+        row["online"] = online.get(str(row["patient_id"]), False)
     return SuccessResponse(
         message=f"{total} patients",
         data={"items": rows, "total": total, "page": page, "size": size},
