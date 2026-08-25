@@ -50,7 +50,7 @@ SOURCE_REQUIREMENTS = {
     "meds":        {"unit": "current list (+ dose timestamps)", "min_unlock": 1, "ideal": 1, "leverage": 7,
                     "unlocks": "medication-vs-meal context", "partial": "dose timestamps unlock PK/PD timing",
                     "confidence": "HIGH", "basis": "definitional: 1 = the current list exists; PK/PD timing needs timestamped dose events"},
-    "bca":         {"unit": "InBody scans", "min_unlock": 1, "ideal": 2, "leverage": 6,
+    "bca":         {"unit": "body-composition scans", "min_unlock": 1, "ideal": 2, "leverage": 6,
                     "unlocks": "BMIQ score + visceral/sarcopenic flags", "partial": ">=2 over ~90d unlock loss-quality trend",
                     "confidence": "MODERATE", "basis": "1 scan validated on 706-cohort (BMIQ); serial from C1 longitudinal (127 patients, median 196d)"},
     "fitness":     {"unit": "days of wearable overlapping CGM", "min_unlock": 14, "ideal": 14, "leverage": 5,
