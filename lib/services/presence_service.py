@@ -24,7 +24,9 @@ _cache = CacheStore("presence")
 
 
 def _now() -> datetime.datetime:
-    return datetime.datetime.now(datetime.timezone.utc)
+    # Naive UTC: user_devices.last_active_at is TIMESTAMP WITHOUT TIME ZONE, and
+    # the wire payload appends no offset so the client reads it as UTC.
+    return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
 
 
 def _count(val) -> bool:
