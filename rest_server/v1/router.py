@@ -35,6 +35,7 @@ from .admin.ops.router import router as admin_ops_router
 from .product_bot.router import router as product_bot_router
 from .dashboard_help_agent.router import router as dashboard_help_router
 from .whatsapp.router import router as whatsapp_router
+from .body_composition.router import router as body_composition_router
 
 
 router = APIRouter(prefix="/v1", tags=["V1"])
@@ -73,3 +74,4 @@ router.include_router(share_router)
 router.include_router(product_bot_router)
 router.include_router(dashboard_help_router)
 router.include_router(whatsapp_router)
+router.include_router(body_composition_router)

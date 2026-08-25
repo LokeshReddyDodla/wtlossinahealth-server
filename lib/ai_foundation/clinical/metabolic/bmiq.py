@@ -189,10 +189,11 @@ class BmiqScorer:
 
     def _sources(self, patient_state):
         prof = patient_state.get("profile") or {}
-        direct_inbody = (patient_state.get("inbody") or patient_state.get("inbody_summary") or
+        direct_inbody = (patient_state.get("body_composition") or patient_state.get("inbody") or patient_state.get("inbody_summary") or
                          patient_state.get("latest_inbody") or prof.get("inbody") or {})
         direct_inbody = direct_inbody if isinstance(direct_inbody, dict) else {}
-        inbody_series = (_as_records(patient_state.get("inbody_series")) or
+        inbody_series = (_as_records(patient_state.get("body_composition_series")) or
+                         _as_records(patient_state.get("inbody_series")) or
                          _as_records(patient_state.get("inbody_history")) or
                          _as_records(direct_inbody.get("series")) or
                          _as_records(prof.get("inbody_series")))
@@ -234,7 +235,8 @@ class BmiqScorer:
             if out["whr"] is not None:
                 present.append("whr:waist_hip")
 
-        out["inbody_present"] = bool(direct_inbody or inbody_series)
+        out["body_composition_present"] = bool(direct_inbody or inbody_series)
+        out["inbody_present"] = out["body_composition_present"]
         out["inputs_present"] = sorted(set(present))
         return out
 
@@ -357,9 +359,9 @@ class BmiqScorer:
 
     def _series_candidates(self, patient_state, kind):
         prof = patient_state.get("profile") or {}
-        inbody = patient_state.get("inbody") or patient_state.get("inbody_summary") or patient_state.get("latest_inbody") or {}
+        inbody = patient_state.get("body_composition") or patient_state.get("inbody") or patient_state.get("inbody_summary") or patient_state.get("latest_inbody") or {}
         inbody = inbody if isinstance(inbody, dict) else {}
-        keys = ("weight_series", "weight_history", "weights") if kind == "weight" else ("inbody_series", "inbody_history")
+        keys = ("weight_series", "weight_history", "weights") if kind == "weight" else ("body_composition_series", "inbody_series", "inbody_history")
         records = []
         for src in (patient_state, prof, inbody):
             if not isinstance(src, dict):
@@ -367,6 +369,7 @@ class BmiqScorer:
             for key in keys:
                 records += _as_records(src.get(key))
         if kind == "weight" and not records:
+            records += _as_records(patient_state.get("body_composition_series"))
             records += _as_records(patient_state.get("inbody_series")) + _as_records(patient_state.get("inbody_history"))
         return _sort_records(records)
 
@@ -416,6 +419,10 @@ class BmiqScorer:
                     out["draft_thresholds"].append("DRAFT_FAST_LOSS_PCT_PER_WEEK_%s" % DRAFT_FAST_LOSS_PCT_PER_WEEK)
 
         inbody_records = self._series_candidates(patient_state, "inbody")
+        if inbody_records:
+            latest_method = inbody_records[-1].get("measurement_method")
+            if latest_method:
+                inbody_records = [r for r in inbody_records if r.get("measurement_method") == latest_method]
         if len(inbody_records) >= 2:
             first, last = inbody_records[0], inbody_records[-1]
             smm0, _ = _first_num([first], ("smm_kg", "skeletal_muscle_mass", "skeletal_muscle_mass_kg", "smm"))

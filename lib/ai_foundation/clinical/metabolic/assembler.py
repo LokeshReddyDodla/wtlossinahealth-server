@@ -13,10 +13,14 @@ import logging
 import time as _time
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from uuid import UUID
+
+from sqlalchemy import select
 
 from lib.ai_foundation.retrieval.base import RetrievalRequest
 from lib.ai_foundation.retrieval.qdrant import QdrantRetriever
 from lib.core.postgres_store import PostgresStore
+from lib.models.patient_body_composition_record import PatientBodyCompositionRecord
 
 from .util import num as _num
 
@@ -59,11 +63,12 @@ class DataAssembler:
         if cached and (now - cached[0]) < _CACHE_TTL:
             return cached[1]
 
-        profile, meals, cgm_summary, medications = await asyncio.gather(
+        profile, meals, cgm_summary, medications, body_composition = await asyncio.gather(
             self._load_profile(patient_id),
             self._load_meal_history(patient_id, history_days),
             self._load_cgm_summary(patient_id),
             self._load_medications(patient_id),
+            self._load_body_composition(patient_id),
             return_exceptions=True,
         )
 
@@ -71,6 +76,7 @@ class DataAssembler:
         meals = _safe(meals, [])
         cgm_summary = _safe(cgm_summary, {})
         medications = _safe(medications, [])
+        body_composition = _safe(body_composition, [])
 
         if medications:
             profile.setdefault("meds", [m.get("name", "") for m in medications])
@@ -82,6 +88,8 @@ class DataAssembler:
             "cgm_summary": cgm_summary or None,
             "profile": profile,
             "base": _extract_base(cgm_summary),
+            "body_composition": body_composition[-1] if body_composition else None,
+            "body_composition_series": body_composition,
         }
         self._evict_stale(now)
         self._state_cache[cache_key] = (now, state)
@@ -108,6 +116,7 @@ class DataAssembler:
             "quantities": {
                 "cgm": cgm_days,
                 "food_photos": len(history),
+                "bca": len(state.get("body_composition_series") or []),
             },
             "cohort_n": None,
         }
@@ -220,11 +229,49 @@ class DataAssembler:
             logger.debug("assembler: load_medications failed for %s: %s", patient_id, exc)
             return []
 
+    async def _load_body_composition(self, patient_id: str, limit: int = 24) -> list[dict[str, Any]]:
+        """Load reviewed canonical records; drafts never enter the clinical engine."""
+        try:
+            async with self._postgres.get_session() as session:
+                result = await session.execute(
+                    select(PatientBodyCompositionRecord)
+                    .where(
+                        PatientBodyCompositionRecord.patient_id == UUID(patient_id),
+                        PatientBodyCompositionRecord.status == "confirmed",
+                    )
+                    .order_by(
+                        PatientBodyCompositionRecord.test_datetime.desc().nullslast(),
+                        PatientBodyCompositionRecord.created_at.desc(),
+                    )
+                    .limit(limit)
+                )
+                rows = list(reversed(result.scalars().all()))
+            return [_body_composition_to_engine(row) for row in rows]
+        except Exception as exc:
+            logger.warning("assembler: load_body_composition failed for %s: %s", patient_id, exc)
+            return []
+
 
 # -- Helpers --
 
 def _safe(value: Any, default: Any) -> Any:
     return default if isinstance(value, BaseException) else value
+
+
+def _body_composition_to_engine(row: PatientBodyCompositionRecord) -> dict[str, Any]:
+    measurements = {
+        item.get("key"): item.get("value")
+        for item in (row.data or {}).get("measurements", [])
+        if item.get("key") and isinstance(item.get("value"), (int, float))
+    }
+    return {
+        **measurements,
+        "record_id": str(row.record_id),
+        "date": row.test_datetime.isoformat() if row.test_datetime else None,
+        "measurement_method": row.measurement_method,
+        "manufacturer": row.manufacturer,
+        "device_model": row.device_model,
+    }
 
 
 def _meals_to_engine_history(meals: list[dict[str, Any]]) -> list[dict[str, Any]]:

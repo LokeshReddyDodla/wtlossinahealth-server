@@ -366,6 +366,21 @@ def get_inbody_report_service():
     return cast(InbodyReportService, container.resolve(InbodyReportService))
 
 
+def get_body_composition_service():
+    from lib.services.body_composition import BodyCompositionService
+
+    return cast(BodyCompositionService, container.resolve(BodyCompositionService))
+
+
+def get_body_composition_extraction_service():
+    from lib.services.body_composition import BodyCompositionExtractionService
+
+    return cast(
+        BodyCompositionExtractionService,
+        container.resolve(BodyCompositionExtractionService),
+    )
+
+
 def get_inbody_day_summary_service():
     from lib.services.inbody.day_summary_service import (
         InbodyDaySummaryService,
