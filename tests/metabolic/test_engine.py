@@ -225,3 +225,42 @@ class TestFullPipeline:
         assert ec.v31.has_cgm is True
         assert ec.v31.confidence_tier == "high"
         assert ec.lenses.overnight_gv is not None
+
+
+# -- GLP-1 detection (data-driven, data/glp1_medications.json) --
+
+from lib.ai_foundation.clinical.metabolic.engine import _glp1, _GLP1
+
+
+def test_glp1_list_loads_from_data_file():
+    # The data file broadens the built-in fallback (adds zepbound, bydureon, ...).
+    assert "zepbound" in _GLP1 and "bydureon" in _GLP1
+    assert "semaglutide" in _GLP1 and "tirzepatide" in _GLP1
+    assert len(_GLP1) >= 20
+
+
+@pytest.mark.parametrize("med", [
+    "Ozempic 0.5mg", "Wegovy", "Mounjaro 2.5mg", "Zepbound",
+    "Rybelsus", "Trulicity", "semaglutide", "tirzepatide injection",
+])
+def test_glp1_detects_agonists(med):
+    assert _glp1({"meds": [med]}) is True
+
+
+@pytest.mark.parametrize("med", ["Metformin 500", "Glimepiride", "Amlodipine", "Insulin glargine"])
+def test_glp1_ignores_non_agonists(med):
+    assert _glp1({"meds": [med]}) is False
+
+
+def test_glp1_reads_both_meds_and_medications_keys():
+    assert _glp1({"medications": ["Ozempic"]}) is True
+    assert _glp1({"meds": []}) is False
+    assert _glp1({}) is False
+
+
+def test_glp1_flag_flows_into_contract():
+    eng = MetabolicEngine()
+    state = _patient_state()
+    state["profile"] = {"meds": ["Ozempic 1mg"], "age": 45, "bmi": 31}
+    out = eng.assess(state, _high_carb_meal())
+    assert out["bmiq"]["glp1_flag"] is True

@@ -95,8 +95,12 @@ SHRINK_K = 10.0                                  # cold-start shrinkage strength
 IN_RANGE_RISE = 40.0                             # below this = no problem rise
 CIRCADIAN_BF = LEVERS_DATA.get("circadian_breakfast_mgdl", 12.35)  # q2
 
-_GLP1 = ("glp", "semaglutide", "liraglutide", "dulaglutide", "tirzepatide", "exenatide",
-         "ozempic", "rybelsus", "mounjaro", "wegovy", "trulicity", "victoza", "saxenda")
+# GLP-1 detection is data-driven (data/glp1_medications.json) so brands — incl.
+# India-specific ones — extend without a code change; the tuple here is only the
+# fallback if the file fails to load.
+_GLP1_FALLBACK = ("glp", "semaglutide", "liraglutide", "dulaglutide", "tirzepatide", "exenatide",
+                  "ozempic", "rybelsus", "mounjaro", "wegovy", "trulicity", "victoza", "saxenda")
+_GLP1 = tuple(n.lower() for n in _load("glp1_medications.json", {}).get("names") or _GLP1_FALLBACK)
 def _glp1(prof):
     meds = prof.get("meds") or prof.get("medications") or []
     s = " ".join(str(m).lower() for m in meds) if isinstance(meds, (list, tuple)) else str(meds).lower()
