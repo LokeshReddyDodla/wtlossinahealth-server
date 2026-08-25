@@ -1,12 +1,4 @@
-"""Live patient presence for the care-provider dashboard.
-
-Presence is derived from the Socket.IO connection the patient app already
-holds: a patient with an open socket is online, and the last disconnect stamps
-last_active_at. Connections are counted in Redis so multiple tabs/devices read
-as one presence and the count is correct across API instances. Each change is
-pushed to the patient's care providers over the socket room they already
-occupy (keyed by care_provider_id).
-"""
+"""Live patient presence pushed to the care-provider dashboard over Socket.IO."""
 import datetime
 import logging
 
@@ -20,9 +12,8 @@ from lib.models.user_device import UserDevice
 
 logger = logging.getLogger(__name__)
 
-# Safety TTL so a leaked counter can never strand a patient "online" forever if
-# a server dies before its disconnect fires. The dashboard's own staleness
-# fallback is the second line of defence.
+# TTL so a leaked counter can't strand a patient "online" if a server dies
+# before its disconnect fires.
 _CONN_TTL_SECONDS = 24 * 3600
 
 _cache = CacheStore("presence")
@@ -70,8 +61,7 @@ async def _emit(sio, patient_id: str, online: bool, ts: datetime.datetime) -> No
 
 
 async def patient_connected(sio, patient_id: str) -> None:
-    """The first live socket flips the patient online; every connect refreshes
-    last_active_at so the dashboard is current without waiting for a REST call."""
+    """Emit online only on the first socket; every connect refreshes last_active_at."""
     try:
         count = await _cache.aincr_key(f"conn:{patient_id}")
         await _cache.aexpire_key(f"conn:{patient_id}", _CONN_TTL_SECONDS)
@@ -84,8 +74,7 @@ async def patient_connected(sio, patient_id: str) -> None:
 
 
 async def patient_disconnected(sio, patient_id: str) -> None:
-    """The last socket closing flips the patient offline and stamps the leave
-    time. Concurrent tabs keep them online until every one is gone."""
+    """Emit offline only when the last socket closes; concurrent tabs stay online."""
     try:
         count = await _cache.adecr_key(f"conn:{patient_id}")
         if count > 0:
