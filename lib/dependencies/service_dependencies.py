@@ -381,6 +381,12 @@ def get_body_composition_extraction_service():
     )
 
 
+def get_metabolic_service():
+    from lib.ai_foundation.clinical.metabolic.service import MetabolicService
+
+    return cast(MetabolicService, container.resolve(MetabolicService))
+
+
 def get_inbody_day_summary_service():
     from lib.services.inbody.day_summary_service import (
         InbodyDaySummaryService,
