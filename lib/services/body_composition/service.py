@@ -166,6 +166,21 @@ class BodyCompositionService:
         except Exception:
             logger.exception("Failed to enqueue body-composition vector delete for %s", record_id)
 
+    async def _sync_profile_weight(self, patient_id: UUID, record_id: UUID) -> None:
+        """Mirror the vitals path: a scan's weight is a real measurement, so the
+        profile's weight (and thus BMI everywhere) follows it — but only when this
+        scan is the patient's newest, so a backdated historical upload can't clobber
+        the current weight."""
+        try:
+            latest = await self._latest_confirmed(patient_id)
+            if not latest or latest.record_id != record_id or latest.weight_kg is None:
+                return
+            from lib.utils.sync_profile_weight import sync_profile_weight
+
+            await sync_profile_weight(str(patient_id), float(latest.weight_kg))
+        except Exception:
+            logger.exception("Failed to sync profile weight from body composition %s", record_id)
+
     async def create_draft(
         self,
         *,
@@ -228,6 +243,7 @@ class BodyCompositionService:
             await session.refresh(row)
         if record_status is RecordStatus.CONFIRMED:
             await self._enqueue_vector(patient_id, row.record_id)
+            await self._sync_profile_weight(patient_id, row.record_id)
         return self._serialize(row)
 
     async def confirm(
@@ -269,6 +285,7 @@ class BodyCompositionService:
             await session.commit()
             await session.refresh(row)
         await self._enqueue_vector(patient_id, record_id)
+        await self._sync_profile_weight(patient_id, record_id)
         return self._serialize(row)
 
     async def supersede(
@@ -327,6 +344,7 @@ class BodyCompositionService:
             new_id = new.record_id
         await self._enqueue_vector(patient_id, new_id)
         await self._enqueue_vector_delete(record_id)
+        await self._sync_profile_weight(patient_id, new_id)
         return self._serialize(new)
 
     async def list_records(
