@@ -138,6 +138,7 @@ class QdrantStore:
                         collection_name=QDRANT_COLLECTION,
                         field_name=field_name,
                         field_schema=index_params,
+                        wait=False,
                     )
                     logger.debug(
                         f"Indexed payload field: {field_name} ({index_type_str})"
