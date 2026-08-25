@@ -58,8 +58,7 @@ def _room(patient_id: str) -> str:
 
 
 async def _accessible(care_provider_id: str, patient_ids: list[str]) -> list[str]:
-    """Filter to patients this viewer may see — same facility/assignment scope
-    the REST reads enforce. A presence room reads another user's state."""
+    """Filter to patients this viewer may see — same scope as the REST reads."""
     try:
         cp_uuid = UUID(str(care_provider_id))
         pid_uuids = [UUID(p) for p in patient_ids]
@@ -75,8 +74,7 @@ async def _accessible(care_provider_id: str, patient_ids: list[str]) -> list[str
 
 
 async def subscribe(sio, sid, patient_ids: list[str]) -> None:
-    """Join the presence rooms for the authorized subset and return their current
-    state now, so presence is right on open, not only on the next transition."""
+    """Join the authorized subset's presence rooms and return their current state."""
     ids = [str(p) for p in patient_ids if p]
     if not ids:
         return
@@ -85,8 +83,7 @@ async def subscribe(sio, sid, patient_ids: list[str]) -> None:
     role = session.get("role") if session else None
     if not user_id or role == ProfileTypeEnum.PATIENT.value:
         return
-    # Global admin sees every patient (same as the roster); a care provider is
-    # filtered to their facility/assigned scope.
+    # Global admin sees every patient; a care provider is scoped.
     if role != ProfileTypeEnum.ADMIN.value:
         ids = await _accessible(user_id, ids)
     for pid in ids:
