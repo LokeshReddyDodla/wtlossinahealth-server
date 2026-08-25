@@ -22,13 +22,12 @@ async def cleanup(patient_id: str, dry_run: bool) -> None:
     mongo = container.resolve(MongoStore)
 
     # ── 1. ClickHouse: raw CGM readings ──
-    count_q = f"SELECT count() FROM aihealth.cgm_data WHERE patient_id = '{patient_id}'"
-    count = ch.client.command(count_q)
+    count = ch.client.execute(
+        f"SELECT count() FROM aihealth.cgm_data WHERE patient_id = '{patient_id}'"
+    )[0][0]
     logger.info(f"{tag}ClickHouse cgm_data: {count} rows")
     if not dry_run and count:
-        ch.client.command(
-            f"ALTER TABLE aihealth.cgm_data DELETE WHERE patient_id = '{patient_id}'"
-        )
+        ch.delete_data("aihealth.cgm_data", f"patient_id = '{patient_id}'")
         logger.info("  deleted")
 
     # ── 2. Mongo: CGM reports (daily/weekly/custom) ──
@@ -50,7 +49,7 @@ async def cleanup(patient_id: str, dry_run: bool) -> None:
     meal_dates = [doc["_id"] async for doc in meal_coll.aggregate(pipeline) if doc["_id"]]
     logger.info(f"{tag}Mongo meal_reports: {len(meal_dates)} daily reports to regenerate")
     if not dry_run and meal_dates:
-        from datetime import date as date_type
+        from datetime import date as date_type, datetime
         from lib.derived.dirty import mark_dirty as _mark_dirty
         from lib.derived.registry import DataDomain
         parsed = []
@@ -73,7 +72,6 @@ async def cleanup(patient_id: str, dry_run: bool) -> None:
             FieldCondition(key="patient_id", match=MatchValue(value=patient_id)),
             FieldCondition(key="source", match=MatchValue(value="cgm")),
         ])
-        # count first
         result = await client.scroll(
             collection_name="patient_data",
             scroll_filter=cgm_filter,
@@ -112,7 +110,6 @@ async def cleanup(patient_id: str, dry_run: bool) -> None:
 
     # ── 6. Derived dirty set: clear pending CGM drains ──
     try:
-        from lib.derived.dirty import DirtyCell
         from lib.derived.registry import DataDomain
         async with get_session() as session:
             r = await session.execute(
