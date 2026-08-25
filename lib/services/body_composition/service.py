@@ -15,7 +15,7 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import status
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 
 from lib.core.postgres_store import PostgresStore
 from lib.models.patient_body_composition_record import (
@@ -154,10 +154,17 @@ class BodyCompositionService:
         content_type: str,
         uploaded_by_id: UUID | None,
         uploaded_by_type: str,
+        content_hash: str | None = None,
     ) -> dict[str, Any]:
         data, vendor = _normalize(data)
         blocking = _validation_issues(data, include_confidence=False)
         issues = _validation_issues(data, include_confidence=True)
+
+        duplicate = await self._find_duplicate(
+            patient_id, data.test_datetime, data.manufacturer, content_hash
+        )
+        if duplicate:
+            return {**self._serialize(duplicate), "duplicate": True}
 
         if not data.measurements:
             record_status = RecordStatus.FAILED
@@ -181,6 +188,7 @@ class BodyCompositionService:
             vendor_metrics=[m.model_dump(mode="json") for m in vendor],
             validation_issues=issues,
             extraction_confidence=data.extraction_confidence,
+            content_hash=content_hash,
             uploaded_by_id=uploaded_by_id,
             uploaded_by_type=uploaded_by_type,
         )
@@ -426,6 +434,48 @@ class BodyCompositionService:
             setattr(row, spec.column, None)
         for column, value in _project_columns(data).items():
             setattr(row, column, value)
+
+    async def _find_duplicate(
+        self,
+        patient_id: UUID,
+        test_datetime: datetime | None,
+        manufacturer: str | None,
+        content_hash: str | None,
+    ) -> PatientBodyCompositionRecord | None:
+        """An active scan that is the same as this upload — matched by clinical
+        identity (patient + test time + manufacturer) or, when the report prints
+        no test date, by source-file hash."""
+        conditions = []
+        if test_datetime is not None:
+            conditions.append(
+                and_(
+                    PatientBodyCompositionRecord.test_datetime == test_datetime,
+                    PatientBodyCompositionRecord.manufacturer == manufacturer,
+                )
+            )
+        if content_hash:
+            conditions.append(
+                PatientBodyCompositionRecord.content_hash == content_hash
+            )
+        if not conditions:
+            return None
+        async with self.postgres_store.get_session() as session:
+            result = await session.execute(
+                select(PatientBodyCompositionRecord)
+                .where(
+                    PatientBodyCompositionRecord.patient_id == patient_id,
+                    PatientBodyCompositionRecord.status.in_(
+                        (
+                            RecordStatus.DRAFT.value,
+                            RecordStatus.NEEDS_REVIEW.value,
+                            RecordStatus.CONFIRMED.value,
+                        )
+                    ),
+                    or_(*conditions),
+                )
+                .limit(1)
+            )
+            return result.scalars().first()
 
     async def _latest_confirmed(
         self, patient_id: UUID

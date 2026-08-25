@@ -311,11 +311,12 @@ def _composition_defs(preg: bool):
     ]
 
 
-# Confirmed body-composition scans as progress series. Direction reflects only
-# well-established evidence (muscle up, visceral fat down); weight and body-fat
-# stay neutral because their goal is patient-specific, not a fixed target.
+# Confirmed body-composition scans as progress series. Weight is intentionally
+# omitted — vitals already owns the weight trend; this category carries only the
+# composition metrics a scan uniquely provides. Direction reflects only well-
+# established evidence (muscle up, visceral fat down); body fat stays neutral
+# because its goal is patient-specific, not a fixed target.
 _BODY_COMPOSITION = [
-    ("weight", "Weight", "kg", "flat"),
     ("skeletal_muscle_mass", "Skeletal muscle mass", "kg", "up"),
     ("skeletal_muscle_index", "Skeletal muscle index", "kg/m²", "up"),
     ("percent_body_fat", "Body fat", "%", "flat"),

@@ -91,6 +91,10 @@ class PatientBodyCompositionRecord(Base):
     validation_issues = Column(JSONB, nullable=False, default=list)
     extraction_confidence = Column(Float, nullable=False, default=0.0)
 
+    # Dedup: a scan is identified by (patient, test_datetime, manufacturer); the
+    # file hash is the fallback when a report prints no test date.
+    content_hash = Column(String, nullable=True)
+
     # Corrections supersede an immutable confirmed record rather than mutating it.
     supersedes_id = Column(UUID(as_uuid=True), nullable=True)
     superseded_by_id = Column(UUID(as_uuid=True), nullable=True)
@@ -123,4 +127,6 @@ class PatientBodyCompositionRecord(Base):
         Index("ix_body_composition_vfa", "status", "visceral_fat_area_cm2"),
         Index("ix_body_composition_smm", "status", "skeletal_muscle_mass_kg"),
         Index("ix_body_composition_ecw", "status", "ecw_tbw_ratio"),
+        # Dedup lookups on re-upload.
+        Index("ix_body_composition_content_hash", "patient_id", "content_hash"),
     )
