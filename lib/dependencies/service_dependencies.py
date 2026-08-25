@@ -381,6 +381,15 @@ def get_body_composition_extraction_service():
     )
 
 
+def get_body_composition_vector_service():
+    from lib.services.vector import BodyCompositionVectorService
+
+    return cast(
+        BodyCompositionVectorService,
+        container.resolve(BodyCompositionVectorService),
+    )
+
+
 def get_metabolic_service():
     from lib.ai_foundation.clinical.metabolic.service import MetabolicService
 

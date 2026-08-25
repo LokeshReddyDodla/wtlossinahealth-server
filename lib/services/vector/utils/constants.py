@@ -20,6 +20,7 @@ DATA_TYPE_SMBG = "smbg"
 DATA_TYPE_PROFILE = "profile"
 DATA_TYPE_VITAL = "vital"
 DATA_TYPE_INBODY = "inbody"
+DATA_TYPE_BODY_COMPOSITION = "body_composition"
 
 # Common data type prefixes
 DATA_TYPE_PREFIXES = {
@@ -44,4 +45,5 @@ DATA_TYPE_PREFIXES = {
     "profile",
     "vital",
     "inbody",
+    "body_composition",
 }
