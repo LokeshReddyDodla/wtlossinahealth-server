@@ -85,7 +85,10 @@ async def subscribe(sio, sid, patient_ids: list[str]) -> None:
     role = session.get("role") if session else None
     if not user_id or role == ProfileTypeEnum.PATIENT.value:
         return
-    ids = await _accessible(user_id, ids)
+    # Global admin sees every patient (same as the roster); a care provider is
+    # filtered to their facility/assigned scope.
+    if role != ProfileTypeEnum.ADMIN.value:
+        ids = await _accessible(user_id, ids)
     for pid in ids:
         await sio.enter_room(sid, _room(pid))
     states = await online_map(ids)
