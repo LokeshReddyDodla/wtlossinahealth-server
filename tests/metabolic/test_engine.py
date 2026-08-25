@@ -225,3 +225,17 @@ class TestFullPipeline:
         assert ec.v31.has_cgm is True
         assert ec.v31.confidence_tier == "high"
         assert ec.lenses.overnight_gv is not None
+
+
+# -- heuristics loaded from data/heuristics.json (values must equal the fallbacks) --
+
+from lib.ai_foundation.clinical.metabolic.engine import (
+    CARB_TARGET, PRIOR_SLOPE, SHRINK_K, IN_RANGE_RISE, _BALANCE,
+)
+
+
+def test_heuristics_load_with_int_slot_keys_and_expected_values():
+    # JSON keys are strings; the loader must coerce slot keys back to ints.
+    assert CARB_TARGET == {0: 50, 1: 55, 2: 45, 3: 20}
+    assert PRIOR_SLOPE == 0.40 and SHRINK_K == 10.0 and IN_RANGE_RISE == 40.0
+    assert _BALANCE == {"carb_over_target_ratio": 1.15, "fiber_min_g": 4, "protein_min_g": 10, "calorie_max": 750}
