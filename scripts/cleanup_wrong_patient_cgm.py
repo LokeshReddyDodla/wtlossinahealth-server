@@ -13,11 +13,13 @@ from loguru import logger
 async def cleanup(patient_id: str, dry_run: bool) -> None:
     tag = "[DRY RUN] " if dry_run else ""
 
-    from lib.core.container import container, init_container
-    await init_container()
+    from lib.core.container import container
+    from lib.core.clickhouse_store import ClickHouseStore
+    from lib.core.mongo_store import MongoStore
+    from lib.core.qdrant_store import QdrantStore
 
-    ch = container.resolve("clickhouse_store")
-    mongo = container.resolve("mongo_db")
+    ch = container.resolve(ClickHouseStore)
+    mongo = container.resolve(MongoStore)
 
     # ── 1. ClickHouse: raw CGM readings ──
     count_q = f"SELECT count() FROM aihealth.cgm_data WHERE patient_id = '{patient_id}'"
@@ -30,7 +32,7 @@ async def cleanup(patient_id: str, dry_run: bool) -> None:
         logger.info("  deleted")
 
     # ── 2. Mongo: CGM reports (daily/weekly/custom) ──
-    cgm_coll = mongo["cgm_reports"]
+    cgm_coll = mongo.db["cgm_reports"]
     n = await cgm_coll.count_documents({"patient_id": patient_id})
     logger.info(f"{tag}Mongo cgm_reports: {n} docs")
     if not dry_run and n:
@@ -40,7 +42,7 @@ async def cleanup(patient_id: str, dry_run: bool) -> None:
     # ── 3. Mongo: meal reports have baked-in glucose_response / avg_glucose ──
     # Mark meal days dirty so the drain regenerates them WITHOUT glucose
     # (CGM rows are already gone from ClickHouse at this point).
-    meal_coll = mongo["meal_reports"]
+    meal_coll = mongo.db["meal_reports"]
     pipeline = [
         {"$match": {"patient_id": patient_id, "report_type": "daily"}},
         {"$group": {"_id": "$date"}},
@@ -65,7 +67,7 @@ async def cleanup(patient_id: str, dry_run: bool) -> None:
 
     # ── 4. Qdrant: CGM vectors ──
     from qdrant_client.http.models import Filter, FieldCondition, MatchValue
-    qdrant = container.resolve("qdrant_store")
+    qdrant = container.resolve(QdrantStore)
     async with qdrant.get_client() as client:
         cgm_filter = Filter(must=[
             FieldCondition(key="patient_id", match=MatchValue(value=patient_id)),
