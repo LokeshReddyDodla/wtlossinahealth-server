@@ -13,6 +13,7 @@ from lib.dependencies.service_dependencies import (
     get_user_device_service,
 )
 from lib.schemas.patient import CompletePatientProfile
+from lib.services import presence_service
 from lib.services.care_provider_access_service import CareProviderAccessService
 from lib.services.reports import CGMReportService
 from lib.services.chat.direct_chat_resolver import DirectChatResolver
@@ -95,6 +96,7 @@ async def get_patient_profile(
             **CompletePatientProfile.from_orm(profile).model_dump(),
             "reports": {"cgm": cgm_reports},
             "last_active_at": last_active_at,
+            "online": await presence_service.is_online(str(target_patient_id)),
         }
 
         response_data["direct_chat_id"] = await direct_chat_resolver.resolve(

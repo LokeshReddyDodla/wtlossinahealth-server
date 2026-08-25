@@ -23,6 +23,32 @@ def _now() -> datetime.datetime:
     return datetime.datetime.now(datetime.timezone.utc)
 
 
+def _count(val) -> bool:
+    try:
+        return val is not None and int(val) > 0
+    except (TypeError, ValueError):
+        return False
+
+
+async def is_online(patient_id: str) -> bool:
+    """Online state from the connection counter; never raises."""
+    try:
+        return _count(await _cache.aget_key(f"conn:{patient_id}"))
+    except Exception:
+        return False
+
+
+async def online_map(patient_ids: list[str]) -> dict[str, bool]:
+    """Batch online lookup in one Redis round-trip."""
+    if not patient_ids:
+        return {}
+    try:
+        values = await _cache.amget_keys([f"conn:{pid}" for pid in patient_ids])
+    except Exception:
+        return {pid: False for pid in patient_ids}
+    return {pid: _count(val) for pid, val in zip(patient_ids, values)}
+
+
 async def _care_provider_rooms(patient_id: str) -> list[str]:
     async with postgres_store.get_session() as session:
         result = await session.execute(
