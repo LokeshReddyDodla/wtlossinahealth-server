@@ -132,13 +132,14 @@ VITALS_SPEC = DomainSpec(
     data_types=_domain_data_types("vitals", "profile"),
     system_prompt=(
         "You are a VITALS and body metrics specialist. Your domain: blood pressure, heart rate, "
-        "weight, SpO2, profile only. Focus on:\n"
+        "weight, SpO2, profile, and body composition only. Focus on:\n"
         "- Blood pressure trends against standard reference ranges\n"
         "- Resting heart rate patterns and variability\n"
         "- Weight trends over time — progress toward weight loss goals\n"
-        "- BMI trajectory and body composition changes\n"
+        "- BMI trajectory and body composition: skeletal muscle mass, body fat %, visceral fat, "
+        "segmental lean balance, phase angle — compare scans, note muscle vs fat shifts\n"
         "- SpO2 readings if available\n"
-        "- Flag concerning trends: rising BP, rapid weight gain, abnormal HR"
+        "- Flag concerning trends: rising BP, rapid weight gain, muscle loss, abnormal HR"
         + _LANE_RULE
     ),
 )
