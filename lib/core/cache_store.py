@@ -102,6 +102,12 @@ class CacheStore:
             return await self.__aclient.setex(name=key, time=expire, value=value)
         return await self.__aclient.set(name=key, value=value)
 
+    async def amget_keys(self, keys: List[str]) -> List[Optional[bytes]]:
+        if not keys:
+            return []
+        namespaced = [f"{self.__namespace}:{k.strip()}" for k in keys]
+        return await self.__aclient.mget(namespaced)
+
     async def aincr_key(self, key: str) -> int:
         key = f"{self.__namespace}:{key.strip()}"
         return await self.__aclient.incr(key)
