@@ -38,9 +38,8 @@ class PatientBriefService:
         self._agent = health_query_agent
 
     async def get(self, patient_id: str) -> dict:
-        """Never blocks on the LLM. Returns the cached brief immediately (status
-        'ready'); on a first-ever or stale view it kicks generation in the
-        durable queue and the caller polls."""
+        """Returns the cached brief immediately. A stale brief silently queues
+        regeneration without signalling 'refreshing' to avoid client polling."""
         doc = await self._latest(patient_id)
         if not self._has_brief(doc):
             if await self._is_generating(doc):
@@ -55,7 +54,7 @@ class PatientBriefService:
             and not refreshing
             and not self._in_cooldown(doc)
         ):
-            refreshing = await self._queue_generation(patient_id)
+            await self._queue_generation(patient_id)
         return {"status": "ready", **self._view(doc), "refreshing": refreshing}
 
     async def refresh(self, patient_id: str) -> dict:
