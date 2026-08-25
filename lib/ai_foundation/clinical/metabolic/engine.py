@@ -88,11 +88,22 @@ class SpikeModel:
         except Exception:
             return None
 
-# --- heuristic constants (PLACEHOLDER: pin to ADA / diabetes-India MNT before patient-facing, see levers.json) ---
-CARB_TARGET = {0: 50, 1: 55, 2: 45, 3: 20}      # by slot
-PRIOR_SLOPE = 0.40                               # population carb slope (mg/dL per g)
-SHRINK_K = 10.0                                  # cold-start shrinkage strength
-IN_RANGE_RISE = 40.0                             # below this = no problem rise
+# --- heuristic constants (PLACEHOLDER: pin to ADA / diabetes-India MNT before
+# patient-facing). Tunable via data/heuristics.json; the literals here are the
+# fallback if that file fails to load. ---
+_HEUR_DEFAULT = {
+    "carb_target_g_by_slot": {"0": 50, "1": 55, "2": 45, "3": 20},
+    "population_carb_slope_mgdl_per_g": 0.40,
+    "cold_start_shrink_k": 10.0,
+    "in_range_rise_mgdl": 40.0,
+    "balance": {"carb_over_target_ratio": 1.15, "fiber_min_g": 4, "protein_min_g": 10, "calorie_max": 750},
+}
+HEURISTICS = _load("heuristics.json", _HEUR_DEFAULT)
+CARB_TARGET = {int(k): v for k, v in (HEURISTICS.get("carb_target_g_by_slot") or _HEUR_DEFAULT["carb_target_g_by_slot"]).items()}
+PRIOR_SLOPE = float(HEURISTICS.get("population_carb_slope_mgdl_per_g", 0.40))   # population carb slope (mg/dL per g)
+SHRINK_K = float(HEURISTICS.get("cold_start_shrink_k", 10.0))                    # cold-start shrinkage strength
+IN_RANGE_RISE = float(HEURISTICS.get("in_range_rise_mgdl", 40.0))               # below this = no problem rise
+_BALANCE = {**_HEUR_DEFAULT["balance"], **(HEURISTICS.get("balance") or {})}
 CIRCADIAN_BF = LEVERS_DATA.get("circadian_breakfast_mgdl", 12.35)  # q2
 
 # GLP-1 detection is data-driven (data/glp1_medications.json) so brands — incl.
@@ -169,10 +180,10 @@ class MetabolicEngine:
 
     def _balance(self, carb, prot, fib, cal, s):
         tgt = CARB_TARGET[s]
-        carb_ok = carb <= tgt * 1.15
-        fib_ok = (fib or 0) >= 4
-        prot_ok = (prot or 0) >= 10
-        cal_ok = (not cal) or cal <= 750
+        carb_ok = carb <= tgt * _BALANCE["carb_over_target_ratio"]
+        fib_ok = (fib or 0) >= _BALANCE["fiber_min_g"]
+        prot_ok = (prot or 0) >= _BALANCE["protein_min_g"]
+        cal_ok = (not cal) or cal <= _BALANCE["calorie_max"]
         balanced = carb_ok and fib_ok and (prot_ok or cal_ok)
         return dict(carb_ok=carb_ok, fiber_ok=fib_ok, protein_ok=prot_ok, cal_ok=cal_ok,
                     balanced=balanced, slot_target_g=tgt)

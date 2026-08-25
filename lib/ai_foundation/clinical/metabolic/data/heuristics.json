@@ -1,0 +1,13 @@
+{
+  "_comment": "PLACEHOLDER metabolic heuristics — pin to ADA / diabetes-India MNT before patient-facing. Clinician-tunable without a deploy; the engine falls back to built-in defaults if this file fails to load.",
+  "carb_target_g_by_slot": { "0": 50, "1": 55, "2": 45, "3": 20 },
+  "population_carb_slope_mgdl_per_g": 0.40,
+  "cold_start_shrink_k": 10.0,
+  "in_range_rise_mgdl": 40.0,
+  "balance": {
+    "carb_over_target_ratio": 1.15,
+    "fiber_min_g": 4,
+    "protein_min_g": 10,
+    "calorie_max": 750
+  }
+}

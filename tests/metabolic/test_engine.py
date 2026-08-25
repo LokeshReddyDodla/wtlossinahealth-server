@@ -264,3 +264,17 @@ def test_glp1_flag_flows_into_contract():
     state["profile"] = {"meds": ["Ozempic 1mg"], "age": 45, "bmi": 31}
     out = eng.assess(state, _high_carb_meal())
     assert out["bmiq"]["glp1_flag"] is True
+
+
+# -- heuristics loaded from data/heuristics.json (values must equal the fallbacks) --
+
+from lib.ai_foundation.clinical.metabolic.engine import (  # noqa: E402
+    CARB_TARGET, PRIOR_SLOPE, SHRINK_K, IN_RANGE_RISE, _BALANCE,
+)
+
+
+def test_heuristics_load_with_int_slot_keys_and_expected_values():
+    # JSON keys are strings; the loader must coerce slot keys back to ints.
+    assert CARB_TARGET == {0: 50, 1: 55, 2: 45, 3: 20}
+    assert PRIOR_SLOPE == 0.40 and SHRINK_K == 10.0 and IN_RANGE_RISE == 40.0
+    assert _BALANCE == {"carb_over_target_ratio": 1.15, "fiber_min_g": 4, "protein_min_g": 10, "calorie_max": 750}
