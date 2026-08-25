@@ -8,6 +8,7 @@ opens (or refreshes) — cost scales with usage, not census.
 One brief per patient; the generation history lives in Langfuse.
 """
 
+import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -15,8 +16,6 @@ from lib.ai_foundation.agents.health_query import HealthQueryAgent
 
 logger = logging.getLogger(__name__)
 
-# A brief older than the TTL is refreshed on the next view; a refresh click
-# within the debounce window is a no-op (nothing meaningful changed that fast).
 _TTL = timedelta(hours=18)
 _DEBOUNCE = timedelta(seconds=120)
 _FAIL_COOLDOWN = timedelta(seconds=60)
@@ -36,36 +35,34 @@ class PatientBriefService:
     ):
         self._col = briefs_collection
         self._agent = health_query_agent
+        self._tasks: set[asyncio.Task] = set()
 
     async def get(self, patient_id: str) -> dict:
-        """Returns the cached brief immediately. A stale brief silently queues
-        regeneration without signalling 'refreshing' to avoid client polling."""
         doc = await self._latest(patient_id)
         if not self._has_brief(doc):
             if await self._is_generating(doc):
                 return {"status": "generating"}
             if self._in_cooldown(doc):
                 return {"status": "error"}
-            queued = await self._queue_generation(patient_id)
-            return {"status": "generating" if queued else "error"}
+            started = await self._start_generation(patient_id)
+            return {"status": "generating" if started else "error"}
         refreshing = await self._is_generating(doc)
         if (
             self._age(doc) > _TTL
             and not refreshing
             and not self._in_cooldown(doc)
         ):
-            await self._queue_generation(patient_id)
+            refreshing = await self._start_generation(patient_id)
         return {"status": "ready", **self._view(doc), "refreshing": refreshing}
 
     async def refresh(self, patient_id: str) -> dict:
-        """Force a fresh brief (the provider clicked refresh), debounced so a
-        rapid re-click is a no-op."""
+        """Debounced: a rapid re-click is a no-op."""
         doc = await self._latest(patient_id)
         if self._has_brief(doc) and self._age(doc) < _DEBOUNCE:
             return {"status": "ready", **self._view(doc), "refreshing": False}
         refreshing = await self._is_generating(doc)
         if not refreshing:
-            refreshing = await self._queue_generation(patient_id)
+            refreshing = await self._start_generation(patient_id)
         if not self._has_brief(doc):
             return {"status": "generating" if refreshing else "error"}
         return {"status": "ready", **self._view(doc), "refreshing": refreshing}
@@ -73,8 +70,6 @@ class PatientBriefService:
     # ── internals ────────────────────────────────────────────────────────────
 
     async def ensure_indexes(self) -> None:
-        """Create the patient_id index that serves every lookup. Idempotent.
-        Called once at startup (app.main), like the other Mongo-backed services."""
         await self._col.create_index(
             "patient_id", name="patient_briefs_patient_idx"
         )
@@ -113,27 +108,26 @@ class PatientBriefService:
         doc.pop("generation_started_at", None)
         return False
 
-    async def _queue_generation(self, patient_id: str) -> bool:
-        now = datetime.now(timezone.utc)
+    async def _start_generation(self, patient_id: str) -> bool:
         await self._col.update_one(
             {"patient_id": patient_id},
             {
-                "$set": {"generation_started_at": now},
+                "$set": {"generation_started_at": datetime.now(timezone.utc)},
                 "$unset": {"failed_at": ""},
             },
             upsert=True,
         )
-        try:
-            from lib.workers.tasks.patient_brief.tasks import (
-                enqueue_patient_brief,
-            )
+        task = asyncio.create_task(self._run_generation(patient_id))
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+        return True
 
-            await enqueue_patient_brief(patient_id, requested_at=now)
-            return True
+    async def _run_generation(self, patient_id: str) -> None:
+        try:
+            await self.regenerate(patient_id)
         except Exception:
-            logger.exception("patient brief enqueue failed: %s", patient_id)
+            logger.exception("patient brief generation failed: %s", patient_id)
             await self.mark_failed(patient_id)
-            return False
 
     async def regenerate(self, patient_id: str) -> dict:
         result = await self._agent.run_provider_brief(patient_id=patient_id)
@@ -144,7 +138,6 @@ class PatientBriefService:
             "narrative": result.narrative,
             "generated_at": datetime.now(timezone.utc),
         }
-        # One brief per patient — replace the current one in a single write.
         await self._col.replace_one(
             {"patient_id": patient_id}, doc, upsert=True
         )
