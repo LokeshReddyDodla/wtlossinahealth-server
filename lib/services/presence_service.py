@@ -31,8 +31,7 @@ def _count(val) -> bool:
 
 
 async def is_online(patient_id: str) -> bool:
-    """Current online state from the live connection counter. Never raises —
-    presence must not be able to fail a profile read."""
+    """Online state from the connection counter; never raises."""
     try:
         return _count(await _cache.aget_key(f"conn:{patient_id}"))
     except Exception:
@@ -40,7 +39,7 @@ async def is_online(patient_id: str) -> bool:
 
 
 async def online_map(patient_ids: list[str]) -> dict[str, bool]:
-    """Batch online lookup for a list of patients in one Redis round-trip."""
+    """Batch online lookup in one Redis round-trip."""
     if not patient_ids:
         return {}
     try:
