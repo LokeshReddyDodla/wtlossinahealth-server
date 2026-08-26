@@ -143,7 +143,14 @@ class VoiceOrchestrator:
                 pref = "en"
             session.language = self._speakable_language(pref) or "en"
 
-            greeting = await self._localize(_pick_greeting(first_name), session.language)
+            if session.role == "patient":
+                base = _pick_greeting(first_name)
+            else:
+                base = (
+                    f"Ready when you are. Ask me anything about {first_name}."
+                    if first_name else "Ready when you are. Ask me anything about this patient."
+                )
+            greeting = await self._localize(base, session.language)
 
             # Semantic event first (Flutter shows text from this)
             await send_json({"type": "greeting", "text": greeting})
@@ -224,7 +231,7 @@ class VoiceOrchestrator:
             context=AgentContext(
                 patient_id=session.patient_id,
                 user_id=session.user_id,
-                user_role="patient",
+                user_role=session.role,
                 thread_id=session.thread_id,
                 patient_ids=[session.patient_id] if session.patient_id else [],
                 priority=RequestPriority.NORMAL,

@@ -40,11 +40,14 @@ class VoiceSession:
         patient_id: str | None,
         thread_id: str,
         settings: VoiceSettings,
+        role: str = "patient",
         metadata: dict | None = None,
     ) -> None:
         self.session_id: str = f"vs_{secrets.token_hex(8)}"
         self.user_id = user_id
         self.patient_id = patient_id
+        # Actor role — patient (self) or care_provider/admin asking about a patient.
+        self.role = role
         self.thread_id = thread_id
         self.metadata: dict = metadata or {}
         # Reply language for this session: seeded from the patient's stored
