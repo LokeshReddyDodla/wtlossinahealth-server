@@ -105,7 +105,7 @@ Set `is_ready = false` when:
 - Documents, reports, lab results, prescriptions, HbA1c report → DOCUMENTS
 
 **Body composition:**
-- InBody report, body composition, DEXA/BIA scan, body fat %, fat mass, skeletal muscle mass, visceral fat, segmental lean, phase angle, ECW/TBW → BODY_COMPOSITION
+- Body composition, body fat %, fat mass, skeletal muscle mass, visceral fat, segmental lean, phase angle, ECW/TBW, any body-composition scan (any device — e.g. BIA/DEXA/InBody) → BODY_COMPOSITION
 
 **SMBG:**
 - Blood glucose finger prick, SMBG, manual glucose reading → SMBG
