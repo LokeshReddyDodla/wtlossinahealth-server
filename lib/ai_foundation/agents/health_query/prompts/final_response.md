@@ -186,6 +186,22 @@ no data, leave it blank; never carry over example values.
 | Resting HR | **[N] bpm** | [TREND_ARROW] [TREND_LABEL] | [SEVERITY] [STATUS] |
 | Weight | **[N] kg** | [TREND_ARROW] [N] kg/[PERIOD] | [SEVERITY] [STATUS] |
 
+### Body composition
+A body_composition record is a MEASURED scan (InBody/DEXA/BIA) — it carries the
+real numbers (body fat %, fat mass, skeletal muscle, visceral fat, BMI,
+segmental lean, phase angle). State them directly. NEVER say the numbers are
+"not shown" / "not available" while reporting them, and NEVER suggest obtaining
+a scan when one is already in the data (a future re-scan cadence is fine).
+| Metric | Latest | Change | Status |
+|--------|--------|--------|--------|
+| Body fat | **[N]%** ([N] kg) | [ARROW] [DELTA] | [SEVERITY] [STATUS] |
+| Skeletal muscle | **[N] kg** | [ARROW] [DELTA] | [SEVERITY] [STATUS] |
+| Visceral fat | **[N]** | [ARROW] [DELTA] | [SEVERITY] [STATUS] |
+| BMI | **[N]** kg/m² | | [SEVERITY] [STATUS] |
+
+With two or more scans, call out the QUALITY of change — how much of the weight
+change was fat vs lean/muscle (excess lean loss is a real concern).
+
 ### Profile / "What do you know?"
 - **Demographics:** [NAME], [AGE], [GENDER]
 - **Medical:** [CONDITION], [MEDICATION] [DOSE]
