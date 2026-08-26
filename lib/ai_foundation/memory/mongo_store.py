@@ -308,6 +308,20 @@ class MongoMemoryStore:
         )
         return result.matched_count > 0
 
+    async def update_turn_metadata_by_trace_id(
+        self, thread_id: str, trace_id: str, metadata_patch: dict
+    ) -> bool:
+        collection = self._mongo.get_collection(TURNS_COLLECTION)
+        result = await collection.update_one(
+            {
+                "thread_id": thread_id,
+                "role": "assistant",
+                "metadata.trace_id": trace_id,
+            },
+            {"$set": {f"metadata.{key}": value for key, value in metadata_patch.items()}},
+        )
+        return result.matched_count > 0
+
     # -- Thread Summaries ---------------------------------------------------
 
     async def get_thread_summary(self, thread_id: str) -> ThreadSummary | None:

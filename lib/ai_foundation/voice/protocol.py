@@ -70,6 +70,7 @@ class TranscriptMsg(BaseModel):
     is_final: bool = True
     language: str | None = None
     duration_seconds: float | None = None
+    audio_url: str | None = None
 
 
 class ResponseTextMsg(BaseModel):

@@ -1614,6 +1614,56 @@ async def _upload_voice_audio(patient_id: str, audio_bytes: bytes) -> str | None
         folder_path=f"patients/{patient_id}/voice/audio",
     )
 
+async def _save_voice_response_audio(
+    patient_id: str,
+    thread_id: str,
+    trace_id: str,
+    audio_bytes: bytes,
+) -> str | None:
+    import asyncio
+    import io
+    import wave
+    from uuid import uuid4
+    from lib.utils.s3_utils import upload_file_to_s3
+
+    audio_format = _voice_settings.TTS_RESPONSE_FORMAT.lower()
+    if audio_format == "pcm":
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(_voice_settings.OUTPUT_SAMPLE_RATE)
+            wf.writeframes(audio_bytes)
+        audio_bytes = buf.getvalue()
+        extension, content_type = "wav", "audio/wav"
+    else:
+        extension, content_type = {
+            "opus": ("ogg", "audio/ogg"),
+            "mp3": ("mp3", "audio/mpeg"),
+            "aac": ("aac", "audio/aac"),
+            "flac": ("flac", "audio/flac"),
+            "wav": ("wav", "audio/wav"),
+        }.get(audio_format, (audio_format, "application/octet-stream"))
+
+    audio_url = await asyncio.to_thread(
+        upload_file_to_s3,
+        file_bytes=audio_bytes,
+        bucket_name="user-assets.aihealth.clinic",
+        file_name=f"{uuid4()}.{extension}",
+        content_type=content_type,
+        folder_path=f"patients/{patient_id}/voice/responses",
+    )
+    if not audio_url:
+        return None
+
+    memory = cast(MongoMemoryStore, container.resolve(MongoMemoryStore))
+    saved = await memory.update_turn_metadata_by_trace_id(
+        thread_id,
+        trace_id,
+        {"response_audio_url": audio_url},
+    )
+    return audio_url if saved else None
+
 container.register(
     VoiceOrchestrator,
     lambda: VoiceOrchestrator(
@@ -1623,6 +1673,7 @@ container.register(
         patient_resolver=cast(PatientNameResolver, container.resolve(PatientNameResolver)),
         settings=_voice_settings,
         upload_audio=_upload_voice_audio,
+        save_response_audio=_save_voice_response_audio,
         translation=cast(TranslationService, container.resolve(TranslationService)),
     ),
     scope=Scope.singleton,
