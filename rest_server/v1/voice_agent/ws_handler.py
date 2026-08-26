@@ -75,8 +75,7 @@ class VoiceConnectionHandler:
 
         user_id, role = auth
 
-        # A patient talks about themselves; a provider/admin talks about a
-        # specific patient passed as ?patient_id= and gated by access scope.
+        # Patient = self; provider/admin = a specific ?patient_id=, access-gated.
         if role == "patient":
             if not await ai_feature_toggle_service.is_enabled_for_patient(
                 AIFeatureEnum.VOICE, user_id
