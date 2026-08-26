@@ -103,7 +103,9 @@ Set `is_ready = false` when:
 
 **Documents:**
 - Documents, reports, lab results, prescriptions, HbA1c report → DOCUMENTS
-- InBody report, body composition, DEXA scan, body fat analysis → DOCUMENTS
+
+**Body composition:**
+- InBody report, body composition, DEXA/BIA scan, body fat %, fat mass, skeletal muscle mass, visceral fat, segmental lean, phase angle, ECW/TBW → BODY_COMPOSITION
 
 **SMBG:**
 - Blood glucose finger prick, SMBG, manual glucose reading → SMBG
@@ -119,7 +121,7 @@ Set `is_ready = false` when:
 - "How's [patient] doing?" / "How is [patient]?" / "Give me an overview"
 - "Summarize" / "What's going on?" / "Update me on [patient]"
 - Any general/vague health question without a specific domain
-- → PROFILE + CGM_RANGE + CGM_SUMMARY + HYPO_EVENT + HYPER_EVENT + MEAL + FITNESS_OVERVIEW + SMBG + DOCUMENTS + VITAL + SLEEP + SLEEP_CHECKIN + MOOD_CHECKIN
+- → PROFILE + CGM_RANGE + CGM_SUMMARY + HYPO_EVENT + HYPER_EVENT + MEAL + FITNESS_OVERVIEW + SMBG + DOCUMENTS + VITAL + BODY_COMPOSITION + SLEEP + SLEEP_CHECKIN + MOOD_CHECKIN
 
 **WHY all domains for general queries:** Lab reports may show declining HbA1c or kidney function. Vitals may reveal rising BP. SMBG captures finger-prick patterns CGM missed. Sleep quality directly affects glucose control. Documents contain prescriptions and clinical notes. Missing any domain means missing part of the clinical picture.
 
