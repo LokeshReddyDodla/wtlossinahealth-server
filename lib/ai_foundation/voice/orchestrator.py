@@ -81,6 +81,7 @@ SendBytes = Callable[[bytes], Coroutine[Any, Any, None]]
 
 # (patient_id, audio_bytes) → audio_url or None
 UploadAudio = Callable[[str, bytes], Coroutine[Any, Any, str | None]]
+SaveResponseAudio = Callable[[str, str, str, bytes], Coroutine[Any, Any, str | None]]
 
 
 class VoiceOrchestrator:
@@ -95,6 +96,7 @@ class VoiceOrchestrator:
         patient_resolver: PatientNameResolver,
         settings: VoiceSettings,
         upload_audio: UploadAudio | None = None,
+        save_response_audio: SaveResponseAudio | None = None,
         translation: Any = None,
     ) -> None:
         self._stt = stt
@@ -103,6 +105,7 @@ class VoiceOrchestrator:
         self._patient_resolver = patient_resolver
         self._settings = settings
         self._upload_audio = upload_audio
+        self._save_response_audio = save_response_audio
         self._translation = translation
 
     async def _localize(self, text: str, language: str) -> str:
@@ -205,6 +208,7 @@ class VoiceOrchestrator:
             is_final=True,
             language=result.language,
             duration_seconds=result.duration_seconds,
+            audio_url=audio_url,
         ).model_dump())
 
         if not result.text.strip():
@@ -293,10 +297,24 @@ class VoiceOrchestrator:
                     # One TTS stream for the full response
                     if full_response.strip() and not session.is_cancelled:
                         session.state = VoiceSessionState.SPEAKING
-                        await self._speak(
+                        response_audio = await self._speak(
                             full_response, send_json, send_bytes, session,
                             segment_type="response_text", language=voice_language,
+                            capture=True,
                         )
+                        trace_id = event_data.get("trace_id")
+                        if response_audio and trace_id and self._save_response_audio:
+                            try:
+                                response_audio_url = await self._save_response_audio(
+                                    pid, session.thread_id, trace_id, response_audio,
+                                )
+                                if response_audio_url:
+                                    await send_json({
+                                        "type": "response_audio",
+                                        "audio_url": response_audio_url,
+                                    })
+                            except Exception:
+                                logger.warning("Failed to save response audio", exc_info=True)
 
                     # done always after the final audio_end
                     await send_json({"type": "done", **event_data})
@@ -344,7 +362,8 @@ class VoiceOrchestrator:
         *,
         segment_type: str,
         language: str | None = None,
-    ) -> None:
+        capture: bool = False,
+    ) -> bytes | None:
         """Stream TTS audio wrapped in audio_start/audio_end.
 
         Guarantees:
@@ -357,7 +376,7 @@ class VoiceOrchestrator:
         - Any binary outside an open segment is a protocol error
         """
         if not text.strip():
-            return
+            return None
 
         segment_id = f"seg_{secrets.token_hex(6)}"
 
@@ -369,6 +388,7 @@ class VoiceOrchestrator:
         })
 
         total_bytes = 0
+        captured: list[bytes] = []
         completed = True
         reason: str | None = None
 
@@ -379,6 +399,8 @@ class VoiceOrchestrator:
                     reason = "interrupted"
                     break
                 total_bytes += len(chunk)
+                if capture:
+                    captured.append(chunk)
                 await send_bytes(chunk)
         except asyncio.CancelledError:
             completed = False
@@ -399,6 +421,7 @@ class VoiceOrchestrator:
             end_payload["reason"] = reason
 
         await send_json(end_payload)
+        return b"".join(captured) if completed and captured else None
 
 
 # ── Greetings ────────────────────────────────────────────────────────────

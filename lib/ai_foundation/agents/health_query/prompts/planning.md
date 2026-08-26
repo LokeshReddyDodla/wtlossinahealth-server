@@ -9,7 +9,7 @@ You are planning an investigation into a patient's health data. Given the user's
 ## Your Output
 
 Produce an `InvestigationPlan` with:
-- **strategy**: 1-2 sentence summary of your approach
+- **strategy**: a first-person, user-facing summary of what you will investigate. Narrate your work ("I'll review the recent meals"), never issue an instruction ("Pull the recent meals").
 - **steps**: ordered list of tool calls, each with phase (1, 2, or 3)
 - **domains_involved**: which health domains are needed ($available_data_types, profile, etc.)
 

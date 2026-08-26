@@ -50,11 +50,17 @@ class TestServerMessages:
         assert d["session_id"] == "vs_abc123"
 
     def test_transcript(self):
-        msg = TranscriptMsg(text="What was my glucose?", language="en", duration_seconds=2.5)
+        msg = TranscriptMsg(
+            text="What was my glucose?",
+            language="en",
+            duration_seconds=2.5,
+            audio_url="https://assets.example/voice.wav",
+        )
         d = msg.model_dump()
         assert d["type"] == "transcript"
         assert d["text"] == "What was my glucose?"
         assert d["is_final"] is True
+        assert d["audio_url"] == "https://assets.example/voice.wav"
 
     def test_response_text(self):
         msg = ResponseTextMsg(text="Your glucose was 128 mg/dL.")

@@ -98,6 +98,11 @@ class PersistenceService:
                 user_meta["channel"] = meta["channel"]
             if meta.get("input_mode"):
                 user_meta["input_mode"] = meta["input_mode"]
+            if meta.get("audio_url"):
+                user_meta["audio_url"] = meta["audio_url"]
+
+            assistant_meta = dict(meta)
+            assistant_meta.pop("audio_url", None)
 
             user_turn = ConversationTurn(
                 role="user", content=user_message,
@@ -106,7 +111,7 @@ class PersistenceService:
             )
             assistant_turn = ConversationTurn(
                 role="assistant", content=assistant_message,
-                agent_id=agent_id, metadata=meta,
+                agent_id=agent_id, metadata=assistant_meta,
                 timestamp=assistant_ts,
             )
 

@@ -43,7 +43,12 @@ class PlanStep(BaseModel):
 class InvestigationPlan(BaseModel):
     """Structured investigation plan generated before executing."""
 
-    strategy: str = Field(description="1-2 sentence summary of the investigation approach.")
+    strategy: str = Field(
+        description=(
+            "User-facing, first-person summary of the investigation approach. "
+            "Narrate what you will do; never phrase it as an instruction to the user."
+        ),
+    )
     steps: list[PlanStep] = Field(description="Ordered list of tool calls to execute.")
     domains_involved: list[str] = Field(
         default_factory=list,

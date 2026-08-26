@@ -55,6 +55,7 @@ class TestVoiceOrchestrator:
 
         mock_tts = _make_tts()
         mock_agent = AsyncMock()
+        save_response_audio = AsyncMock(return_value="https://assets.example/response.ogg")
 
         async def fake_run_stream(agent_input):
             yield _sse_event("status", {"stage": "extracting_intent"})
@@ -72,6 +73,7 @@ class TestVoiceOrchestrator:
 
         orchestrator = VoiceOrchestrator(
             stt=mock_stt, tts=mock_tts, agent=mock_agent, patient_resolver=AsyncMock(), settings=settings,
+            save_response_audio=save_response_audio,
         )
 
         session = _session(settings)
@@ -90,6 +92,7 @@ class TestVoiceOrchestrator:
         assert "transcript" in types
         assert "reasoning" in types
         assert "response_text" in types
+        assert "response_audio" in types
         assert "done" in types
 
         # Audio boundaries present
@@ -120,6 +123,7 @@ class TestVoiceOrchestrator:
         segment_types = [m["segment_type"] for m in starts]
         assert "reasoning" in segment_types
         assert "response_text" in segment_types
+        save_response_audio.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_no_orphan_binary(self):
