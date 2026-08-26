@@ -75,24 +75,33 @@ class VoiceConnectionHandler:
 
         user_id, role = auth
 
-        # Only patients can use voice for now
-        if role != "patient":
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Voice is only available for patients")
-            return
-
-        if not await ai_feature_toggle_service.is_enabled_for_patient(
-            AIFeatureEnum.VOICE, user_id
-        ):
-            await websocket.close(
-                code=status.WS_1008_POLICY_VIOLATION,
-                reason="Voice assistant is temporarily unavailable",
-            )
+        # Patient = self; provider/admin = a specific ?patient_id=, access-gated.
+        if role == "patient":
+            if not await ai_feature_toggle_service.is_enabled_for_patient(
+                AIFeatureEnum.VOICE, user_id
+            ):
+                await websocket.close(
+                    code=status.WS_1008_POLICY_VIOLATION,
+                    reason="Voice assistant is temporarily unavailable",
+                )
+                return
+            patient_id = user_id
+        elif role in ("care_provider", "admin"):
+            patient_id = websocket.query_params.get("patient_id")
+            if not patient_id:
+                await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="patient_id is required")
+                return
+            if not await self._provider_can_access(user_id, role, patient_id):
+                await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="No access to this patient")
+                return
+        else:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Voice is not available for this role")
             return
 
         await websocket.accept()
 
         try:
-            await self._connection_loop(websocket, user_id, role)
+            await self._connection_loop(websocket, user_id, role, patient_id)
         except WebSocketDisconnect:
             logger.info("Voice WS disconnected: user=%s", user_id)
         except Exception:
@@ -104,11 +113,36 @@ class VoiceConnectionHandler:
             except Exception:
                 pass
 
+    async def _provider_can_access(self, user_id: str, role: str, patient_id: str) -> bool:
+        """Same facility/assignment scope the roster and presence enforce."""
+        if role == "admin":
+            return True
+        from uuid import UUID
+
+        from lib.dependencies.database import postgres_store
+        from lib.services.care_provider_access_service import CareProviderAccessService
+
+        try:
+            cp_uuid = UUID(user_id)
+            pid_uuid = UUID(patient_id)
+        except (TypeError, ValueError):
+            return False
+        try:
+            async with postgres_store.get_session() as session:
+                allowed = await CareProviderAccessService(postgres_store).get_accessible_patients(
+                    care_provider_id=cp_uuid, patient_ids=[pid_uuid], postgres_session=session,
+                )
+            return len(allowed) > 0
+        except Exception:
+            logger.exception("Voice access check failed: cp=%s patient=%s", user_id, patient_id)
+            return False
+
     async def _connection_loop(
         self,
         websocket: WebSocket,
         user_id: str,
         role: str,
+        patient_id: str,
     ) -> None:
         """Main message loop after auth."""
         session: VoiceSession | None = None
@@ -139,7 +173,7 @@ class VoiceConnectionHandler:
                     msg_type = data.get("type")
 
                     if msg_type == "session_start":
-                        session = self._create_session(user_id, role, data)
+                        session = self._create_session(user_id, role, patient_id, data)
                         await self._send_json(websocket, SessionReadyMsg(
                             session_id=session.session_id,
                         ).model_dump())
@@ -194,13 +228,14 @@ class VoiceConnectionHandler:
         self,
         user_id: str,
         role: str,
+        patient_id: str,
         data: dict[str, Any],
     ) -> VoiceSession:
         """Create a new voice session from session_start message."""
         thread_id = data.get("thread_id") or resolve_thread_id(
             role=role,
             actor_id=user_id,
-            patient_ids=[user_id],
+            patient_ids=[patient_id],
         )
 
         metadata: dict = {}
@@ -209,7 +244,8 @@ class VoiceConnectionHandler:
 
         return VoiceSession(
             user_id=user_id,
-            patient_id=user_id,  # For patients, user_id == patient_id
+            patient_id=patient_id,
+            role=role,
             thread_id=thread_id,
             settings=self._settings,
             metadata=metadata,
