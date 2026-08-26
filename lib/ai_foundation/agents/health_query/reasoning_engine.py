@@ -678,7 +678,9 @@ class ReasoningEngine:
             planning_prompt = (
                 "Plan the investigation. Output a structured InvestigationPlan. "
                 "Write the strategy field as if you are a doctor explaining your plan "
-                "to the patient out loud — first person, conversational, no jargon."
+                "to the patient out loud — first person, conversational, no jargon. "
+                "Narrate what you are doing (for example, 'I'll check...'); never give "
+                "the patient commands such as 'Check...' or 'Review...'."
             ) if is_voice else "Plan the investigation. Output a structured InvestigationPlan."
 
             plan, plan_cost = await self._planner.plan(

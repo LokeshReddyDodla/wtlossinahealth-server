@@ -221,7 +221,9 @@ class Coordinator:
                 planning_prompt = (
                     "Plan the multi-domain investigation. "
                     "Write the strategy field as if you are a doctor explaining your plan "
-                    "to the patient out loud — first person, conversational, no jargon."
+                    "to the patient out loud — first person, conversational, no jargon. "
+                    "Narrate what you are doing (for example, 'I'll check...'); never give "
+                    "the patient commands such as 'Check...' or 'Review...'."
                 ) if is_voice else "Plan the multi-domain investigation."
 
                 plan, plan_cost = await self._planner.plan(
