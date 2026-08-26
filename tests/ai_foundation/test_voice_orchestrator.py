@@ -11,6 +11,7 @@ from lib.ai_foundation.voice.config import VoiceSettings
 from lib.ai_foundation.voice.orchestrator import VoiceOrchestrator
 from lib.ai_foundation.voice.session import VoiceSession, VoiceSessionState
 from lib.ai_foundation.voice.stt import TranscriptionResult
+from lib.ai_foundation.voice.text_renderer import MarkdownSpeechTextRenderer
 
 
 def _settings(**overrides) -> VoiceSettings:
@@ -62,17 +63,18 @@ class TestVoiceOrchestrator:
             yield _sse_event("reasoning", {"step": 1, "thought": "Let me check glucose data"})
             yield _sse_event("tool_call", {"tool": "look_up", "args": {"data_types": ["cgm_range_stats"]}})
             yield _sse_event("tool_result", {"tool": "look_up", "summary": "Found 7 days of data"})
-            yield _sse_event("token", {"delta": "Your glucose is fine."})
+            yield _sse_event("token", {"delta": "**Your glucose** is fine."})
             yield _sse_event("done", {
                 "suggestions": [{"label": "More"}],
                 "trace_id": "trc_1",
-                "data": {"full_response": "Your glucose is fine."},
+                "data": {"full_response": "**Your glucose** is fine."},
             })
 
         mock_agent.run_stream = MagicMock(side_effect=lambda i: fake_run_stream(i))
 
         orchestrator = VoiceOrchestrator(
-            stt=mock_stt, tts=mock_tts, agent=mock_agent, patient_resolver=AsyncMock(), settings=settings,
+            stt=mock_stt, tts=mock_tts, agent=mock_agent, patient_resolver=AsyncMock(),
+            speech_text_renderer=MarkdownSpeechTextRenderer(), settings=settings,
             save_response_audio=save_response_audio,
         )
 
@@ -123,6 +125,12 @@ class TestVoiceOrchestrator:
         segment_types = [m["segment_type"] for m in starts]
         assert "reasoning" in segment_types
         assert "response_text" in segment_types
+        response_message = next(m for m in json_messages if m["type"] == "response_text")
+        response_audio = next(
+            m for m in starts if m["segment_type"] == "response_text"
+        )
+        assert response_message["text"] == "**Your glucose** is fine."
+        assert response_audio["text"] == "Your glucose is fine."
         save_response_audio.assert_awaited_once()
 
     @pytest.mark.asyncio
@@ -145,7 +153,8 @@ class TestVoiceOrchestrator:
         mock_agent.run_stream = MagicMock(side_effect=lambda i: fake_run_stream(i))
 
         orchestrator = VoiceOrchestrator(
-            stt=mock_stt, tts=mock_tts, agent=mock_agent, patient_resolver=AsyncMock(), settings=settings,
+            stt=mock_stt, tts=mock_tts, agent=mock_agent, patient_resolver=AsyncMock(),
+            speech_text_renderer=MarkdownSpeechTextRenderer(), settings=settings,
         )
 
         session = _session(settings)
@@ -192,6 +201,7 @@ class TestVoiceOrchestrator:
             yield b"\x00" * 50
 
         mock_tts.synthesize_stream = MagicMock(side_effect=lambda t, language=None: fake_stream(t))
+        mock_tts.supports_language = MagicMock(return_value=True)
         mock_agent = AsyncMock()
 
         async def fake_run_stream(agent_input):
@@ -202,7 +212,8 @@ class TestVoiceOrchestrator:
         mock_agent.run_stream = MagicMock(side_effect=lambda i: fake_run_stream(i))
 
         orchestrator = VoiceOrchestrator(
-            stt=mock_stt, tts=mock_tts, agent=mock_agent, patient_resolver=AsyncMock(), settings=settings,
+            stt=mock_stt, tts=mock_tts, agent=mock_agent, patient_resolver=AsyncMock(),
+            speech_text_renderer=MarkdownSpeechTextRenderer(), settings=settings,
         )
 
         session = _session(settings)
@@ -246,7 +257,8 @@ class TestVoiceOrchestrator:
         mock_agent.run_stream = MagicMock(side_effect=lambda i: fake_stream(i))
 
         orchestrator = VoiceOrchestrator(
-            stt=mock_stt, tts=mock_tts, agent=mock_agent, patient_resolver=AsyncMock(), settings=settings,
+            stt=mock_stt, tts=mock_tts, agent=mock_agent, patient_resolver=AsyncMock(),
+            speech_text_renderer=MarkdownSpeechTextRenderer(), settings=settings,
         )
 
         session = _session(settings)
@@ -286,7 +298,8 @@ class TestVoiceOrchestrator:
         )
 
         orchestrator = VoiceOrchestrator(
-            stt=mock_stt, tts=AsyncMock(), agent=AsyncMock(), patient_resolver=AsyncMock(), settings=settings,
+            stt=mock_stt, tts=AsyncMock(), agent=AsyncMock(), patient_resolver=AsyncMock(),
+            speech_text_renderer=MarkdownSpeechTextRenderer(), settings=settings,
         )
 
         session = _session(settings)
@@ -310,7 +323,8 @@ class TestVoiceOrchestrator:
         mock_stt.transcribe.side_effect = RuntimeError("API error")
 
         orchestrator = VoiceOrchestrator(
-            stt=mock_stt, tts=AsyncMock(), agent=AsyncMock(), patient_resolver=AsyncMock(), settings=settings,
+            stt=mock_stt, tts=AsyncMock(), agent=AsyncMock(), patient_resolver=AsyncMock(),
+            speech_text_renderer=MarkdownSpeechTextRenderer(), settings=settings,
         )
 
         session = _session(settings)
@@ -348,7 +362,8 @@ class TestVoiceOrchestrator:
         mock_agent.run_stream = MagicMock(side_effect=lambda i: capture_stream(i))
 
         orchestrator = VoiceOrchestrator(
-            stt=mock_stt, tts=mock_tts, agent=mock_agent, patient_resolver=AsyncMock(), settings=settings,
+            stt=mock_stt, tts=mock_tts, agent=mock_agent, patient_resolver=AsyncMock(),
+            speech_text_renderer=MarkdownSpeechTextRenderer(), settings=settings,
         )
 
         session = _session(settings)

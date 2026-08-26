@@ -167,6 +167,7 @@ from lib.ai_foundation.agents.dashboard_help import DashboardHelpAgent
 from lib.ai_foundation.rate_limit.public_limiter import PublicRateLimiter
 from lib.ai_foundation.voice.config import voice_settings as _voice_settings
 from lib.ai_foundation.voice.stt import BaseSpeechToText, build_stt
+from lib.ai_foundation.voice.text_renderer import MarkdownSpeechTextRenderer
 from lib.ai_foundation.voice.tts import BaseTextToSpeech, build_tts
 from lib.ai_foundation.voice.orchestrator import VoiceOrchestrator
 from lib.ai_foundation.clinical.metabolic.service import MetabolicService
@@ -1671,6 +1672,7 @@ container.register(
         tts=cast(BaseTextToSpeech, container.resolve(BaseTextToSpeech)),
         agent=cast(HealthQueryAgent, container.resolve(HealthQueryAgent)),
         patient_resolver=cast(PatientNameResolver, container.resolve(PatientNameResolver)),
+        speech_text_renderer=MarkdownSpeechTextRenderer(),
         settings=_voice_settings,
         upload_audio=_upload_voice_audio,
         save_response_audio=_save_voice_response_audio,

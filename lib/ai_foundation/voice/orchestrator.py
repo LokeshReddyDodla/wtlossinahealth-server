@@ -32,6 +32,7 @@ from lib.ai_foundation.voice.protocol import (
 from lib.ai_foundation.voice.session import VoiceSession, VoiceSessionState
 from lib.ai_foundation.voice.stt import BaseSpeechToText
 from lib.ai_foundation.voice.sse_utils import parse_sse_event
+from lib.ai_foundation.voice.text_renderer import SpeechTextRenderer
 from lib.ai_foundation.voice.tts import BaseTextToSpeech
 
 logger = logging.getLogger(__name__)
@@ -94,6 +95,7 @@ class VoiceOrchestrator:
         tts: BaseTextToSpeech,
         agent: HealthQueryAgent,
         patient_resolver: PatientNameResolver,
+        speech_text_renderer: SpeechTextRenderer,
         settings: VoiceSettings,
         upload_audio: UploadAudio | None = None,
         save_response_audio: SaveResponseAudio | None = None,
@@ -103,6 +105,7 @@ class VoiceOrchestrator:
         self._tts = tts
         self._agent = agent
         self._patient_resolver = patient_resolver
+        self._speech_text_renderer = speech_text_renderer
         self._settings = settings
         self._upload_audio = upload_audio
         self._save_response_audio = save_response_audio
@@ -375,7 +378,8 @@ class VoiceOrchestrator:
         - Only one segment open at a time (enforced by sequential awaits)
         - Any binary outside an open segment is a protocol error
         """
-        if not text.strip():
+        text = self._speech_text_renderer.render(text)
+        if not text:
             return None
 
         segment_id = f"seg_{secrets.token_hex(6)}"
