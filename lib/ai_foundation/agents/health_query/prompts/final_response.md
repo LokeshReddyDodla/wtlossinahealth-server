@@ -187,7 +187,7 @@ no data, leave it blank; never carry over example values.
 | Weight | **[N] kg** | [TREND_ARROW] [N] kg/[PERIOD] | [SEVERITY] [STATUS] |
 
 ### Body composition
-A body_composition record is a MEASURED scan (InBody/DEXA/BIA) — it carries the
+A body_composition record is a MEASURED scan (any device — e.g. BIA/DEXA/InBody) — it carries the
 real numbers (body fat %, fat mass, skeletal muscle, visceral fat, BMI,
 segmental lean, phase angle). State them directly. NEVER say the numbers are
 "not shown" / "not available" while reporting them, and NEVER suggest obtaining

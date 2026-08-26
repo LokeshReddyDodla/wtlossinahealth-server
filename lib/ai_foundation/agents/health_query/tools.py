@@ -157,7 +157,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "Look up specific health data for the patient. Returns individual records with full details. "
                 "Use this for: meals (with nutrition breakdown), glucose/CGM readings (with values and ranges), "
                 "fitness activity (steps, duration, calories), vitals (weight, BP, heart rate), "
-                "body_composition (InBody/DEXA/BIA scans — body fat %, skeletal muscle, visceral fat, segmental lean, phase angle), "
+                "body_composition (any body-composition scan, any device — body fat %, skeletal muscle, visceral fat, segmental lean, phase angle), "
                 "SMBG readings, documents, hypo/hyper events, spike events."
             ),
             "parameters": {
