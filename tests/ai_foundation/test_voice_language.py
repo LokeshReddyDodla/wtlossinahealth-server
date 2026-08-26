@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from lib.ai_foundation.voice.orchestrator import _normalize_spoken_language
+from lib.ai_foundation.voice.text_renderer import MarkdownSpeechTextRenderer
 
 
 def test_normalize_spoken_language():
@@ -160,7 +161,8 @@ async def test_handle_utterance_real_path_mirrors_spoken_language():
 
     orch = VoiceOrchestrator(
         stt=stt, tts=tts, agent=agent,
-        patient_resolver=AsyncMock(), settings=settings,
+        patient_resolver=AsyncMock(),
+        speech_text_renderer=MarkdownSpeechTextRenderer(), settings=settings,
     )
     session = VoiceSession(
         user_id="p1", patient_id="p1", thread_id="bot:patient:p1", settings=settings,
@@ -215,7 +217,8 @@ async def test_handle_utterance_unspeakable_language_falls_back():
 
     orch = VoiceOrchestrator(
         stt=stt, tts=tts, agent=agent,
-        patient_resolver=AsyncMock(), settings=settings,
+        patient_resolver=AsyncMock(),
+        speech_text_renderer=MarkdownSpeechTextRenderer(), settings=settings,
     )
     session = VoiceSession(
         user_id="p1", patient_id="p1", thread_id="t", settings=settings,
