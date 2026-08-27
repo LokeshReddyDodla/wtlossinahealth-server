@@ -51,7 +51,7 @@ class Patient(Base):
     weight_kg = Column(Float, nullable=True)
     waist_cm = Column(Float, nullable=True)
     hip_cm = Column(Float, nullable=True)
-    email = Column(String, unique=True, index=True)
+    email = Column(String, index=True)
     phone_number = Column(String, unique=True, index=True)
     created_at = Column(
         DateTime, default=lambda: datetime.now().replace(tzinfo=None)
