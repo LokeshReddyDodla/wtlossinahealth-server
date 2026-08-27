@@ -876,10 +876,11 @@ class PatientProfileService:
 
         except IntegrityError as e:
             await postgres_session.rollback()
+            msg = "Phone number already in use" if "ix_patients_phone_number" in str(e) else "Integrity Error"
             raise_http_exception(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                message="Integrity Error",
-                detail=str(e),
+                message=msg,
+                detail=msg,
             )
         except SQLAlchemyError as e:
             await postgres_session.rollback()
