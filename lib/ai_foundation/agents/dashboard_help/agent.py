@@ -1,7 +1,7 @@
 """
 Dashboard Help Agent — in-product helpline for doctors, care providers and admins.
 
-Answers "how do I… / where is…" questions about USING the AiHealth dashboard,
+Answers "how do I… / where is…" questions about USING the AI-Health dashboard,
 with step-by-step navigation, and attaches a matching how-to video when one exists.
 
 Design notes:
@@ -45,7 +45,7 @@ def _load_brain() -> str:
 
 def _build_video_picker_prompt() -> str:
     return (
-        "You match a user's question about the AiHealth dashboard to the single best "
+        "You match a user's question about the AI-Health dashboard to the single best "
         "how-to video, or to NONE if no video clearly fits.\n"
         "Reply with ONLY the video id exactly as listed, or the word NONE. "
         "No other text, no punctuation.\n\n"

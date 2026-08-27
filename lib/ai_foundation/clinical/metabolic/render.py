@@ -7,7 +7,7 @@ Code pins the grounded facts and locks the template by mode; the LLM writes only
 
 def build_prompt(contract):
     m = contract["output_mode"]; pr = contract["prediction"]; lev = contract.get("lever") or {}
-    base = ["SYSTEM: AiHealth coach. Render the FINDING into 2-3 warm sentences. Use ONLY the facts below;",
+    base = ["SYSTEM: AI-Health coach. Render the FINDING into 2-3 warm sentences. Use ONLY the facts below;",
             "do not add advice or numbers that are not here. Output the patient message only."]
     if m == "SAFETY":
         base += ["MODE: SAFETY (no food/activity/dose advice).",

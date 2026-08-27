@@ -1,4 +1,4 @@
-"""Dashboard Help agent — in-product helpline for the AiHealth dashboard."""
+"""Dashboard Help agent — in-product helpline for the AI-Health dashboard."""
 
 from .agent import DashboardHelpAgent
 

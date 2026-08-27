@@ -1,7 +1,7 @@
-# AiHealth Dashboard — Helpline Knowledge Base
+# AI-Health Dashboard — Helpline Knowledge Base
 
 This is the reference the helpline agent uses to answer "how do I…/where is…" questions
-from doctors, care providers, and admins using the AiHealth dashboard
+from doctors, care providers, and admins using the AI-Health dashboard
 (https://dashboard.aihealth.clinic/dashboard).
 
 It has two parts:
@@ -19,7 +19,7 @@ that isn't described here — if it's genuinely not here, say so and offer to fi
 - Left sidebar (collapsible via the toggle at the bottom). Top-to-bottom:
   **Overview, Patients, Chats, Packages, Care Providers, Exercises, Gamification.**
 - When collapsed it shows icons only; click the bottom toggle ("Collapse Sidebar"/expand) to show labels.
-- Top-right shows the logged-in account (e.g. "AiHealth Admin").
+- Top-right shows the logged-in account (e.g. "AI-Health Admin").
 
 ## 1. Overview  (/dashboard/overview-v2)
 The triage/home screen.
