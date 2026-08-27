@@ -28,6 +28,7 @@ from lib.schemas.body_composition import (
     IngestChannel,
     RecordStatus,
 )
+from lib.services.body_composition import concern
 from lib.services.body_composition.metrics import (
     CANONICAL_KEYS,
     SPEC_BY_KEY,
@@ -570,7 +571,10 @@ class BodyCompositionService:
 
     @classmethod
     def _serialize(cls, row: PatientBodyCompositionRecord) -> dict[str, Any]:
-        data = row.data or {}
+        data = dict(row.data or {})
+        # Annotate each measurement with the read-time verdict; never stored (concern.py).
+        if isinstance(data.get("measurements"), list):
+            data["measurements"] = concern.annotate(data["measurements"])
         return {
             "record_id": str(row.record_id),
             "patient_id": str(row.patient_id),

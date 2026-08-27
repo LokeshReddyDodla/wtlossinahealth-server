@@ -51,6 +51,13 @@ class BodyCompositionMeasurement(BaseModel):
     reference_low: float | None = None
     reference_high: float | None = None
     confidence: float = Field(ge=0, le=1)
+    # Read-time verdict filled by the serializer, never stored (concern.py).
+    position: str | None = Field(
+        None, description="above | in_range | below vs the printed range; null if none"
+    )
+    concern: str | None = Field(
+        None, description="none | alert — whether the position warrants attention"
+    )
 
 
 class SegmentalComposition(BaseModel):
