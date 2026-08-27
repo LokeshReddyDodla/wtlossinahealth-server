@@ -572,7 +572,6 @@ class BodyCompositionService:
     @classmethod
     def _serialize(cls, row: PatientBodyCompositionRecord) -> dict[str, Any]:
         data = dict(row.data or {})
-        # Annotate each measurement with the read-time verdict; never stored (concern.py).
         if isinstance(data.get("measurements"), list):
             data["measurements"] = concern.annotate(data["measurements"])
         return {
