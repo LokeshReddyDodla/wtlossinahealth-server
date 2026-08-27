@@ -94,6 +94,15 @@ class VoiceConnectionHandler:
             if not await self._provider_can_access(user_id, role, patient_id):
                 await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="No access to this patient")
                 return
+            # VOICE toggle keyed on the patient's facility — same gate as patients.
+            if not await ai_feature_toggle_service.is_enabled_for_patient(
+                AIFeatureEnum.VOICE, patient_id
+            ):
+                await websocket.close(
+                    code=status.WS_1008_POLICY_VIOLATION,
+                    reason="Voice assistant is temporarily unavailable",
+                )
+                return
         else:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Voice is not available for this role")
             return
