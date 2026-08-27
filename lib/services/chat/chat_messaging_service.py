@@ -251,6 +251,7 @@ class ChatMessagingService(BaseChatService):
             sender_id=message_data.sender_id,
             content=message_data.content,
             media=message_data.media,
+            card=message_data.card,
             reply_to=message_data.reply_to,
             timestamp=message_data.timestamp.replace(tzinfo=None),
             metadata=message_data.metadata,

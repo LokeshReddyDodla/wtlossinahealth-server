@@ -370,3 +370,40 @@ class PatientBrief(BaseModel):
             "important phrase — not every figure. English."
         ),
     )
+
+
+class PatientCardChip(BaseModel):
+    label: str = Field(max_length=40, description="One concrete metric or flag, e.g. 'Time in range 82%' or 'Watch: late snacks'.")
+    tone: Literal["good", "watch", "info"] = Field(
+        default="info",
+        description="good = reassuring/on-track, watch = gentle caution, info = neutral fact.",
+    )
+
+
+class PatientCardSource(BaseModel):
+    label: str = Field(max_length=48, description="What the guidance rests on, e.g. 'CGM · last 7 days'.")
+
+
+class PatientAnswerCard(BaseModel):
+    """A provider's health-agent answer reshaped for the patient — short, plain
+    language. A pure formatting step: never introduces a number, claim, or
+    recommendation the source answer did not state.
+
+    ``kind`` discriminates the chat's custom-card renderer; every rich card
+    shares the metadata.type='custom' envelope and is told apart by it."""
+
+    kind: Literal["ai_answer"] = Field(default="ai_answer", description="Card discriminator for the chat renderer.")
+    title: str = Field(max_length=60, description="Short, plain headline of the takeaway, e.g. 'Your morning readings look stable'.")
+    takeaway: str = Field(max_length=140, description="One reassuring, honest sentence — the single thing the patient should know. Also used as the notification text.")
+    points: list[str] = Field(
+        default_factory=list,
+        description="2-4 short plain-language points supporting the takeaway. No jargon; each ≤120 chars.",
+    )
+    chips: list[PatientCardChip] = Field(
+        default_factory=list,
+        description="Optional metric/flag chips — only for figures the source answer actually stated.",
+    )
+    sources: list[PatientCardSource] = Field(
+        default_factory=list,
+        description="Optional data the answer drew on, for a 'why & sources' expander.",
+    )

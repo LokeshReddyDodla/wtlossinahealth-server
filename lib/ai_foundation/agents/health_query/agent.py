@@ -39,7 +39,7 @@ from lib.ai_foundation.streaming.sse import (
 
 from lib.ai_foundation.models.gateway import safe_cost
 
-from .contracts import PatientBrief, ProactiveNarration, QueryIntent, QueryResponse, expand_to_domain_types, resolve_specialist_domains
+from .contracts import PatientAnswerCard, PatientBrief, ProactiveNarration, QueryIntent, QueryResponse, expand_to_domain_types, resolve_specialist_domains
 from .coordinator import Coordinator
 from .reasoning_engine import ReasoningEngine, ReasoningTier
 
@@ -426,6 +426,51 @@ class HealthQueryAgent(BaseAgent):
             task=ModelTask.STRUCTURED_ANALYSIS, trace_id=trace_id,
         )
         return brief
+
+    async def reshape_to_patient_card(
+        self, answer: str, *, patient_id: str | None = None, trace_id: str | None = None,
+    ) -> PatientAnswerCard:
+        """Reshape a provider-facing agent answer into a patient-facing card — a
+        pure formatting step that never introduces a fact, number, or
+        recommendation the answer did not state."""
+        trace_id = trace_id or f"trc_{uuid4().hex[:16]}"
+        await _maybe_await(self.gateway.set_langfuse_context(
+            session_id=f"patient_card:{patient_id}" if patient_id else None,
+            user_id=patient_id,
+        ))
+        await _maybe_await(self.gateway.langfuse_trace_input(
+            trace_id=trace_id, name="patient_card", input_text=answer,
+            metadata={"mode": "patient_card"},
+        ))
+        messages = [
+            {"role": "system", "content": (
+                "Rewrite this clinician-facing answer as a short card the PATIENT "
+                "reads on their phone. Warm, encouraging, honest — a note from their "
+                "care team, second person ('your', 'you'). "
+                "Plain everyday words: translate clinical terms (e.g. 'dawn "
+                "phenomenon' → 'normal morning rise', 'fasting glucose' → 'morning "
+                "sugar') and expand or drop jargon. "
+                "title: the takeaway in ≤60 chars. "
+                "takeaway: one honest, reassuring sentence — the single thing to know. "
+                "points: 2-4 short supporting points, plain language. "
+                "chips: only for concrete figures the answer stated (tone good/watch/info); "
+                "omit if none. "
+                "sources: only data types the answer actually referenced; omit if none. "
+                "Never introduce a number, claim, diagnosis, or recommendation the "
+                "answer did not state, and never soften a genuine concern into false "
+                "reassurance."
+            )},
+            {"role": "user", "content": answer},
+        ]
+        card, _meta = await self.gateway.extract(
+            messages=messages, response_model=PatientAnswerCard,
+            task=ModelTask.STRUCTURED_ANALYSIS, trace_id=trace_id,
+        )
+        await _maybe_await(self.gateway.langfuse_trace_output(
+            trace_id=trace_id, output_text=card.takeaway,
+            metadata={"kind": card.kind},
+        ))
+        return card
 
     async def _structure_proactive(
         self, analysis: str, *, trace_id: str | None = None,
