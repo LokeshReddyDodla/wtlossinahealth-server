@@ -1,16 +1,9 @@
-"""Read-time clinical interpretation for body-composition metrics — the single
-source of truth both clients render. Never stored: a rule change applies to every
-scan on the next read, no backfill.
-
-`position` is where a value sits vs its device-printed range; `concern` is whether
-that position warrants attention.
-"""
+"""Read-time position + concern per metric; never stored (see body_composition.py)."""
 
 from __future__ import annotations
 
 from typing import Any
 
-# A HIGH reading is the concern — fat, obesity, visceral, fluid overload.
 HIGH_IS_CONCERN: frozenset[str] = frozenset({
     "percent_body_fat",
     "body_fat_mass",
@@ -23,7 +16,6 @@ HIGH_IS_CONCERN: frozenset[str] = frozenset({
     "ecw_tbw_ratio",
 })
 
-# A LOW reading is the concern — muscle, cellular health, bone.
 LOW_IS_CONCERN: frozenset[str] = frozenset({
     "skeletal_muscle_mass",
     "skeletal_muscle_index",
@@ -31,13 +23,10 @@ LOW_IS_CONCERN: frozenset[str] = frozenset({
     "bone_mineral_content",
 })
 
-# Weight-based indices penalise muscle — a concern only when body fat is also
-# above range, so a muscular person isn't flagged "obese".
 MUSCLE_AWARE_ADIPOSITY: frozenset[str] = frozenset({"bmi", "obesity_degree"})
 
 
 def position(value: float | None, low: float | None, high: float | None) -> str | None:
-    """Where [value] sits vs its reference band. None when no range was printed."""
     if value is None or low is None or high is None:
         return None
     if value < low:
@@ -48,9 +37,8 @@ def position(value: float | None, low: float | None, high: float | None) -> str 
 
 
 def annotate(measurements: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Return the measurements with read-time `position` and `concern` added."""
     body_fat_elevated = any(
-        m.get("key") == "percent_body_fat"
+        m.get("key") in ("percent_body_fat", "body_fat_mass")
         and position(m.get("value"), m.get("reference_low"), m.get("reference_high")) == "above"
         for m in measurements
     )
