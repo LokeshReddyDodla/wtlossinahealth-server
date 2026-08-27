@@ -71,6 +71,13 @@ class ChatMessageBase(BaseModel):
     media: Optional[MediaSchema] = Field(
         None, description="Optional media attached to the message."
     )
+    card: Optional[dict] = Field(
+        None,
+        description=(
+            "Structured card payload for custom-type messages, keyed by its own "
+            "'kind'; the client renders it and content is the plain-text fallback."
+        ),
+    )
     reply_to: Optional[str] = Field(
         None, description="UUID of the message being replied to."
     )
