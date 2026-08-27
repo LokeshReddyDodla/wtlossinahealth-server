@@ -35,6 +35,7 @@ def _get_all_cron_jobs():
     from lib.workers.tasks.plans import get_cron_jobs as get_plans_cron_jobs
     from lib.workers.tasks.gamification.cron import GAMIFICATION_CRON_JOBS
     from lib.workers.tasks.platform.cron import PLATFORM_CRON_JOBS
+    from lib.workers.tasks.data_hygiene import get_cron_jobs as get_data_hygiene_cron_jobs
 
     cron_jobs.extend(get_cgm_cron_jobs())
     cron_jobs.extend(get_vector_coverage_cron_jobs())
@@ -51,6 +52,7 @@ def _get_all_cron_jobs():
     cron_jobs.extend(get_plans_cron_jobs())
     cron_jobs.extend(GAMIFICATION_CRON_JOBS)
     cron_jobs.extend(PLATFORM_CRON_JOBS)
+    cron_jobs.extend(get_data_hygiene_cron_jobs())
 
     return cron_jobs
 
