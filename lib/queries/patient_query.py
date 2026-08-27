@@ -22,6 +22,7 @@ class PatientQuery(BaseModel):
     medication: Optional[List[str]] = None
     pregnancy: Optional[List[str]] = None
     activity: Optional[List[str]] = None
+    body_composition: Optional[List[str]] = None
 
     # sorting
     order_by: Optional[Literal["first_name", "last_name", "email", "created_at", "age", "last_active_at"]] = "last_active_at"

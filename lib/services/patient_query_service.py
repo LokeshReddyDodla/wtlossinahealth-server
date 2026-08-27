@@ -19,6 +19,7 @@ from lib.models.patient_package_assignment import (
     AssignmentStatus,
     PatientPackageAssignment as PatientPackageAssignmentModel,
 )
+from lib.models.patient_body_composition_record import PatientBodyCompositionRecord
 from lib.models.patient_prescription import PatientPrescription
 from lib.models.patient_reproductive_health import PatientReproductiveHealth
 from lib.models.patient_smbg import PatientSMBG
@@ -99,6 +100,7 @@ class PatientQueryService:
         stmt = self._apply_medication_filter(stmt, query)
         stmt = self._apply_pregnancy_filter(stmt, query)
         stmt = self._apply_activity_filter(stmt, query)
+        stmt = self._apply_body_composition_filter(stmt, query)
         return stmt
 
     def _build_base_query(self) -> Select:
@@ -307,6 +309,18 @@ class PatientQueryService:
                 PatientReproductiveHealth.is_pregnant.is_(True),
             )
         )
+
+    def _apply_body_composition_filter(self, stmt: Select, query: PatientQuery) -> Select:
+        if not query.body_composition:
+            return stmt
+        conditions = [
+            exists().where(
+                PatientBodyCompositionRecord.patient_id == PatientModel.patient_id,
+                PatientBodyCompositionRecord.status == s,
+            )
+            for s in query.body_composition
+        ]
+        return stmt.where(or_(*conditions)) if conditions else stmt
 
     def _apply_activity_filter(self, stmt: Select, query: PatientQuery) -> Select:
         """Filter by last-active recency from patient device activity.

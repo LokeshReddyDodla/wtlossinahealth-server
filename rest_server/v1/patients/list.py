@@ -61,6 +61,9 @@ async def list_patients(
     activity: Optional[List[str]] = Query(
         None, description="Activity recency filter (active_7d/active_30d/inactive_30d/never)"
     ),
+    body_composition: Optional[List[str]] = Query(
+        None, description="Body composition status filter (draft/needs_review/confirmed/failed)"
+    ),
     order_by: Optional[
         Literal[
             "first_name",
@@ -105,6 +108,7 @@ async def list_patients(
             medication=medication,
             pregnancy=pregnancy,
             activity=activity,
+            body_composition=body_composition,
             health_facility_id=hf_id,
             care_provider_id=cp_id,
             order_by=order_by,
