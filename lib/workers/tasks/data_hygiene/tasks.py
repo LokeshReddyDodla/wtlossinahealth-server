@@ -16,7 +16,6 @@ _MAX_PREGNANCY_WEEKS = 42
 
 @task_with_logging
 async def clear_stale_pregnancies(ctx: dict[str, Any]) -> TaskResult:
-    """Clear is_pregnant on both tables when pregnancy_weeks >= 42."""
     from lib.core.container import container
     from lib.core.postgres_store import PostgresStore
     from lib.models.patient_reproductive_health import PatientReproductiveHealth
@@ -45,7 +44,6 @@ async def clear_stale_pregnancies(ctx: dict[str, Any]) -> TaskResult:
 
 @task_with_logging
 async def sync_diabetes_duration(ctx: dict[str, Any]) -> TaskResult:
-    """Recompute years_with_diabetes from diagnosed_at where available."""
     from lib.core.container import container
     from lib.core.postgres_store import PostgresStore
     from lib.models.patient_diabetic_history import PatientDiabeticHistory
@@ -79,7 +77,6 @@ async def sync_diabetes_duration(ctx: dict[str, Any]) -> TaskResult:
 
 @task_with_logging
 async def expire_stale_care_intents(ctx: dict[str, Any]) -> TaskResult:
-    """Batch-expire active CareIntents past their review_date."""
     from lib.core.container import container
     from lib.core.postgres_store import PostgresStore
     from lib.models.care_intent import CareIntent
@@ -108,7 +105,6 @@ _STALE_SYNC_DAYS = 30
 
 @task_with_logging
 async def mark_stale_connected_apps(ctx: dict[str, Any]) -> TaskResult:
-    """Mark sync_status='stale' on connected apps with no sync in 30 days."""
     from lib.core.container import container
     from lib.core.postgres_store import PostgresStore
     from lib.models.patient_connected_app import PatientLibreView, PatientSinocare
