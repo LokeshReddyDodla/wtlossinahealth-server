@@ -28,9 +28,9 @@ import httpx
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from lib.core.container import container  # noqa: E402
 from lib.core.mongo_store import MongoStore  # noqa: E402
 from lib.core.postgres_store import PostgresStore  # noqa: E402
-from lib.ai_foundation.models.gateway import ModelGateway  # noqa: E402
 from lib.schemas.body_composition import IngestChannel  # noqa: E402
 from lib.services.body_composition.extraction import BodyCompositionExtractionService  # noqa: E402
 from lib.services.body_composition.service import BodyCompositionService  # noqa: E402
@@ -78,10 +78,8 @@ async def download_file(url: str) -> bytes | None:
 async def run(dry_run: bool, limit: int | None) -> None:
     mongo = MongoStore()
     collection = mongo.get_collection(COLLECTION)
-    postgres = PostgresStore()
-
-    gateway = ModelGateway()
-    extraction_service = BodyCompositionExtractionService(gateway)
+    postgres = container.resolve(PostgresStore)
+    extraction_service = container.resolve(BodyCompositionExtractionService)
     bc_service = BodyCompositionService(postgres)
 
     cursor = collection.find(INBODY_QUERY, PROJECTION).sort("_id", 1)
