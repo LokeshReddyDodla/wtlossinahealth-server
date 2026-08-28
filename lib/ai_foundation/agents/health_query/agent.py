@@ -444,21 +444,26 @@ class HealthQueryAgent(BaseAgent):
         ))
         messages = [
             {"role": "system", "content": (
-                "Rewrite this clinician-facing answer as a short card the PATIENT "
-                "reads on their phone. Warm, encouraging, honest — a note from their "
-                "care team, second person ('your', 'you'). "
+                "Rewrite this clinician-facing answer as a card the PATIENT reads on "
+                "their phone. Warm, encouraging, honest — a note from their care team, "
+                "second person ('your', 'you'). "
                 "Plain everyday words: translate clinical terms (e.g. 'dawn "
                 "phenomenon' → 'normal morning rise', 'fasting glucose' → 'morning "
                 "sugar') and expand or drop jargon. "
-                "title: the takeaway in ≤60 chars. "
-                "takeaway: one honest, reassuring sentence — the single thing to know. "
-                "points: 2-4 short supporting points, plain language. "
-                "chips: only for concrete figures the answer stated (tone good/watch/info); "
-                "omit if none. "
+                "title: name the answer in ≤80 chars. "
+                "takeaway: one honest sentence — the single thing to know (also the "
+                "notification text). "
+                "body: the full answer as Markdown, mirroring whatever the answer "
+                "actually is. Keep its real structure and specifics — do NOT flatten "
+                "a plan, comparison, or schedule into generic principles. Use "
+                "headings, lists, and GitHub-flavored tables as the content warrants; "
+                "use a ```mermaid``` diagram only when it genuinely clarifies a flow "
+                "or relationship the answer described. For the patient's own data "
+                "trends, link or name the chart rather than inventing one. "
                 "sources: only data types the answer actually referenced; omit if none. "
-                "Never introduce a number, claim, diagnosis, or recommendation the "
-                "answer did not state, and never soften a genuine concern into false "
-                "reassurance."
+                "Never introduce a number, claim, diagnosis, food, or recommendation "
+                "the answer did not state, and never soften a genuine concern into "
+                "false reassurance."
             )},
             {"role": "user", "content": answer},
         ]
