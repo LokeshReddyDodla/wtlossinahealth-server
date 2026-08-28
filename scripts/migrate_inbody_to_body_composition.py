@@ -24,17 +24,14 @@ import sys
 from pathlib import Path
 from uuid import UUID, uuid4
 
-import httpx
-
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from lib.core.container import container  # noqa: E402
 from lib.core.mongo_store import MongoStore  # noqa: E402
-from lib.core.postgres_store import PostgresStore  # noqa: E402
 from lib.schemas.body_composition import IngestChannel  # noqa: E402
 from lib.services.body_composition.extraction import BodyCompositionExtractionService  # noqa: E402
 from lib.services.body_composition.service import BodyCompositionService  # noqa: E402
-from lib.utils.s3_utils import upload_file_to_s3  # noqa: E402
+from lib.utils.s3_utils import s3_client, upload_file_to_s3  # noqa: E402
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
@@ -64,23 +61,25 @@ CONTENT_TYPE_MAP = {
 }
 
 
-async def download_file(url: str) -> bytes | None:
+def download_from_s3(url: str) -> bytes | None:
+    prefix = f"https://{S3_BUCKET}/"
+    if not url.startswith(prefix):
+        logger.warning("unexpected URL format: %s", url)
+        return None
+    key = url[len(prefix):]
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-            return resp.content
+        resp = s3_client.get_object(Bucket=S3_BUCKET, Key=key)
+        return resp["Body"].read()
     except Exception as e:
-        logger.warning("download failed %s: %s", url, e)
+        logger.warning("S3 download failed %s: %s", key, e)
         return None
 
 
 async def run(dry_run: bool, limit: int | None) -> None:
     mongo = MongoStore()
     collection = mongo.get_collection(COLLECTION)
-    postgres = container.resolve(PostgresStore)
     extraction_service = container.resolve(BodyCompositionExtractionService)
-    bc_service = BodyCompositionService(postgres)
+    bc_service = container.resolve(BodyCompositionService)
 
     cursor = collection.find(INBODY_QUERY, PROJECTION).sort("_id", 1)
     if limit:
@@ -121,7 +120,7 @@ async def run(dry_run: bool, limit: int | None) -> None:
             logger.info("[%d/%d] DRY-RUN %s patient=%s file=%s", i, total, mongo_id, patient_id_str, file_name)
             continue
 
-        file_bytes = await download_file(file_url)
+        file_bytes = download_from_s3(file_url)
         if not file_bytes:
             logger.warning("[%d/%d] %s: download failed", i, total, mongo_id)
             failed += 1
@@ -206,8 +205,6 @@ async def run(dry_run: bool, limit: int | None) -> None:
     logger.info("  skipped:    %d", skipped)
     if dry_run:
         logger.info("Dry-run mode - no records were created.")
-
-    await postgres.close()
 
 
 def main() -> None:
