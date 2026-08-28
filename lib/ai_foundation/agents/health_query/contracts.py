@@ -377,15 +377,8 @@ class PatientCardSource(BaseModel):
 
 
 class PatientAnswerCard(BaseModel):
-    """A provider's health-agent answer reshaped for the patient. A pure
-    formatting step: never introduces a number, claim, food, or recommendation
-    the source answer did not state.
-
-    ``body`` is patient-facing Markdown — the one shape that carries any answer
-    (plan, comparison, table, explanation) with no per-type special-casing. It
-    may include GitHub-flavored tables and ```mermaid``` diagrams. ``kind``
-    discriminates the chat's custom-card renderer; every rich card shares the
-    metadata.type='custom' envelope and is told apart by it."""
+    """Reshape only: never introduces a number, claim, food, or recommendation
+    the source answer did not state. ``body`` is patient-facing Markdown."""
 
     kind: Literal["ai_answer"] = Field(default="ai_answer", description="Card discriminator for the chat renderer.")
     title: str = Field(max_length=80, description="Short, plain headline of the answer, e.g. 'Your morning readings look stable'.")

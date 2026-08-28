@@ -430,9 +430,8 @@ class HealthQueryAgent(BaseAgent):
     async def reshape_to_patient_card(
         self, answer: str, *, patient_id: str | None = None, trace_id: str | None = None,
     ) -> PatientAnswerCard:
-        """Reshape a provider-facing agent answer into a patient-facing card — a
-        pure formatting step that never introduces a fact, number, or
-        recommendation the answer did not state."""
+        """Reshape only: never introduces a fact, number, or recommendation the
+        answer did not state."""
         trace_id = trace_id or f"trc_{uuid4().hex[:16]}"
         await _maybe_await(self.gateway.set_langfuse_context(
             session_id=f"patient_card:{patient_id}" if patient_id else None,
