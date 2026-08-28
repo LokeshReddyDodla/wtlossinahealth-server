@@ -22,6 +22,7 @@ class IngestChannel(str, Enum):
     PATIENT_UPLOAD = "patient_upload"
     API_SYNC = "api_sync"
     MANUAL = "manual"
+    MIGRATION = "migration"
 
 
 class RecordStatus(str, Enum):
