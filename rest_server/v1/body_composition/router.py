@@ -41,13 +41,12 @@ _ALLOWED_TYPES = {"application/pdf", "image/jpeg", "image/jpg", "image/png"}
 _MAX_FILE_BYTES = 15 * 1024 * 1024
 
 
-def _actor(action: CareProviderPermissionAction):
+def _actor(action: CareProviderPermissionAction, *, allow_patient: bool = True):
+    roles = [ProfileTypeEnum.ADMIN, ProfileTypeEnum.CARE_PROVIDER]
+    if allow_patient:
+        roles.append(ProfileTypeEnum.PATIENT)
     return get_current_actor(
-        allowed_roles=[
-            ProfileTypeEnum.ADMIN,
-            ProfileTypeEnum.CARE_PROVIDER,
-            ProfileTypeEnum.PATIENT,
-        ],
+        allowed_roles=roles,
         care_provider_feature=CareProviderFeature.REPORTS,
         care_provider_action=action,
     )
@@ -166,7 +165,9 @@ async def supersede_body_composition(
     record_id: UUID,
     payload: ConfirmBodyCompositionRequest,
     service: BodyCompositionService = Depends(get_body_composition_service),
-    actor: Actor = Depends(_actor(CareProviderPermissionAction.UPDATE)),
+    actor: Actor = Depends(
+        _actor(CareProviderPermissionAction.UPDATE, allow_patient=False)
+    ),
     access_service: CareProviderAccessService = Depends(
         get_care_provider_access_service
     ),
@@ -256,7 +257,9 @@ async def archive_body_composition(
     patient_id: UUID,
     record_id: UUID,
     service: BodyCompositionService = Depends(get_body_composition_service),
-    actor: Actor = Depends(_actor(CareProviderPermissionAction.DELETE)),
+    actor: Actor = Depends(
+        _actor(CareProviderPermissionAction.DELETE, allow_patient=False)
+    ),
     access_service: CareProviderAccessService = Depends(
         get_care_provider_access_service
     ),
