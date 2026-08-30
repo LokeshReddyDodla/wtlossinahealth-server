@@ -87,8 +87,7 @@ class PrescriptionExtractionService:
         extracted, meta = await self.gateway.extract(
             messages=messages,
             response_model=ExtractedPrescription,
-            task=ModelTask.STRUCTURED_ANALYSIS,
-            model_id="gpt-5.2",
+            task=ModelTask.VISION,
             trace_id=trace_id,
         )
 
