@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -26,6 +26,10 @@ class SymptomEntry(Base):
         "SymptomEntryItem", back_populates="entry", cascade="all, delete-orphan"
     )
 
+    __table_args__ = (
+        Index("ix_symptom_entries_patient_recorded", "patient_id", "recorded_at"),
+    )
+
 
 class SymptomEntryItem(Base):
     __tablename__ = "symptom_entry_items"
@@ -35,6 +39,7 @@ class SymptomEntryItem(Base):
         UUID(as_uuid=True),
         ForeignKey("symptom_entries.id", ondelete="CASCADE"),
         nullable=False,
+        index=True,
     )
     symptom_name = Column(String, nullable=False)
     severity = Column(Integer, nullable=False)  # 1-5

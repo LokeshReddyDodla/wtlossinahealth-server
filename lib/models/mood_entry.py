@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, String
 from sqlalchemy.dialects.postgresql import ARRAY, UUID
 from sqlalchemy.orm import relationship
 
@@ -25,3 +25,7 @@ class MoodEntry(Base):
     )
 
     patient = relationship("Patient", back_populates="mood_entries")
+
+    __table_args__ = (
+        Index("ix_mood_entries_patient_recorded", "patient_id", "recorded_at"),
+    )

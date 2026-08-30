@@ -131,6 +131,13 @@ async def on_startup() -> None:
         import logging
         logging.getLogger(__name__).warning(f"Failed derived_dirty_cells init: {e}")
 
+    # Core Mongo collections — chats, support tickets, consultations, task_runs.
+    try:
+        await app.state.mongo_store.init_indexes()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Failed to init core Mongo indexes: {e}")
+
     # Report collections — the universal patient+type+start query shape.
     try:
         from lib.core.container import container

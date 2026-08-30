@@ -11,7 +11,8 @@ class PatientConnectedApp(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     patient_id = Column(
-        UUID(as_uuid=True), ForeignKey("patients.patient_id"), nullable=False
+        UUID(as_uuid=True), ForeignKey("patients.patient_id"), nullable=False,
+        index=True,
     )
 
     patient = relationship("Patient", back_populates="connected_apps")

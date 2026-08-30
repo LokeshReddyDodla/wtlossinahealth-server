@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (ARRAY, Boolean, Column, Date, DateTime, Float,
-                        ForeignKey, String, Text, Time)
+                        ForeignKey, Index, String, Text, Time)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 
@@ -160,3 +160,7 @@ class PatientMeal(Base):
         ForeignKey("patients.patient_id", ondelete="CASCADE"),
     )
     patient = relationship("Patient", back_populates="meals")
+
+    __table_args__ = (
+        Index("ix_meals_patient_date", "patient_id", "date"),
+    )
