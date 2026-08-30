@@ -507,6 +507,11 @@ services:
       - NEXTAUTH_SECRET=${LANGFUSE_NEXTAUTH_SECRET:-langfuse-dev-secret}
       - SALT=${LANGFUSE_SALT:-langfuse-dev-salt}
       - TELEMETRY_ENABLED=false
+      - LANGFUSE_S3_MEDIA_UPLOAD_ENABLED=true
+      - LANGFUSE_S3_MEDIA_UPLOAD_BUCKET=langfuse.aihealth.clinic
+      - LANGFUSE_S3_MEDIA_UPLOAD_REGION=ap-south-1
+      - LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID=${AWS_S3_ACCESS_KEY}
+      - LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY=${AWS_S3_SECRET_KEY}
     depends_on:
       langfuse-db:
         condition: service_healthy
