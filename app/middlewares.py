@@ -10,6 +10,8 @@ from lib.core.server_context import Context
 _SKIP_LOG_PREFIXES = ("/health/", "/healthz")
 _SKIP_LOG_PATHS = {"/", "/health", "/healthz", "/favicon.ico"}
 
+SLOW_REQUEST_MS = 1000
+
 
 async def create_context(request: Request, call_next):
     start_time = time.perf_counter()
@@ -33,10 +35,8 @@ async def create_context(request: Request, call_next):
         qdrant_store=request.app.state.qdrant_store,
     )
 
-    # Bind context to request state
     request.state.context = server_context
 
-    # Bind vars to structlog logger
     structlog.contextvars.clear_contextvars()
     structlog.contextvars.bind_contextvars(
         request_id=request_id,
@@ -45,13 +45,6 @@ async def create_context(request: Request, call_next):
     )
 
     logger = request.app.state.logger
-
-    if not skip_log:
-        await logger.info(
-            "request.start",
-            query_params=str(request.query_params) or None,
-            lifecycle="request",
-        )
 
     try:
         response = await call_next(request)
@@ -68,12 +61,18 @@ async def create_context(request: Request, call_next):
     duration_ms = int((time.perf_counter() - start_time) * 1000)
 
     if not skip_log:
-        await logger.info(
-            "request.end",
-            status_code=status_code,
-            duration_ms=duration_ms,
-            lifecycle="request",
-        )
+        is_error = status_code >= 400
+        is_slow = duration_ms >= SLOW_REQUEST_MS
+        is_mutation = request.method in ("POST", "PUT", "PATCH", "DELETE")
+
+        if is_error or is_slow or is_mutation:
+            log = logger.warning if (is_error or is_slow) else logger.info
+            await log(
+                "request",
+                status_code=status_code,
+                duration_ms=duration_ms,
+                lifecycle="request",
+            )
 
     response.headers["x-request-id"] = request_id
     response.headers["x-response-time-ms"] = str(duration_ms)

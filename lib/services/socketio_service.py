@@ -96,7 +96,7 @@ async def connect(sid, environ):
     role = payload.get("role")
     await sio.enter_room(sid, room_id)
     await sio.save_session(sid, {"user_id": room_id, "role": role})
-    logger.info("ws_connected sid=%s room=%s", sid, room_id)
+    logger.debug("ws_connected sid=%s room=%s", sid, room_id)
 
     if role == ProfileTypeEnum.PATIENT.value:
         await presence_service.patient_connected(sio, room_id)
@@ -104,7 +104,7 @@ async def connect(sid, environ):
 
 @sio.event
 async def disconnect(sid):
-    logger.info("ws_disconnected sid=%s", sid)
+    logger.debug("ws_disconnected sid=%s", sid)
     session = await sio.get_session(sid)
     if session and session.get("role") == ProfileTypeEnum.PATIENT.value:
         await presence_service.patient_disconnected(sio, session["user_id"])
