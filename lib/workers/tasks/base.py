@@ -36,8 +36,8 @@ async def _persist_task_run(ctx, task_name, job_id, success, duration_ms, data, 
             "data": data if isinstance(data, dict) else None,
             "created_at": datetime.now(timezone.utc),
         })
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("task_persist_failed task=%s error=%s", task_name, exc)
 
 
 def task_with_logging(func: Callable[..., T]) -> Callable[..., T]:

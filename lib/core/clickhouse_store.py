@@ -1,10 +1,13 @@
 import asyncio
+import logging
 import threading
 from datetime import datetime
 from typing import Optional
 import os
 
 from clickhouse_driver import Client
+
+logger = logging.getLogger(__name__)
 
 CLICKHOUSE_HOST = os.getenv("CLICKHOUSE_HOST", "aihealth-clickhouse")
 CLICKHOUSE_PORT = os.getenv("CLICKHOUSE_PORT", "9000")
@@ -283,7 +286,7 @@ class ClickHouseStore:
         try:
             return self.client.execute(query)
         except Exception as e:
-            print(f"Error executing query: {e}")
+            logger.error("clickhouse_query_failed error=%s", e)
             return []
 
     def delete_data(self, table_name, condition):

@@ -1,8 +1,11 @@
+import logging
 from typing import Optional
 
 import boto3
 from botocore.exceptions import ClientError
 from decouple import config
+
+logger = logging.getLogger(__name__)
 
 s3_client = boto3.client(
     "s3",
@@ -33,7 +36,7 @@ def generate_presigned_url(
         )
         return response
     except ClientError as e:
-        print(f"ClientError: {e}")
+        logger.error("s3_presign_url_failed bucket=%s key=%s error=%s", bucket_name, object_name, e)
         return None
 
 
@@ -58,7 +61,7 @@ def upload_file_to_s3(
         file_url = f"https://{bucket_name}/{object_name}"
         return file_url
     except ClientError as e:
-        print(f"ClientError: {e}")
+        logger.error("s3_upload_failed bucket=%s key=%s error=%s", bucket_name, object_name, e)
         return None
 
 
@@ -75,7 +78,7 @@ def generate_presigned_download_url(
             ExpiresIn=expiration,
         )
     except ClientError as e:
-        print(f"ClientError: {e}")
+        logger.error("s3_presign_download_failed bucket=%s key=%s error=%s", bucket_name, object_key, e)
         return None
 
 
@@ -89,5 +92,5 @@ def upload_local_file_to_s3(
         s3_client.upload_file(local_path, bucket_name, object_key)
         return object_key
     except ClientError as e:
-        print(f"ClientError: {e}")
+        logger.error("s3_upload_local_failed bucket=%s key=%s error=%s", bucket_name, object_key, e)
         return None

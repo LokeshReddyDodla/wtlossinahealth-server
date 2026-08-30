@@ -7,7 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
 
 # Read PostgreSQL URL from env
 SQLALCHEMY_DATABASE_URL = config("POSTGRES_ASYNCPG_URL")

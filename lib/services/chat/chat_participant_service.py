@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from typing import List, Optional
 
@@ -8,6 +9,8 @@ from lib.core.mongo_store import get_mongo_store
 from lib.core.types import ProfileTypeLiteral
 from lib.schemas.chat import ParticipantSchema
 from lib.services.chat.base import BaseChatService
+
+logger = logging.getLogger(__name__)
 
 
 class ChatParticipantService(BaseChatService):
@@ -65,7 +68,7 @@ class ChatParticipantService(BaseChatService):
                 )
 
         except PyMongoError as e:
-            print(f"MongoDB Error while adding/updating participant: {e}")
+            logger.error("chat_participant_upsert_failed error=%s", e)
             raise
 
     async def fetch_chat_participants(
@@ -109,7 +112,6 @@ class ChatParticipantService(BaseChatService):
                 }
             },
         )
-        print(f"Updated participant {user_id} in chat {chat_id}.")
 
     async def _add_new_participant(
         self, chat_id: str, user_id: str, participant_dict: dict
@@ -129,7 +131,6 @@ class ChatParticipantService(BaseChatService):
                 "$push": {"participants": participant_dict},
             },
         )
-        print(f"Added new participant {user_id} to chat {chat_id}.")
 
     async def _broadcast_participant_join(
         self,

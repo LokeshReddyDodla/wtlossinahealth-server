@@ -21,7 +21,6 @@ from qdrant_client.models import (
 )
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
 
 QDRANT_HOST = config("QDRANT_HOST", default="aihealth-qdrant")
 QDRANT_PORT = config("QDRANT_PORT", cast=int, default=6333)

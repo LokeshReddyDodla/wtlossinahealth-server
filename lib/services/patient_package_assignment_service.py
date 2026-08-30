@@ -26,7 +26,6 @@ from lib.models import Package as PackageModel
 from lib.models import CareProvider as CareProviderModel
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
 
 
 class PatientPackageAssignmentService:

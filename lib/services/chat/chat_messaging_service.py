@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from typing import Dict, Optional
 
@@ -8,6 +9,8 @@ from lib.core.mongo_store import get_mongo_store
 from lib.schemas.chat_message import ChatMessage, ChatMessageCreate
 from lib.schemas.fcm_notification_info import FCMNotificationInfo
 from lib.services.chat.base import BaseChatService
+
+logger = logging.getLogger(__name__)
 from lib.services.chat.chat_notification_service import ChatNotificationService
 from lib.services.chat.message_enricher import (
     enrich_messages_with_sender_profiles,
@@ -114,12 +117,8 @@ class ChatMessagingService(BaseChatService):
                     content=message_data.content,
                 )
 
-            print(
-                f"Message {message.id} broadcasted to chat {message_data.chat_id}."
-            )
-
         except Exception as e:
-            print(f"Failed to add message: {str(e)}")
+            logger.error("chat_add_message_failed error=%s", e)
             raise Exception(f"Failed to add message: {str(e)}")
 
     async def edit_message(
@@ -164,10 +163,8 @@ class ChatMessagingService(BaseChatService):
                 chat_id=chat_id,
             )
 
-            print(f"Message {message_id} updated and broadcasted.")
-
         except Exception as e:
-            print(f"Failed to edit message: {str(e)}")
+            logger.error("chat_edit_message_failed error=%s", e)
             raise Exception(f"Failed to edit message: {str(e)}")
 
     async def mark_message_as_read(
@@ -190,7 +187,7 @@ class ChatMessagingService(BaseChatService):
                 exclude_user_id=user_id,
             )
         except Exception as e:
-            print(f"Failed to mark message as read: {str(e)}")
+            logger.error("chat_mark_read_failed error=%s", e)
             raise Exception(f"Failed to mark message as read: {str(e)}")
 
     async def mark_all_messages_as_read(self, chat_id: str, user_id: str):
@@ -205,7 +202,7 @@ class ChatMessagingService(BaseChatService):
                 exclude_user_id=user_id,
             )
         except Exception as e:
-            print(f"Failed to mark all messages as read: {str(e)}")
+            logger.error("chat_mark_all_read_failed error=%s", e)
             raise Exception(f"Failed to mark all messages as read: {str(e)}")
 
     async def toggle_reaction(
@@ -225,7 +222,7 @@ class ChatMessagingService(BaseChatService):
                 message, chat_id, message_id, user_id, reaction
             )
         except Exception as e:
-            print(f"Failed to toggle reaction: {str(e)}")
+            logger.error("chat_toggle_reaction_failed error=%s", e)
             raise Exception(f"Failed to toggle reaction: {str(e)}")
 
     async def get_message_by_id(self, message_id: str):
@@ -238,7 +235,7 @@ class ChatMessagingService(BaseChatService):
                 raise Exception(f"Message {message_id} not found.")
             return jsonable_encoder(message)
         except Exception as e:
-            print(f"Failed to fetch message: {str(e)}")
+            logger.error("chat_fetch_message_failed error=%s", e)
             raise Exception(f"Failed to fetch message: {str(e)}")
 
     # Private Helper Methods
@@ -269,7 +266,6 @@ class ChatMessagingService(BaseChatService):
 
         await self.mongo_store.insert_document("chat_messages", message_dict)
 
-        print(f"Message {message.id} added to chat {message.chat_id}.")
 
         return message_dict
 

@@ -23,7 +23,6 @@ from lib.utils.http_exceptions import raise_http_exception
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
 
 
 class ChatManagementService(BaseChatService):

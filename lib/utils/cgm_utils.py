@@ -46,8 +46,6 @@ class CGMDataUtils:
             cgm_data["Device Timestamp"].max().replace(hour=23, minute=59, second=59)
         )
 
-        print("==> earliest_date: ", earliest_date)
-        print("==> latest_date: ", latest_date)
 
         # Initialize variables
         report_periods = []
