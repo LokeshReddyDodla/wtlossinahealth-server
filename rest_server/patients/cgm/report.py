@@ -1,4 +1,3 @@
-import traceback
 from datetime import datetime
 
 from fastapi import Depends, HTTPException, Query, Request, status
@@ -110,10 +109,6 @@ async def get_patient_cgm_report_raw(
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        error_message = f"Exception occurred: {str(e)}"
-        traceback_message = traceback.format_exc()
-        print("🚀 ~ error_message:", error_message)
-        print("🚀 ~ traceback_message:", traceback_message)
         raise_http_exception(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             message="Internal Server Error",

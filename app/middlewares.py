@@ -7,11 +7,16 @@ from fastapi import Request
 from lib.core.server_context import Context
 
 
+_SKIP_LOG_PREFIXES = ("/health/", "/healthz")
+_SKIP_LOG_PATHS = {"/", "/health", "/healthz", "/favicon.ico"}
+
+
 async def create_context(request: Request, call_next):
     start_time = time.perf_counter()
     request_id = request.headers.get("x-request-id") or uuid.uuid4().hex
+    path = request.url.path
+    skip_log = path in _SKIP_LOG_PATHS or path.startswith(_SKIP_LOG_PREFIXES)
 
-    # Create context
     server_context = Context(
         logger=request.app.state.logger,
         request_id=request_id,
@@ -41,11 +46,12 @@ async def create_context(request: Request, call_next):
 
     logger = request.app.state.logger
 
-    await logger.info(
-        "request.start",
-        query_params=str(request.query_params) or None,
-        lifecycle="request",
-    )
+    if not skip_log:
+        await logger.info(
+            "request.start",
+            query_params=str(request.query_params) or None,
+            lifecycle="request",
+        )
 
     try:
         response = await call_next(request)
@@ -61,12 +67,13 @@ async def create_context(request: Request, call_next):
 
     duration_ms = int((time.perf_counter() - start_time) * 1000)
 
-    await logger.info(
-        "request.end",
-        status_code=status_code,
-        duration_ms=duration_ms,
-        lifecycle="request",
-    )
+    if not skip_log:
+        await logger.info(
+            "request.end",
+            status_code=status_code,
+            duration_ms=duration_ms,
+            lifecycle="request",
+        )
 
     response.headers["x-request-id"] = request_id
     response.headers["x-response-time-ms"] = str(duration_ms)

@@ -1,7 +1,10 @@
+import logging
 from typing import List, Optional
 
 from lib.schemas.fcm_notification_info import FCMNotificationInfo
 from lib.services.chat.base import BaseChatService
+
+logger = logging.getLogger(__name__)
 from lib.services.chat.chat_participant_service import ChatParticipantService
 from lib.workers.tasks.fcm.enqueue import enqueue_fcm_notification_async
 
@@ -44,14 +47,13 @@ class ChatNotificationService(BaseChatService):
                 if exclude_user_id and participant_id == str(exclude_user_id):
                     continue
                 await sio.emit(message_key, data, room=participant_id)
-                print(f"Emitted {message_key} to participant {participant_id}")
 
             # Send FCM notification if required
             if notification_info:
                 await self._send_fcm_notifications(participants, notification_info)
 
         except Exception as e:
-            print(f"Failed to emit {message_key} to participants: {str(e)}")
+            logger.error("chat_notify_failed key=%s error=%s", message_key, e)
             raise Exception(f"Failed to notify participants: {str(e)}")
 
     async def _send_fcm_notifications(
@@ -68,11 +70,8 @@ class ChatNotificationService(BaseChatService):
                 participants=filtered_participants,
                 notification_info=notification_info.dict(),
             )
-            print(
-                f"FCM notifications sent to {len(filtered_participants)} participants."
-            )
         except Exception as e:
-            print(f"Failed to send FCM notifications: {str(e)}")
+            logger.error("chat_fcm_failed error=%s", e)
             raise Exception(f"Failed to send FCM notifications: {str(e)}")
 
     def _filter_participants_for_fcm(

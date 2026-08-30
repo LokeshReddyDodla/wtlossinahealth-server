@@ -1,6 +1,9 @@
 import asyncio
+import logging
 from datetime import date, datetime, timedelta
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 from lib.schemas.patient_daily_overview import (
     BloodPressure,
@@ -155,7 +158,7 @@ class PatientDailyOverviewService:
                 diet_recommendations=report.get("diet_recommendations"),
             )
         except Exception as e:
-            print(f"Meal data error: {e}")
+            logger.error("daily_overview_meal_failed error=%s", e)
             return MealDailySummary(daily=MacroNutrients())
 
     async def _get_cgm_data(
@@ -197,7 +200,7 @@ class PatientDailyOverviewService:
                 readings=readings,
             )
         except Exception as e:
-            print(f"CGM data error: {e}")
+            logger.error("daily_overview_cgm_failed error=%s", e)
             return GlucoseMetrics()
 
     async def _get_fitness_data(
@@ -226,7 +229,7 @@ class PatientDailyOverviewService:
                 hourly_steps=hourly_steps,
             )
         except Exception as e:
-            print(f"Fitness data error: {e}")
+            logger.error("daily_overview_fitness_failed error=%s", e)
             return FitnessMetrics()
 
     async def _get_sleep_data(
@@ -251,7 +254,7 @@ class PatientDailyOverviewService:
             )
 
         except Exception as e:
-            print(f"Sleep data error: {e}")
+            logger.error("daily_overview_sleep_failed error=%s", e)
             return SleepMetrics()
 
     async def _get_vitals_data(
@@ -293,7 +296,7 @@ class PatientDailyOverviewService:
                 resting_heart_rate_trend=rhr_trend,
             )
         except Exception as e:
-            print(f"Vitals data error: {e}")
+            logger.error("daily_overview_vitals_failed error=%s", e)
             return VitalsMetrics()
 
     async def _get_weight_trend(
@@ -307,7 +310,7 @@ class PatientDailyOverviewService:
                 days=30,
             )
         except Exception as e:
-            print(f"Weight trend error: {e}")
+            logger.error("daily_overview_weight_failed error=%s", e)
             return None
 
     def _fetch_vital_trend(
@@ -366,7 +369,7 @@ class PatientDailyOverviewService:
                 self.sleep_report_service.fetch_daily_report(patient_id, yesterday),
             )
         except Exception as e:
-            print(f"Previous day summary error: {e}")
+            logger.error("daily_overview_prev_day_failed error=%s", e)
             return PreviousDaySummary()
 
         steps: int | None = None

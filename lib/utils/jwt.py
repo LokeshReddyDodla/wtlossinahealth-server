@@ -1,8 +1,11 @@
+import logging
 from datetime import datetime, timedelta
 
 from decouple import config
 from jose import jwt
 from jose.exceptions import ExpiredSignatureError, JWTError
+
+logger = logging.getLogger(__name__)
 
 JWT_SECRET = config("JWT_SECRET")
 JWT_ALGORITHM = config("JWT_ALGORITHM")
@@ -33,8 +36,10 @@ def decode_jwt_token(token: str):
         )
         return payload
     except ExpiredSignatureError:
+        logger.warning("jwt_expired")
         return None
     except JWTError:
+        logger.warning("jwt_invalid")
         return None
 
 
@@ -48,6 +53,8 @@ def verify_jwt_token(token: str) -> bool:
         )
         return True
     except ExpiredSignatureError:
+        logger.warning("jwt_verify_expired")
         return False
     except JWTError:
+        logger.warning("jwt_verify_invalid")
         return False

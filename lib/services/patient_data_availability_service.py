@@ -1,8 +1,11 @@
+import logging
 from datetime import date, datetime, timedelta
 from typing import Dict
 
 from sqlalchemy import and_, cast, Date, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 
 from lib.core.clickhouse_store import ClickHouseStore
 from lib.core.postgres_store import PostgresStore
@@ -199,7 +202,7 @@ class PatientDataAvailabilityService:
 
             return counts
         except Exception as e:
-            print(f"Error fetching CGM counts: {e}")
+            logger.error("cgm_count_fetch_failed patient=%s error=%s", patient_id, e)
             return {}
 
     async def _get_fitness_counts(
@@ -234,5 +237,5 @@ class PatientDataAvailabilityService:
 
             return counts
         except Exception as e:
-            print(f"Error fetching fitness counts: {e}")
+            logger.error("fitness_count_fetch_failed error=%s", e)
             return {}

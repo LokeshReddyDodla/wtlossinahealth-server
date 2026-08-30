@@ -1,7 +1,10 @@
 import datetime
+import logging
 
 from decouple import config
 from socketio import AsyncRedisManager, AsyncServer
+
+logger = logging.getLogger(__name__)
 
 from lib.core.constants import EmitMessageKeyEnum, ProfileTypeEnum
 from lib.schemas.chat_message import ChatMessageCreate
@@ -75,7 +78,7 @@ async def connect(sid, environ):
 
     # Validate the token
     if not token or not verify_jwt_token(token):
-        print(f"Client {sid} connection rejected: Invalid token")
+        logger.warning("ws_auth_rejected sid=%s reason=invalid_token", sid)
         raise ConnectionRefusedError(
             "Invalid token"
         )  # Reject connection with an exception
@@ -83,7 +86,7 @@ async def connect(sid, environ):
     # Extract user_id from token
     payload = decode_jwt_token(token)
     if not payload:
-        print(f"Client {sid} connection rejected: Invalid user ID")
+        logger.warning("ws_auth_rejected sid=%s reason=invalid_user", sid)
         raise ConnectionRefusedError(
             "Invalid user ID"
         )  # Reject connection with an exception
@@ -92,7 +95,7 @@ async def connect(sid, environ):
     role = payload.get("role")
     await sio.enter_room(sid, room_id)
     await sio.save_session(sid, {"user_id": room_id, "role": role})
-    print(f"Client {sid} connected to chat {room_id}")
+    logger.info("ws_connected sid=%s room=%s", sid, room_id)
 
     if role == ProfileTypeEnum.PATIENT.value:
         await presence_service.patient_connected(sio, room_id)
@@ -100,7 +103,7 @@ async def connect(sid, environ):
 
 @sio.event
 async def disconnect(sid):
-    print(f"Client {sid} disconnected")
+    logger.info("ws_disconnected sid=%s", sid)
     session = await sio.get_session(sid)
     if session and session.get("role") == ProfileTypeEnum.PATIENT.value:
         await presence_service.patient_disconnected(sio, session["user_id"])
@@ -189,7 +192,7 @@ async def editMessage(sid, data):
         )
 
     except Exception as e:
-        print(f"Error editing message: {str(e)}")
+        logger.error("ws_edit_message_failed error=%s", e)
         await sio.emit(
             "error", {"status": "error", "message": str(e)}, room=sid
         )
@@ -233,7 +236,7 @@ async def markAsRead(sid, data):
         return {"status": "success", "message": "Messages marked as read"}
 
     except Exception as e:
-        print(f"Error marking message as read: {str(e)}")
+        logger.error("ws_mark_read_failed error=%s", e)
         return {"status": "error", "message": str(e)}
 
 
@@ -279,13 +282,13 @@ async def toggleReaction(sid, data):
         }
 
     except Exception as e:
-        print(f"Error toggling reaction: {str(e)}")
+        logger.error("ws_toggle_reaction_failed error=%s", e)
         return {"status": "error", "message": str(e)}
 
 
 @sio.event
 async def list_rooms(sid):
     rooms = sio.rooms(sid)
-    print(f"Listing rooms for {sid}: {rooms}")
+    logger.debug("ws_list_rooms sid=%s rooms=%s", sid, rooms)
     await sio.emit("rooms_list", rooms, room=sid)
     await sio.emit("rooms_list", rooms, room=sid)

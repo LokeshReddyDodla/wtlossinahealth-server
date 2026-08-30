@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from typing import Optional
 from uuid import UUID
@@ -6,14 +7,14 @@ from sqlalchemy import delete, desc, func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload
 
-from lib.core.constants import ProfileTypeEnum
 from lib.core.postgres_store import PostgresStore
 from lib.core.types import ProfileTypeLiteral
 from lib.models.user_device import UserDevice as UserDeviceModel
 from lib.schemas.user_device import UserDeviceCreate
 from lib.utils.postgres_session_decorator import with_postgres_session
+
+logger = logging.getLogger(__name__)
 
 
 class UserDeviceService:
@@ -42,7 +43,7 @@ class UserDeviceService:
             return result.scalar_one_or_none()
         except SQLAlchemyError as e:
             await postgres_session.rollback()
-            print(f"Failed to fetch last_active_at: {str(e)}")
+            logger.error("device_last_active_failed user=%s error=%s", user_id, e)
             raise
 
     @with_postgres_session
@@ -74,7 +75,7 @@ class UserDeviceService:
 
         except SQLAlchemyError as e:
             await postgres_session.rollback()
-            print(f"Failed to fetch last active map: {str(e)}")
+            logger.error("device_last_active_map_failed error=%s", e)
             raise
 
     @with_postgres_session
@@ -93,7 +94,7 @@ class UserDeviceService:
             return new_device
         except SQLAlchemyError as e:
             await postgres_session.rollback()
-            print(f"Failed to create user device: {str(e)}")
+            logger.error("device_create_failed error=%s", e)
             raise
 
     @with_postgres_session
@@ -120,7 +121,7 @@ class UserDeviceService:
             devices = result.scalars().all()
             return list(devices)
         except SQLAlchemyError as e:
-            print(f"Failed to retrieve user devices: {str(e)}")
+            logger.error("device_list_failed error=%s", e)
             raise
 
     @with_postgres_session
@@ -149,7 +150,7 @@ class UserDeviceService:
             return device
         except SQLAlchemyError as e:
             await postgres_session.rollback()
-            print(f"Failed to update user device: {str(e)}")
+            logger.error("device_update_failed device=%s error=%s", device_id, e)
             raise
 
     @with_postgres_session
@@ -171,7 +172,7 @@ class UserDeviceService:
             await postgres_session.commit()
         except SQLAlchemyError as e:
             await postgres_session.rollback()
-            print(f"Failed to delete user device: {str(e)}")
+            logger.error("device_delete_failed error=%s", e)
             raise
 
     @with_postgres_session
@@ -196,7 +197,7 @@ class UserDeviceService:
             return result.rowcount
         except SQLAlchemyError as e:
             await postgres_session.rollback()
-            print(f"Failed to delete user devices: {str(e)}")
+            logger.error("device_delete_all_failed error=%s", e)
             raise
 
     @with_postgres_session
@@ -269,5 +270,5 @@ class UserDeviceService:
             )
         except SQLAlchemyError as e:
             await postgres_session.rollback()
-            print(f"Failed to create or update user device: {str(e)}")
+            logger.error("device_upsert_failed error=%s", e)
             raise
