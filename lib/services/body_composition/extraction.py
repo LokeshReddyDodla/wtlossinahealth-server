@@ -7,15 +7,10 @@ import io
 from typing import Any
 from uuid import uuid4
 
-from decouple import config
-
 from lib.ai_foundation.models.gateway import ModelGateway
 from lib.ai_foundation.models.registry import ModelTask
 from lib.schemas.body_composition import BodyCompositionExtraction
 
-EXTRACTION_MODEL_ID = config(
-    "BODY_COMPOSITION_EXTRACTION_MODEL_ID", default="gpt-5.2"
-)
 MAX_PDF_PAGES = 3
 
 SYSTEM_PROMPT = """You extract structured Body Composition measurements from
@@ -76,8 +71,7 @@ class BodyCompositionExtractionService:
                 {"role": "user", "content": content},
             ],
             response_model=BodyCompositionExtraction,
-            task=ModelTask.STRUCTURED_ANALYSIS,
-            model_id=EXTRACTION_MODEL_ID,
+            task=ModelTask.VISION,
             trace_id=trace_id,
         )
         usage = meta.usage

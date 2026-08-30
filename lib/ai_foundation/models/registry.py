@@ -44,8 +44,9 @@ class ModelTask(str, Enum):
     INTENT_EXTRACTION = "intent_extraction"
     RESPONSE_GENERATION = "response_generation"
     STRUCTURED_ANALYSIS = "structured_analysis"
-    MEAL_ANALYSIS = "meal_analysis"  # vision: photo → items (extractor only)
-    MEAL_REASONING = "meal_reasoning"  # text-only: scoring, alternatives, glucose fallback
+    VISION = "vision"
+    MEAL_ANALYSIS = "meal_analysis"
+    MEAL_REASONING = "meal_reasoning"
     CLASSIFICATION = "classification"
     SUMMARIZATION = "summarization"
     EMBEDDING = "embedding"
@@ -338,8 +339,8 @@ def build_default_registry(
             provider=ModelProvider.ANTHROPIC,
             temperature=0.0,
             timeout_seconds=10.0,
-            cost_per_1k_input=0.0008,
-            cost_per_1k_output=0.004,
+            cost_per_1k_input=0.001,
+            cost_per_1k_output=0.005,
             supports_structured=True,
             supports_streaming=True,
             tags=["fast", "cheap", "anthropic"],
@@ -361,8 +362,8 @@ def build_default_registry(
             provider=ModelProvider.OPENAI,
             temperature=0.0,
             timeout_seconds=60.0,
-            cost_per_1k_input=0.005,
-            cost_per_1k_output=0.015,
+            cost_per_1k_input=0.00125,
+            cost_per_1k_output=0.01,
             supports_structured=True,
             supports_streaming=True,
             tags=["powerful", "reasoning"],
@@ -376,6 +377,7 @@ def build_default_registry(
             cost_per_1k_output=0.01,
             supports_structured=True,
             supports_streaming=True,
+            supports_vision=True,
             tags=["vision", "multimodal"],
         ),
         ModelSpec(
@@ -384,9 +386,10 @@ def build_default_registry(
             temperature=0.0,
             timeout_seconds=30.0,
             cost_per_1k_input=0.00175,
-            cost_per_1k_output=0.007,
+            cost_per_1k_output=0.014,
             supports_structured=True,
             supports_streaming=True,
+            supports_vision=True,
             tags=["vision", "multimodal"],
         ),
         ModelSpec(
@@ -412,26 +415,16 @@ def build_default_registry(
         ),
         # Google Gemini models
         ModelSpec(
-            model_id="gemini-2.5-flash",
+            model_id="gemini-3.6-flash",
             provider=ModelProvider.GOOGLE,
             temperature=0.0,
             timeout_seconds=15.0,
-            cost_per_1k_input=0.00015,
-            cost_per_1k_output=0.0006,
+            cost_per_1k_input=0.00075,
+            cost_per_1k_output=0.00375,
             supports_structured=True,
             supports_streaming=True,
-            tags=["fast", "cheap", "google"],
-        ),
-        ModelSpec(
-            model_id="gemini-2.5-pro",
-            provider=ModelProvider.GOOGLE,
-            temperature=0.0,
-            timeout_seconds=25.0,
-            cost_per_1k_input=0.00125,
-            cost_per_1k_output=0.005,
-            supports_structured=True,
-            supports_streaming=True,
-            tags=["powerful", "reasoning", "google"],
+            supports_vision=True,
+            tags=["fast", "cheap", "vision", "google"],
         ),
     ])
 
@@ -439,39 +432,43 @@ def build_default_registry(
     registry.set_task_route(
         ModelTask.INTENT_EXTRACTION,
         primary=thinker,
-        fallbacks=["claude-haiku-4-5-20251001", "gemini-2.5-flash"],
+        fallbacks=["claude-haiku-4-5-20251001", "gemini-3.6-flash"],
     )
     registry.set_task_route(
         ModelTask.RESPONSE_GENERATION,
         primary=responder,
-        fallbacks=["claude-sonnet-4-6", "gemini-2.5-pro"],
+        fallbacks=["claude-sonnet-4-6", "gemini-3.6-flash"],
     )
     registry.set_task_route(
         ModelTask.STRUCTURED_ANALYSIS,
         primary=thinker,
-        fallbacks=["claude-sonnet-4-6", "gemini-2.5-flash"],
+        fallbacks=["claude-sonnet-4-6", "gemini-3.6-flash"],
     )
-    # Meal photo → items: the whole chain must be vision-capable (sends the image).
+    registry.set_task_route(
+        ModelTask.VISION,
+        primary="gemini-3.6-flash",
+        fallbacks=["gpt-5.2", "claude-sonnet-4-6"],
+    )
     registry.set_task_route(
         ModelTask.MEAL_ANALYSIS,
-        primary="gpt-5.2",
-        fallbacks=["claude-sonnet-4-6", "gemini-2.5-pro"],
+        primary="gemini-3.6-flash",
+        fallbacks=["gpt-5.2", "claude-sonnet-4-6"],
     )
     # Text-only meal engines (scorer/alternatives/glucose) send JSON, not the photo.
     registry.set_task_route(
         ModelTask.MEAL_REASONING,
         primary="gpt-4.1-mini",
-        fallbacks=["claude-haiku-4-5-20251001", "gemini-2.5-flash"],
+        fallbacks=["claude-haiku-4-5-20251001", "gemini-3.6-flash"],
     )
     registry.set_task_route(
         ModelTask.CLASSIFICATION,
         primary=thinker,
-        fallbacks=["claude-sonnet-4-6", "gemini-2.5-flash"],
+        fallbacks=["claude-sonnet-4-6", "gemini-3.6-flash"],
     )
     registry.set_task_route(
         ModelTask.SUMMARIZATION,
         primary=thinker,
-        fallbacks=["claude-haiku-4-5-20251001", "gemini-2.5-flash"],
+        fallbacks=["claude-haiku-4-5-20251001", "gemini-3.6-flash"],
     )
     registry.set_task_route(
         ModelTask.EMBEDDING,
@@ -480,19 +477,19 @@ def build_default_registry(
     registry.set_task_route(
         ModelTask.QUALITY_JUDGE,
         primary=adv_thinker,
-        fallbacks=["claude-sonnet-4-6", "gemini-2.5-pro"],
+        fallbacks=["claude-sonnet-4-6", "gemini-3.6-flash"],
     )
     registry.set_task_route(
         ModelTask.PRODUCT_BOT,
         primary="gpt-4.1-mini",
-        fallbacks=["claude-haiku-4-5-20251001", "gemini-2.5-flash"],
+        fallbacks=["claude-haiku-4-5-20251001", "gemini-3.6-flash"],
     )
     # Patient-facing translation (preferred AI language). Cheap tier — the
     # deterministic post-checks in TranslationService guard fidelity.
     registry.set_task_route(
         ModelTask.TRANSLATION,
         primary="gpt-4.1-mini",
-        fallbacks=["claude-haiku-4-5-20251001", "gemini-2.5-flash"],
+        fallbacks=["claude-haiku-4-5-20251001", "gemini-3.6-flash"],
     )
 
     validate_registry_pricing(registry)
