@@ -62,21 +62,6 @@ class PatientFoodItem(BaseModel):
         from_attributes = True
 
 
-class MealAnalysisResponse(BaseModel):
-    meal_name: str = Field(description="Name of the meal")
-    meal_type: str = Field(description="Type of the meal")
-    items: List[PatientFoodItem] = Field(
-        description="List of food items identified in the meal"
-    )
-    total_macro_nutritional_value: PatientMacroNutritionalValue
-    total_micro_nutritional_value: PatientMicroNutritionalValue
-    feedback: str = Field(
-        description="Personalized feedback based on the analysis"
-    )
-    tags: List[str] = Field(description="Tags like GI levels")
-    score: float = Field(description="Overall meal score out of 10")
-
-
 class PatientMeal(BaseModel):
     id: UUID
     name: Optional[str]

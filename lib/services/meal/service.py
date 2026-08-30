@@ -31,7 +31,6 @@ from lib.schemas.patient import CorePatientProfile
 from lib.schemas.meal import MealCreateRequest
 
 logger = logging.getLogger(__name__)
-from lib.schemas.patient_meal import MealAnalysisResponse
 from lib.schemas.patient_meal import PatientMeal as PatientMealSchema
 from lib.services.vector import MealVectorService
 from lib.services.patient_profile_service import PatientProfileService
@@ -42,7 +41,6 @@ from rest_server.patients.meals.api_schema import (
 )
 
 from .helpers import (
-    create_food_item,
     serialize_meal_for_vector,
     trigger_meal_tasks,
 )
@@ -370,7 +368,6 @@ class MealService:
                 tags=ext.tags or [],
                 analyzed=True,
                 analyzed_at=datetime.now(),
-                extraction_confidence=ext.overall_confidence.value,
                 preview_trace_id=request.preview_trace_id,
                 meal_analysis=client_analysis,
                 note=request.note,
@@ -473,7 +470,6 @@ class MealService:
             meal.tags = list(ext.tags or [])
             meal.analyzed = True
             meal.analyzed_at = datetime.now()
-            meal.extraction_confidence = ext.overall_confidence.value
             if request.preview_trace_id is not None:
                 meal.preview_trace_id = request.preview_trace_id
             # Left untouched when the client sends none, so the report keeps the
@@ -532,81 +528,6 @@ class MealService:
                 message="Database Error",
                 detail=str(e),
             )
-
-    @classmethod
-    def _normalize_carb_distribution(
-        cls, analysis_data: MealAnalysisResponse
-    ) -> None:
-        cls._normalize_macro_values(analysis_data.total_macro_nutritional_value)
-        for item in analysis_data.items:
-            cls._normalize_macro_values(item.macro_nutritional_values)
-
-    @classmethod
-    def _normalize_macro_values(cls, macro_values: Any) -> None:
-        total_carbs = getattr(macro_values, "carbohydrates", None)
-        simple_carbs = getattr(macro_values, "simple_carbs", None)
-        complex_carbs = getattr(macro_values, "complex_carbs", None)
-
-        if total_carbs is None or total_carbs < 0:
-            macro_values.simple_carbs = None
-            macro_values.complex_carbs = None
-            return
-
-        if simple_carbs is None and complex_carbs is None:
-            macro_values.simple_carbs = None
-            macro_values.complex_carbs = None
-            return
-
-        if simple_carbs is not None and simple_carbs < 0:
-            simple_carbs = None
-        if complex_carbs is not None and complex_carbs < 0:
-            complex_carbs = None
-
-        if simple_carbs is None and complex_carbs is None:
-            macro_values.simple_carbs = None
-            macro_values.complex_carbs = None
-            return
-
-        if simple_carbs is None:
-            inferred_simple = total_carbs - complex_carbs
-            if inferred_simple < 0:
-                macro_values.simple_carbs = None
-                macro_values.complex_carbs = None
-                return
-            simple_carbs = inferred_simple
-
-        if complex_carbs is None:
-            inferred_complex = total_carbs - simple_carbs
-            if inferred_complex < 0:
-                macro_values.simple_carbs = None
-                macro_values.complex_carbs = None
-                return
-            complex_carbs = inferred_complex
-
-        split_sum = simple_carbs + complex_carbs
-
-        if split_sum < 0:
-            macro_values.simple_carbs = None
-            macro_values.complex_carbs = None
-            return
-
-        if split_sum == 0:
-            if total_carbs == 0:
-                macro_values.simple_carbs = 0.0
-                macro_values.complex_carbs = 0.0
-            else:
-                macro_values.simple_carbs = None
-                macro_values.complex_carbs = None
-            return
-
-        # Always normalize to total carbohydrates so AI mismatch does not
-        # collapse distribution to null and sum remains consistent.
-        scale = total_carbs / split_sum
-        simple_carbs = simple_carbs * scale
-        complex_carbs = complex_carbs * scale
-
-        macro_values.simple_carbs = round(simple_carbs, 2)
-        macro_values.complex_carbs = round(complex_carbs, 2)
 
     @with_postgres_session
     async def delete_meal(
