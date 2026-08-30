@@ -217,7 +217,7 @@ class ModelGateway:
                 secret_key=settings.LANGFUSE_SECRET_KEY,
                 host=settings.LANGFUSE_HOST,
             )
-            logger.info("Langfuse client initialized → %s", settings.LANGFUSE_HOST)
+            logger.debug("langfuse client initialized → %s", settings.LANGFUSE_HOST)
             return client
         except ImportError:
             logger.warning("langfuse package not installed — run: pip install langfuse")
@@ -236,7 +236,7 @@ class ModelGateway:
         from lib.ai_foundation.config import settings
         if settings.LANGFUSE_ENABLED:
             litellm.failure_callback = ["langfuse"]
-            logger.info("LiteLLM Langfuse failure callback enabled")
+            logger.debug("litellm langfuse failure callback enabled")
         # Drop unsupported params (e.g., gpt-5 doesn't support temperature=0.0)
         litellm.drop_params = True
         # Suppress LiteLLM's noisy logging

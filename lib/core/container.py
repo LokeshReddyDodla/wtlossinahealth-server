@@ -1190,7 +1190,7 @@ def _build_prompt_registry() -> PromptRegistry:
                 secret_key=_ai_settings.LANGFUSE_SECRET_KEY,
                 host=_ai_settings.LANGFUSE_HOST,
             )
-            logging.getLogger(__name__).info("PromptRegistry: Langfuse backend enabled")
+            logging.getLogger(__name__).debug("PromptRegistry: Langfuse backend enabled")
         except Exception as exc:
             logging.getLogger(__name__).warning("PromptRegistry: Langfuse init failed: %s", exc)
 
@@ -1204,8 +1204,8 @@ def _build_prompt_registry() -> PromptRegistry:
             if prompts_dir.is_dir():
                 try:
                     count = registry.register_directory(prompts_dir, namespace=agent_dir.name)
-                    logging.getLogger(__name__).info(
-                        "Registered %d prompts from %s", count, agent_dir.name,
+                    logging.getLogger(__name__).debug(
+                        "registered %d prompts from %s", count, agent_dir.name,
                     )
                 except Exception as e:
                     logging.getLogger(__name__).warning(

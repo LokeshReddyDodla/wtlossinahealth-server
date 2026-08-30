@@ -51,13 +51,13 @@ class QdrantStore:
         if self.client:
             return  # already connected
 
-        logger.info(f"🔌 Connecting to Qdrant at {QDRANT_HOST}:{QDRANT_PORT}")
+        logger.debug("connecting to Qdrant at %s:%s", QDRANT_HOST, QDRANT_PORT)
         try:
             self.client = AsyncQdrantClient(
                 host=QDRANT_HOST, port=QDRANT_PORT, timeout=60,
                 check_compatibility=False,
             )
-            logger.info("✅ Qdrant connected")
+            logger.debug("qdrant connected")
 
             # Ensure collection & indices only once at startup
             await self.ensure_collection()
@@ -75,11 +75,9 @@ class QdrantStore:
             # a failed existence check must abort startup, never create
             exists = await client.collection_exists(collection_name=QDRANT_COLLECTION)
             if exists:
-                logger.info(
-                    f"✅ Qdrant collection '{QDRANT_COLLECTION}' already exists"
-                )
+                logger.debug("qdrant collection '%s' exists", QDRANT_COLLECTION)
             else:
-                logger.info(f"🆕 Creating Qdrant collection '{QDRANT_COLLECTION}'")
+                logger.info("creating qdrant collection '%s'", QDRANT_COLLECTION)
                 await client.create_collection(
                     collection_name=QDRANT_COLLECTION,
                     vectors_config=VectorParams(
