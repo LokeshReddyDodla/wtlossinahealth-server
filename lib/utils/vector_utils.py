@@ -11,7 +11,7 @@ from tenacity import (
 import tiktoken
 
 
-_GEMINI_API_KEY = str(config("GOOGLE_API_KEY", default="")) or None
+_GEMINI_API_KEY = str(config("GEMINI_API_KEY", default="")) or None
 
 CHUNK_SIZE = 50  # number of texts per batch request
 MAX_TOKENS_PER_TEXT = 3000  # conservative limit for chunking long texts
@@ -39,8 +39,6 @@ def _normalize_provider(provider: EmbeddingProvider) -> EmbeddingProvider:
 
 async def _aembedding(model: str, texts: list[str]) -> list[list[float]]:
     kwargs: dict = {"model": model, "input": texts}
-    # litellm's gemini/ provider reads GEMINI_API_KEY; the app configures
-    # GOOGLE_API_KEY, so pass it through explicitly.
     if model.startswith("gemini/") and _GEMINI_API_KEY:
         kwargs["api_key"] = _GEMINI_API_KEY
     response = await litellm.aembedding(**kwargs)
