@@ -88,6 +88,8 @@ class PrescriptionExtractionService:
             messages=messages,
             response_model=ExtractedPrescription,
             task=ModelTask.VISION,
+            # Handwritten scripts: pin the full model over the flash vision default.
+            model_id="gpt-5.2",
             trace_id=trace_id,
         )
 
