@@ -26,8 +26,9 @@ chat_management_service = ChatManagementService()
 sio = AsyncServer(
     async_mode="asgi",
     client_manager=AsyncRedisManager(REDIS_URL),
-    cors_allowed_origins="*",  # "http://127.0.0.1:5500"
-    logger=True,
+    cors_allowed_origins="*",
+    logger=False,
+    engineio_logger=False,
 )
 
 
