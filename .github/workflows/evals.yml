@@ -41,7 +41,7 @@ jobs:
       # Real keys — the whole point is live model behavior
       ANTHROPIC_API_KEY: ${{ secrets.EVAL_ANTHROPIC_API_KEY }}
       OPENAI_API_KEY: ${{ secrets.EVAL_OPENAI_API_KEY }}
-      GOOGLE_API_KEY: ${{ secrets.EVAL_GOOGLE_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.EVAL_GOOGLE_API_KEY }}
       LANGFUSE_PUBLIC_KEY: ${{ secrets.EVAL_LANGFUSE_PUBLIC_KEY }}
       LANGFUSE_SECRET_KEY: ${{ secrets.EVAL_LANGFUSE_SECRET_KEY }}
       LANGFUSE_HOST: ${{ secrets.EVAL_LANGFUSE_HOST }}

@@ -45,7 +45,7 @@ jobs:
       PATIENT_EXPORTS_BUCKET: "test-bucket"
       # LLM providers
       OPENAI_API_KEY: "sk-test-not-a-real-key"
-      GOOGLE_API_KEY: "test"
+      GEMINI_API_KEY: "test"
       PERPLEXITY_API_KEY: "test"
       # Vector store
       QDRANT_HOST: "localhost"
