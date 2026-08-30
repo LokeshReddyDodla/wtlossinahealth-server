@@ -12,16 +12,11 @@ import base64
 import io
 from typing import Any, Dict, List
 
-from decouple import config
 from loguru import logger
 
 from lib.ai_foundation.models.gateway import ModelGateway
 from lib.ai_foundation.models.registry import ModelTask
 from lib.schemas.inbody import InbodyExtraction
-
-INBODY_EXTRACTION_MODEL_ID = config(
-    "INBODY_EXTRACTION_MODEL_ID", default="gpt-5.2"
-)
 
 # Below this self-assessed confidence the report is stored but flagged for a
 # human look instead of feeding trends/insights.
@@ -95,8 +90,7 @@ class InbodyExtractionService:
                 {"role": "user", "content": user_content},
             ],
             response_model=InbodyExtraction,
-            task=ModelTask.STRUCTURED_ANALYSIS,
-            model_id=INBODY_EXTRACTION_MODEL_ID,
+            task=ModelTask.VISION,
         )
 
         logger.info(
