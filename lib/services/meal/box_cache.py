@@ -11,9 +11,7 @@ _TTL_SECONDS = 24 * 60 * 60
 
 
 def _store():
-    # Lazy import: container.py imports MealService during init, so a top-level
-    # container import here would be circular.
-    from lib.core.container import container
+    from lib.core.container import container  # lazy: top-level import cycles via container→MealService init
 
     return container.resolve(_NAMESPACE)
 
