@@ -26,6 +26,7 @@ from lib.dependencies.service_dependencies import (
 )
 from lib.schemas.meal import MealPreviewRequest, MealSlot, MealSource
 from lib.services.care_provider_access_service import CareProviderAccessService
+from lib.services.meal.box_cache import cache_extraction_boxes
 from lib.utils.care_provider_permissions import (
     CareProviderFeature,
     CareProviderPermissionAction,
@@ -93,6 +94,7 @@ async def preview_meal_voice(
 
     try:
         result = await agent.analyze(patient_id=pid, request=request)
+        await cache_extraction_boxes(result.model_trace_id, result.extraction.items)
         return SuccessResponse(
             message="Meal analyzed",
             data={
@@ -162,6 +164,7 @@ async def quick_preview_meal_voice(
 
     try:
         result = await agent.quick_analyze(patient_id=pid, request=request)
+        await cache_extraction_boxes(result.model_trace_id, result.extraction.items)
         return SuccessResponse(
             message="Meal extracted",
             data={
