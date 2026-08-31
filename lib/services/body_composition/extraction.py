@@ -26,8 +26,12 @@ fat_free_mass, skeletal_muscle_mass, body_fat_mass, percent_body_fat, bmi,
 waist_hip_ratio, waist_circumference, visceral_fat_level, visceral_fat_area,
 ecw_tbw_ratio, phase_angle, smi, basal_metabolic_rate, body_cell_mass,
 obesity_degree, target_weight, weight_control, fat_control, muscle_control, and
-device_score. Preserve the printed label for vendor-specific metrics. Include
-the printed unit and reference range. Set confidence separately for every value.
+device_score. Only assign a canonical key when the printed metric is the same
+quantity on the same scale as that key; a vendor rating, grade, or index on its
+own scale (e.g. an "Obesity Rating" body-type number) is NOT the canonical
+metric — keep it as a vendor-specific metric with its printed label. Preserve
+the printed label for all vendor-specific metrics. Include the printed unit and
+reference range. Set confidence separately for every value.
 
 Capture segmental lean/fat values for right arm, left arm, trunk, right leg,
 and left leg. Capture impedance only when exact numeric values are printed;
