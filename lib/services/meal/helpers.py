@@ -2,43 +2,10 @@ from datetime import date, datetime
 
 from loguru import logger
 
-from lib.models.patient_meal import PatientFoodItem as PatientFoodItemModel
-from lib.models.patient_meal import (
-    PatientMacroNutritionalValue as PatientMacroNutritionalValueModel,
-)
-from lib.models.patient_meal import (
-    PatientMicroNutritionalValue as PatientMicroNutritionalValueModel,
-)
 from lib.models.patient_meal import PatientMeal as PatientMealModel
-from lib.schemas.patient_meal import PatientFoodItem as PatientFoodItemSchema
 from lib.workers.tasks.meal.enqueue import (
     enqueue_meal_vector_async,
 )
-
-
-def create_food_item(
-    meal: PatientMealModel, item_data: PatientFoodItemSchema
-) -> PatientFoodItemModel:
-    """Create a food item model with nutritional values."""
-    food_item = PatientFoodItemModel(
-        name=item_data.name,
-        coordinates=item_data.coordinates,
-        serving_size=item_data.serving_size,
-        serving_quantity=float(item_data.serving_quantity),
-        serving_unit=item_data.serving_unit,
-        category=item_data.category,
-        meal=meal,
-    )
-    food_item.macro_nutritional_values = PatientMacroNutritionalValueModel(
-        food_item_id=food_item.id,
-        **item_data.macro_nutritional_values.model_dump(),
-    )
-    food_item.micro_nutritional_values = PatientMicroNutritionalValueModel(
-        food_item_id=food_item.id,
-        **item_data.micro_nutritional_values.model_dump(),
-    )
-    return food_item
-
 
 
 def _macro_dict(m: object | None) -> dict:
@@ -83,7 +50,7 @@ def serialize_meal_for_vector(meal: PatientMealModel) -> dict:
         "time": meal.time.isoformat() if meal.time else None,
         "description": meal.description,
         "note": meal.note,
-        "image_url": meal.image_url,
+        "image_url": meal.image_urls[0] if meal.image_urls else None,
         "image_urls": meal.image_urls,
         "analyzed": meal.analyzed,
         "tags": meal.tags or [],

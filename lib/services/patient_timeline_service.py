@@ -349,9 +349,7 @@ class PatientTimelineService:
         for meal in rows:
             ts = datetime.combine(meal.date, meal.time)
             data: dict = {"meal_type": meal.type}
-            if meal.image_url:
-                data["image_url"] = meal.image_url
-            elif meal.image_urls:
+            if meal.image_urls:
                 data["image_url"] = meal.image_urls[0]
             if meal.score is not None:
                 data["score"] = meal.score

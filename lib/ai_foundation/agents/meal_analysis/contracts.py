@@ -124,6 +124,17 @@ class ExtractedFoodItem(BaseModel):
     portion_confidence: ConfidenceLevel = ConfidenceLevel.MEDIUM
     needs_confirmation: bool = False
     tags: list[str] = Field(default_factory=list)
+    box_2d: list[int] | None = Field(
+        default=None,
+        description="Item location as [ymin, xmin, ymax, xmax] normalized 0-1000; null if not locatable.",
+    )
+
+    @property
+    def center_point(self) -> list[float] | None:
+        if not self.box_2d or len(self.box_2d) != 4:
+            return None
+        ymin, xmin, ymax, xmax = self.box_2d
+        return [(xmin + xmax) / 2, (ymin + ymax) / 2]
 
     @field_validator("macros", "micros", mode="before")
     @classmethod
