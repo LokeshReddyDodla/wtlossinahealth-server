@@ -256,14 +256,11 @@ class BodyCompositionService:
         confirmed_by_id: UUID | None,
         confirmed_by_type: str,
     ) -> dict[str, Any]:
+        # A reviewer's confirm is the authoritative override: validation only
+        # routes extractions to review (create_draft), it never blocks the human
+        # sign-off — else duplicate/implausible flags the CP can't edit away in
+        # the UI would strand the record in needs_review forever.
         data, vendor = _normalize(data)
-        blocking = _validation_issues(data, include_confidence=False)
-        if blocking:
-            raise_http_exception(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                message="Body-composition values need correction",
-                detail=", ".join(blocking),
-            )
 
         async with self.postgres_store.get_session() as session:
             row = await session.get(PatientBodyCompositionRecord, record_id)
@@ -300,13 +297,6 @@ class BodyCompositionService:
     ) -> dict[str, Any]:
         """Correct a confirmed record by replacing it — the original stays intact."""
         data, vendor = _normalize(data)
-        blocking = _validation_issues(data, include_confidence=False)
-        if blocking:
-            raise_http_exception(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                message="Body-composition values need correction",
-                detail=", ".join(blocking),
-            )
 
         now = datetime.now().replace(tzinfo=None)
         async with self.postgres_store.get_session() as session:
