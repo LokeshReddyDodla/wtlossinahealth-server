@@ -294,6 +294,12 @@ for namespace in [
         lambda ns=namespace: CacheStore(namespace=ns),
     )
 
+container.register(
+    "meal_box2d",
+    lambda: CacheStore(namespace="meal_box2d"),
+    scope=Scope.singleton,
+)
+
 # 🔹 Libreview SQS Service
 container.register(
     "libreview_sync_queue",

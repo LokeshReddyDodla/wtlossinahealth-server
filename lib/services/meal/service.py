@@ -40,6 +40,7 @@ from rest_server.patients.meals.api_schema import (
     PatientMealUpdateRequest,
 )
 
+from .box_cache import restore_extraction_boxes
 from .helpers import (
     serialize_meal_for_vector,
     trigger_meal_tasks,
@@ -370,6 +371,7 @@ class MealService:
                 note=request.note,
                 patient_id=patient_id,
             )
+            await restore_extraction_boxes(request.preview_trace_id, ext.items)
             _attach_items_and_totals(meal, ext)
 
             postgres_session.add(meal)
@@ -484,6 +486,7 @@ class MealService:
                 await postgres_session.delete(meal.total_micro_nutritional_value)
             await postgres_session.flush()
 
+            await restore_extraction_boxes(request.preview_trace_id, ext.items)
             _attach_items_and_totals(meal, ext)
 
             await postgres_session.commit()
