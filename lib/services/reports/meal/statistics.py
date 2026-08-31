@@ -101,7 +101,7 @@ class MealStatistics:
                 fats = macros.get("fats") or 0
                 fiber = macros.get("fiber") or 0
 
-                meal_type = meal.get("type", "other").lower()
+                meal_type = meal.get("slot", "other").lower()
                 meal_type_stats[meal_type]["carbs"].append(
                     (carbs, report["date"])
                 )
@@ -195,7 +195,7 @@ class MealStatistics:
         }
         for rpt in reports:
             for meal in rpt.get("meals", []):
-                mtype = (meal.get("type") or "").lower()
+                mtype = (meal.get("slot") or "").lower()
                 if mtype not in buckets:
                     continue
                 macros = meal.get("total_macro_nutritional_value", {})
@@ -229,7 +229,7 @@ class MealStatistics:
         for report in reports:
             for meal in report.get("meals", []):
                 total_meals += 1
-                mtype = (meal.get("type") or "").lower()
+                mtype = (meal.get("slot") or "").lower()
                 macros = meal.get("total_macro_nutritional_value", {})
                 carbs = macros.get("carbohydrates") or 0
                 protein = macros.get("proteins") or 0

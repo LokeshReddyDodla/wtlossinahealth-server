@@ -348,7 +348,7 @@ class PatientTimelineService:
         events: list[TimelineEvent] = []
         for meal in rows:
             ts = datetime.combine(meal.date, meal.time)
-            data: dict = {"meal_type": meal.type}
+            data: dict = {"meal_type": meal.slot}
             if meal.image_urls:
                 data["image_url"] = meal.image_urls[0]
             if meal.score is not None:
@@ -358,7 +358,7 @@ class PatientTimelineService:
             if macros:
                 data["calories"] = macros.calories
 
-            title = (meal.type or "Meal").replace("_", " ").title()
+            title = (meal.slot or "Meal").replace("_", " ").title()
             subtitle = meal.description[:100] if meal.description else None
 
             events.append(TimelineEvent(
