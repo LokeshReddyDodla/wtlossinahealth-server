@@ -4,8 +4,6 @@ clients that don't echo box_2d back. Only box_2d is cached."""
 import json
 import logging
 
-from lib.core.container import container
-
 logger = logging.getLogger(__name__)
 
 _NAMESPACE = "meal_box2d"
@@ -13,6 +11,8 @@ _TTL_SECONDS = 24 * 60 * 60
 
 
 def _store():
+    from lib.core.container import container  # lazy: top-level import cycles via container→MealService init
+
     return container.resolve(_NAMESPACE)
 
 
