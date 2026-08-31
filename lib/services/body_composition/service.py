@@ -82,7 +82,7 @@ def _normalize(
     normalized.manufacturer = _manufacturer(normalized.manufacturer)
     normalized.test_datetime = _naive(normalized.test_datetime)
 
-    canonical: list[BodyCompositionMeasurement] = []
+    canonical_by_key: dict[str, BodyCompositionMeasurement] = {}
     vendor: list[BodyCompositionMeasurement] = []
     for measurement in normalized.measurements:
         key = canonical_key(measurement.key)
@@ -103,9 +103,15 @@ def _normalize(
             measurement.reference_high, _ = convert_to_canonical_unit(
                 spec, measurement.reference_high, source_unit
             )
-        canonical.append(measurement)
+        low = spec.low if spec.signed else max(spec.low, 0.0)
+        if not low <= measurement.value <= spec.high:
+            vendor.append(measurement)
+            continue
+        existing = canonical_by_key.get(key)
+        if existing is None or measurement.confidence > existing.confidence:
+            canonical_by_key[key] = measurement
 
-    normalized.measurements = canonical
+    normalized.measurements = list(canonical_by_key.values())
     return normalized, vendor
 
 
