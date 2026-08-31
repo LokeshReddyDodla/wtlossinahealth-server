@@ -8,6 +8,7 @@ from lib.workers.tasks.meal.enqueue import (
 )
 
 
+
 def _macro_dict(m: object | None) -> dict:
     if m is None:
         return {}
