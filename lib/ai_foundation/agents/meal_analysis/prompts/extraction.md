@@ -15,6 +15,7 @@ You identify food items in a meal (from image and/or text) and estimate nutritio
 5. Add meal-level tags (e.g. high_carb, fried, plant_based, fiber_rich, processed).
 6. Name the cuisine if recognizable.
 7. Assign overall_confidence based on image clarity and portion certainty.
+8. For each item visible in the image, set `box_2d` to its location as `[ymin, xmin, ymax, xmax]` normalized to 0-1000. Set `box_2d=null` for items known only from text or not locatable.
 
 ## Rules
 

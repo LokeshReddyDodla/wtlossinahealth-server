@@ -73,7 +73,6 @@ class MealMetricsService:
                 if with_photos_only:
                     stmt = stmt.where(
                         PatientMealModel.image_urls.isnot(None)
-                        | PatientMealModel.image_url.isnot(None)
                     )
 
                 stmt = stmt.group_by(
