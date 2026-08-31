@@ -257,13 +257,6 @@ class BodyCompositionService:
         confirmed_by_type: str,
     ) -> dict[str, Any]:
         data, vendor = _normalize(data)
-        blocking = _validation_issues(data, include_confidence=False)
-        if blocking:
-            raise_http_exception(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                message="Body-composition values need correction",
-                detail=", ".join(blocking),
-            )
 
         async with self.postgres_store.get_session() as session:
             row = await session.get(PatientBodyCompositionRecord, record_id)
@@ -300,13 +293,6 @@ class BodyCompositionService:
     ) -> dict[str, Any]:
         """Correct a confirmed record by replacing it — the original stays intact."""
         data, vendor = _normalize(data)
-        blocking = _validation_issues(data, include_confidence=False)
-        if blocking:
-            raise_http_exception(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                message="Body-composition values need correction",
-                detail=", ".join(blocking),
-            )
 
         now = datetime.now().replace(tzinfo=None)
         async with self.postgres_store.get_session() as session:
