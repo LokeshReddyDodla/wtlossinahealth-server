@@ -103,16 +103,10 @@ def _normalize(
             measurement.reference_high, _ = convert_to_canonical_unit(
                 spec, measurement.reference_high, source_unit
             )
-        # An out-of-range canonical value is almost always a vendor metric on a
-        # different scale mis-mapped to a canonical key (device scales differ),
-        # not a real reading. Keep it as a vendor metric so it survives for audit
-        # but never pollutes the typed canonical column.
         low = spec.low if spec.signed else max(spec.low, 0.0)
         if not low <= measurement.value <= spec.high:
             vendor.append(measurement)
             continue
-        # The same canonical key can be printed twice (e.g. "Weight" and "Body
-        # Weight") — keep the highest-confidence reading.
         existing = canonical_by_key.get(key)
         if existing is None or measurement.confidence > existing.confidence:
             canonical_by_key[key] = measurement
@@ -268,10 +262,6 @@ class BodyCompositionService:
         confirmed_by_id: UUID | None,
         confirmed_by_type: str,
     ) -> dict[str, Any]:
-        # A reviewer's confirm is the authoritative override: validation only
-        # routes extractions to review (create_draft), it never blocks the human
-        # sign-off — else duplicate/implausible flags the CP can't edit away in
-        # the UI would strand the record in needs_review forever.
         data, vendor = _normalize(data)
 
         async with self.postgres_store.get_session() as session:
