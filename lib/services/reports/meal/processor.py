@@ -247,7 +247,7 @@ class MealStatsProcessor:
             GlucoseImpactMeal(
                 date=report["date"],
                 name=meal.get("name"),
-                type=meal.get("type"),
+                type=meal.get("slot"),
                 delta_mgdl=resp["delta_mgdl"],
                 peak_mgdl=resp.get("peak_mgdl", 0.0),
             )

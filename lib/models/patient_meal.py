@@ -116,7 +116,6 @@ class PatientMeal(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True
     )
     name = Column(String, nullable=True)
-    type = Column(String)
     slot = Column(String, nullable=True, index=True)
     date = Column(Date, nullable=False)
     time = Column(Time, nullable=False)

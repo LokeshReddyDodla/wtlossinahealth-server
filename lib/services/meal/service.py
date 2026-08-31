@@ -278,7 +278,6 @@ class MealService:
         try:
             meal = await self.fetch_meal(meal_id, postgres_session=postgres_session)
 
-            meal.type = update_data.type
             meal.slot = update_data.type
             meal.time = update_data.datetime.time()
             meal.date = update_data.datetime.date()
@@ -355,7 +354,6 @@ class MealService:
         try:
             meal = PatientMealModel(
                 name=ext.name,
-                type=request.slot.value,
                 slot=request.slot.value,
                 date=request.consumed_at.date(),
                 time=request.consumed_at.time(),
@@ -401,7 +399,7 @@ class MealService:
                         patient_id=str(patient_id),
                         data={
                             "meal_id": str(meal.id),
-                            "slot": meal.slot or meal.type,
+                            "slot": meal.slot,
                             "consumed_at": datetime.combine(
                                 meal.date, meal.time
                             ).isoformat(),
@@ -453,7 +451,6 @@ class MealService:
             ext = request.extraction
 
             meal.name = ext.name
-            meal.type = request.slot.value
             meal.slot = request.slot.value
             meal.date = request.consumed_at.date()
             meal.time = request.consumed_at.time()

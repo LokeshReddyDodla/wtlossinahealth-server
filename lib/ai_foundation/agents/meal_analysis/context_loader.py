@@ -281,7 +281,7 @@ class MealContextLoader:
 
                 by_slot: dict[MealSlot, list[PatientMealRef]] = {}
                 for meal in meals:
-                    slot = _coerce_slot(meal.slot or meal.type)
+                    slot = _coerce_slot(meal.slot)
                     if slot is None:
                         continue
                     ref = PatientMealRef(

@@ -150,8 +150,6 @@ def build_meal_json(meal, food_item_alias, macro_alias, micro_alias):
             meal.id,
             "name",
             meal.name,
-            "type",
-            meal.type,
             "slot",
             meal.slot,
             "date",

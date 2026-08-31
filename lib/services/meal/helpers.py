@@ -45,7 +45,7 @@ def serialize_meal_for_vector(meal: PatientMealModel) -> dict:
     return {
         "meal_id": str(meal.id),
         "name": meal.name,
-        "type": meal.type,
+        "type": meal.slot,
         "date": meal.date.isoformat() if meal.date else None,
         "time": meal.time.isoformat() if meal.time else None,
         "description": meal.description,
