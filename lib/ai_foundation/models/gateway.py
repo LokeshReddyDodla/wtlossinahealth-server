@@ -59,6 +59,10 @@ def _circuit_key(spec: ModelSpec) -> str:
     return f"{spec.provider.value}:{spec.model_id}"
 
 
+# Attempts per model before falling over to the next in the chain (1 initial + 2 retries).
+_MAX_ATTEMPTS_PER_MODEL = 3
+
+
 def _is_retryable(exc: Exception) -> bool:
     """Check if an error is transient (rate-limit or timeout) and worth a brief delay."""
     if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
@@ -649,18 +653,21 @@ class ModelGateway:
                 continue
 
             effective_spec = self._apply_overrides(spec, temperature, max_tokens, timeout)
-            try:
-                return await call(effective_spec, trace_id)
-            except Exception as exc:
-                last_error = exc
-                failed_attempts.append(f"{spec.model_id}:{type(exc).__name__}")
-                self._circuit_breaker.record_failure(circuit_key)
-                logger.warning(
-                    "%s failed for %s: %s", method_name, spec.model_id, exc
-                )
-                # Brief delay on rate-limit / timeout before trying next provider
-                if _is_retryable(exc):
-                    await asyncio.sleep(0.5)
+            for attempt in range(_MAX_ATTEMPTS_PER_MODEL):
+                try:
+                    return await call(effective_spec, trace_id)
+                except Exception as exc:
+                    last_error = exc
+                    # Retry the same model on transient errors before falling over.
+                    if _is_retryable(exc) and attempt < _MAX_ATTEMPTS_PER_MODEL - 1:
+                        await asyncio.sleep(0.5 * (2 ** attempt))
+                        continue
+                    failed_attempts.append(f"{spec.model_id}:{type(exc).__name__}")
+                    self._circuit_breaker.record_failure(circuit_key)
+                    logger.warning(
+                        "%s failed for %s: %s", method_name, spec.model_id, exc
+                    )
+                    break
 
         raise AllProvidersUnavailableError(
             f"All models failed for task {task.value!r}. "
