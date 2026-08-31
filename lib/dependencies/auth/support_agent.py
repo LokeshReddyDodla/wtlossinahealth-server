@@ -82,7 +82,8 @@ async def get_support_agent_actor(
                 status_code=status.HTTP_404_NOT_FOUND,
                 message="Care provider not found.",
             )
-        if (cp.role or "").lower() != SUPPORT_STAFF_ROLE:
+        cp_role = (cp.role or "").lower()
+        if cp_role not in (SUPPORT_STAFF_ROLE, "admin"):
             raise_http_exception(
                 status_code=status.HTTP_403_FORBIDDEN,
                 message="Care provider is not a support agent.",
@@ -92,10 +93,13 @@ async def get_support_agent_actor(
                 status_code=status.HTTP_403_FORBIDDEN,
                 message="Support care provider has no facility assigned.",
             )
+        scopes: list[SupportScopeLiteral] = ["facility"]
+        if cp_role == "admin":
+            scopes = ["product", "facility"]
         return SupportAgent(
             id=str(user_id),
             role=role,
-            allowed_scopes=["facility"],
+            allowed_scopes=scopes,
             facility_ids=[str(cp.health_facility_id)],
         )
 
