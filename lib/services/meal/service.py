@@ -187,10 +187,11 @@ class MealService:
     ) -> int:
         """Persist the server-computed meal-analysis snapshot. Returns rows hit
         (0 if the meal was deleted before the analysis job ran)."""
+        score = (analysis.get("score") or {}).get("overall")
         result = await postgres_session.execute(
             update(PatientMealModel)
             .where(PatientMealModel.id == meal_id)
-            .values(meal_analysis=analysis)
+            .values(meal_analysis=analysis, score=score)
         )
         await postgres_session.commit()
         return result.rowcount
