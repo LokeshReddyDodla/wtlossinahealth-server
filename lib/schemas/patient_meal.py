@@ -38,12 +38,9 @@ class PatientMicroNutritionalValue(BaseModel):
 
 class PatientFoodItem(BaseModel):
     name: str = Field(description="Name of the dish")
-    coordinates: Optional[List[float]] = Field(
-        description=(
-            "Bounding box coordinates of the food item in the image, specified as "
-            "[x_min, y_min, x_max, y_max]. These coordinates represent the exact region "
-            "of the food item (e.g., the food itself rather than the plate or container)."
-        )
+    center_point: Optional[List[float]] = Field(
+        default=None,
+        description="Center point [x, y] of the food item in the image, normalized 0-1000.",
     )
     serving_size: str = Field(
         description="Serving size description (e.g., 'medium')"
@@ -51,9 +48,6 @@ class PatientFoodItem(BaseModel):
     serving_quantity: float = Field(description="Quantity of the serving")
     serving_unit: str = Field(
         description="Unit of the serving (e.g., 'cup', 'grams')"
-    )
-    category: Optional[str] = Field(
-        description="Category of the food item (e.g., 'solid', 'drink')"
     )
     macro_nutritional_values: PatientMacroNutritionalValue
     micro_nutritional_values: PatientMicroNutritionalValue
@@ -76,19 +70,16 @@ class PatientMeal(BaseModel):
     total_micro_nutritional_value: Optional[PatientMicroNutritionalValue] = (
         None
     )
-    image_url: Optional[HttpUrl] = None
     image_urls: Optional[List[HttpUrl]] = None
     audio_url: Optional[HttpUrl] = None
     description: Optional[str]
     source: Optional[str]
     score: Optional[float]
-    feedback: Optional[str] = None
     tags: Optional[List[str]] = []
     analyzed: bool
     analyzed_at: Optional[datetime]
     uploaded_at: datetime
     patient_id: UUID
-    ai_insight: Optional[str] = None
 
     class Config:
         from_attributes = True

@@ -65,11 +65,10 @@ class PatientFoodItem(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True
     )
     name = Column(String)
-    coordinates = Column(ARRAY(Float))
+    center_point = Column(ARRAY(Float), nullable=True)  # [x, y] normalized 0-1000
     serving_size = Column(String)
     serving_quantity = Column(Float)
     serving_unit = Column(String)
-    category = Column(String)
     macro_nutritional_values = relationship(
         "PatientMacroNutritionalValue",
         back_populates="food_item",
@@ -136,19 +135,16 @@ class PatientMeal(Base):
         uselist=False,
         cascade="all, delete-orphan",
     )
-    image_url = Column(Text, nullable=True)
     image_urls = Column(ARRAY(Text), nullable=True)
     audio_url = Column(Text, nullable=True)
     description = Column(String, nullable=True)
     source = Column(String, nullable=False)
-    feedback = Column(String, nullable=True)
     tags = Column(ARRAY(String), nullable=True)
     score = Column(Float, nullable=True)
     analyzed = Column(Boolean, default=False)
     analyzed_at = Column(DateTime, nullable=True)
     preview_trace_id = Column(String, nullable=True)
     note = Column(Text, nullable=True)
-    ai_insight = Column(Text, nullable=True)
     # Full meal-analysis snapshot; overwritten on edit.
     meal_analysis = Column(JSONB, nullable=True)
     uploaded_at = Column(

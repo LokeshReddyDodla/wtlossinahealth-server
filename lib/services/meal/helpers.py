@@ -51,7 +51,7 @@ def serialize_meal_for_vector(meal: PatientMealModel) -> dict:
         "time": meal.time.isoformat() if meal.time else None,
         "description": meal.description,
         "note": meal.note,
-        "image_url": meal.image_url,
+        "image_url": meal.image_urls[0] if meal.image_urls else None,
         "image_urls": meal.image_urls,
         "analyzed": meal.analyzed,
         "tags": meal.tags or [],

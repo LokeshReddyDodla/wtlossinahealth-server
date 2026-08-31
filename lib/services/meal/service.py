@@ -293,9 +293,7 @@ class MealService:
             meal.analyzed = False
             meal.analyzed_at = None
             meal.score = None
-            meal.feedback = None
             meal.tags = None
-            meal.ai_insight = None
 
             for item in meal.items:
                 await postgres_session.delete(item)
@@ -624,6 +622,7 @@ def _attach_items_and_totals(meal: PatientMealModel, ext: Any) -> None:
     for it in ext.items:
         food_item = PatientFoodItemModel(
             name=it.name,
+            center_point=it.center_point,
             serving_size=str(it.portion),
             serving_quantity=float(it.portion),
             serving_unit=it.unit,
