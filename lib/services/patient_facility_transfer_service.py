@@ -10,10 +10,12 @@ import logging
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import and_, or_, select, update
+from sqlalchemy import and_, delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.core.postgres_store import PostgresStore
+from lib.models.associations import patient_care_provider_association
+from lib.models.care_provider import CareProvider
 from lib.models.gamification import (
     Buddy,
     Challenge,
@@ -82,6 +84,7 @@ class PatientFacilityTransferService:
             "buddies_removed": 0,
             "groups_left": 0,
             "challenges_withdrawn": 0,
+            "care_providers_removed": 0,
             "removed_buddy_partner_ids": [],
         }
 
@@ -179,7 +182,24 @@ class PatientFacilityTransferService:
                     .values(status=TaskStatus.EXPIRED.value)
                 )
 
-        # ── Step 4: Update the patient's facility ──────────────────────
+        # ── Step 4: Remove CPs that belong to the old facility ─────────
+        if old_facility_id:
+            old_cp_ids_result = await postgres_session.execute(
+                select(CareProvider.care_provider_id).where(
+                    CareProvider.health_facility_id == old_facility_id
+                )
+            )
+            old_cp_ids = [r[0] for r in old_cp_ids_result.all()]
+            if old_cp_ids:
+                result = await postgres_session.execute(
+                    delete(patient_care_provider_association).where(
+                        patient_care_provider_association.c.patient_id == patient_id,
+                        patient_care_provider_association.c.care_provider_id.in_(old_cp_ids),
+                    )
+                )
+                summary["care_providers_removed"] = result.rowcount
+
+        # ── Step 5: Update the patient's facility ──────────────────────
         patient.health_facility_id = new_facility_id
 
         # Single commit for entire migration
@@ -187,10 +207,11 @@ class PatientFacilityTransferService:
 
         logger.info(
             "Facility transfer complete: patient=%s, old=%s, new=%s, "
-            "buddies_removed=%d, groups_left=%d, challenges_withdrawn=%d",
+            "buddies_removed=%d, groups_left=%d, challenges_withdrawn=%d, "
+            "cps_removed=%d",
             patient_id, old_facility_id, new_facility_id,
             summary["buddies_removed"], summary["groups_left"],
-            summary["challenges_withdrawn"],
+            summary["challenges_withdrawn"], summary["care_providers_removed"],
         )
 
         # ── Step 5: Post-commit notifications (best-effort) ────────────
