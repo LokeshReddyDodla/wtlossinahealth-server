@@ -5,8 +5,12 @@ Single responsibility: image → structured JSON. No summaries, no intelligence.
 
 from __future__ import annotations
 
+import base64
 import logging
+import mimetypes
 from uuid import uuid4
+
+import httpx
 
 from lib.ai_foundation.models.gateway import ModelGateway
 from lib.ai_foundation.models.registry import ModelTask
@@ -68,9 +72,11 @@ class PrescriptionExtractionService:
             input_text=f"Extract prescription from {len(image_urls)} image(s)",
         )
 
+        data_uris = await _urls_to_data_uris(image_urls)
+
         image_content = [
-            {"type": "image_url", "image_url": {"url": url}}
-            for url in image_urls
+            {"type": "image_url", "image_url": {"url": uri}}
+            for uri in data_uris
         ]
 
         messages: list[dict] = [
@@ -114,3 +120,22 @@ class PrescriptionExtractionService:
         )
 
         return extracted
+
+
+async def _urls_to_data_uris(urls: list[str]) -> list[str]:
+    """Download images and return base64 data URIs.
+
+    OpenAI cannot reliably fetch S3 presigned URLs (ap-south-1 latency
+    causes frequent timeouts), so we inline the bytes.
+    """
+    async with httpx.AsyncClient(timeout=30) as client:
+        uris: list[str] = []
+        for url in urls:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            ct = resp.headers.get("content-type")
+            if not ct:
+                ct = mimetypes.guess_type(url.split("?")[0])[0] or "image/jpeg"
+            encoded = base64.b64encode(resp.content).decode()
+            uris.append(f"data:{ct};base64,{encoded}")
+        return uris
