@@ -164,8 +164,6 @@ def build_meal_json(meal, food_item_alias, macro_alias, micro_alias):
             meal.tags,
             "score",
             meal.score,
-            "image_url",
-            meal.image_urls[1],
             "image_urls",
             meal.image_urls,
             "audio_url",

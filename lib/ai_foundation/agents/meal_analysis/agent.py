@@ -619,11 +619,7 @@ class MealAnalysisAgent(BaseAgent):
 
 
 def _collect_image_urls(request: MealPreviewRequest) -> list[str]:
-    """Merge image_url + image_urls into one deduplicated list."""
-    urls = list(request.image_urls or [])
-    if request.image_url and request.image_url not in urls:
-        urls.insert(0, request.image_url)
-    return urls
+    return list(request.image_urls or [])
 
 
 def _summarize_request(request: MealPreviewRequest) -> str:

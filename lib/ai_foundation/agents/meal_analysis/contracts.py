@@ -384,7 +384,6 @@ class MealPreviewRequest(BaseModel):
     consumed_at: datetime | None = Field(
         None, description="When the meal was eaten. Null = pre-emptive check ('should I eat this?')"
     )
-    image_url: str | None = None
     image_urls: list[str] | None = None
     text: str | None = None
     items: list[ExtractedFoodItem] | None = Field(
@@ -451,7 +450,6 @@ class MealCreateRequest(BaseModel):
     source: MealSource
     consumed_at: datetime
     extraction: MealExtraction
-    image_url: str | None = None
     image_urls: list[str] | None = None
     audio_url: str | None = None
     description: str | None = None
@@ -483,7 +481,6 @@ class MealResponse(BaseModel):
     total_macros: MacroSet
     total_micros: MicroSet | None = None
     tags: list[str] = Field(default_factory=list)
-    image_url: str | None = None
     image_urls: list[str] | None = None
     audio_url: str | None = None
     description: str | None = None

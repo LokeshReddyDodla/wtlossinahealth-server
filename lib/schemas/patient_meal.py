@@ -94,11 +94,4 @@ class PatientMeal(BaseModel):
             if name in state.dict or name not in state.unloaded
         }
 
-        # image_urls is the source of truth; derive both directions for compat
-        urls = kwargs.get("image_urls")
-        if urls:
-            kwargs["image_url"] = urls[0]
-        elif kwargs.get("image_url"):
-            kwargs["image_urls"] = [kwargs["image_url"]]
-
         return cls(**kwargs)
