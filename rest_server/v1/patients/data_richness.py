@@ -24,7 +24,6 @@ from lib.models.patient_smbg import PatientSMBG
 from lib.models.patient_prescription import PatientPrescription
 from lib.models.patient_medication import PatientMedication
 from lib.models.gamification import DailyTask
-from lib.models.patient_report import PatientReport
 from rest_server.response_models import SuccessResponse
 from sqlalchemy import func, select
 
@@ -96,7 +95,6 @@ async def _count_postgres(store: PostgresStore) -> dict[str, dict[str, int]]:
         ("prescriptions", PatientPrescription),
         ("medications", PatientMedication),
         ("tasks_completed", DailyTask),
-        ("reports", PatientReport),
     ]
 
     counts: dict[str, dict[str, int]] = defaultdict(dict)
