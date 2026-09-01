@@ -59,6 +59,7 @@ async def preview_meal_voice(
     source: MealSource = Form(...),
     consumed_at: datetime | None = Form(None),
     image_url: str | None = Form(None),
+    image_urls: list[str] | None = Form(None),
     text: str | None = Form(None),
     portion_note: str | None = Form(None),
     agent: MealAnalysisAgent = Depends(get_meal_analysis_agent),
@@ -88,6 +89,7 @@ async def preview_meal_voice(
         source=source,
         consumed_at=consumed_at,
         image_url=image_url,
+        image_urls=image_urls,
         text=combined_text,
         portion_note=portion_note,
     )
@@ -129,6 +131,7 @@ async def quick_preview_meal_voice(
     source: MealSource = Form(...),
     consumed_at: datetime | None = Form(None),
     image_url: str | None = Form(None),
+    image_urls: list[str] | None = Form(None),
     text: str | None = Form(None),
     portion_note: str | None = Form(None),
     agent: MealAnalysisAgent = Depends(get_meal_analysis_agent),
@@ -158,6 +161,7 @@ async def quick_preview_meal_voice(
         source=source,
         consumed_at=consumed_at,
         image_url=image_url,
+        image_urls=image_urls,
         text=combined_text,
         portion_note=portion_note,
     )
