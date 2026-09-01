@@ -64,7 +64,13 @@ class MealExtractor:
               so portion/name edits in the preview re-score accurately.
             - image/text given → vision/text extraction.
         """
+        input_boxes: dict[str, list[int]] | None = None
         if items is not None and len(items) > 0:
+            input_boxes = {
+                it.name.strip().lower(): it.box_2d
+                for it in items
+                if it.box_2d
+            }
             text_description = _items_to_text(items, portion_note=portion_note)
             image_urls = None
             text = text_description
@@ -95,6 +101,8 @@ class MealExtractor:
             trace_id=trace_id,
         )
         _ensure_totals(extraction)
+        if input_boxes:
+            _restore_boxes(extraction, input_boxes)
         return extraction
 
     # ── helpers ──────────────────────────────────────────────────────────
@@ -207,6 +215,22 @@ def _sum_nutrition(items: list[ExtractedFoodItem]) -> tuple[MacroSet, MicroSet]:
         micros.magnesium_mg = (micros.magnesium_mg or 0) + (it.micros.magnesium_mg or 0)
         micros.zinc_mg = (micros.zinc_mg or 0) + (it.micros.zinc_mg or 0)
     return macros, micros
+
+
+def _restore_boxes(
+    extraction: MealExtraction, boxes: dict[str, list[int]]
+) -> None:
+    """Carry forward box_2d from the input items the client sent.
+
+    When items are provided (edit re-preview), the LLM gets text only and
+    returns box_2d=null.  The original boxes are still valid for items whose
+    name didn't change.
+    """
+    for item in extraction.items:
+        if not item.box_2d:
+            box = boxes.get(item.name.strip().lower())
+            if box:
+                item.box_2d = box
 
 
 def _build_messages(
