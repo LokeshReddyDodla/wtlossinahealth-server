@@ -178,12 +178,6 @@ class Patient(Base):
     )
 
 
-    reports = relationship(
-        "PatientReport",
-        back_populates="patient",
-        cascade="all, delete-orphan",
-        lazy="dynamic",
-    )
 
     connected_apps = relationship(
         "PatientConnectedApp",

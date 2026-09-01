@@ -53,7 +53,6 @@ from .user_device import UserDevice
 from .patient_package_assignment import PatientPackageAssignment
 from .user_activity_log import UserActivityLog
 from .patient_notification import PatientNotification
-from .patient_report import PatientReport
 from .patient_data_export import PatientDataExport
 from .sleep_checkin import SleepCheckin
 from .mood_entry import MoodEntry

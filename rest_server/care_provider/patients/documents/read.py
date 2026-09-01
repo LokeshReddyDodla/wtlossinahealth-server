@@ -14,7 +14,6 @@ from lib.dependencies.service_dependencies import (
 )
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.schemas.patient import CorePatientProfile
-from lib.schemas.patient_report import PatientReport
 from lib.services.reports import CGMReportService
 from lib.services.reports import MealReportService
 from lib.services.patient_document_service import PatientDocumentService
