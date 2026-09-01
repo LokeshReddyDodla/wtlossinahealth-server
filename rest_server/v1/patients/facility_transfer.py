@@ -47,9 +47,10 @@ async def transfer_patient_facility(
     5. Withdraws from direct challenge participations in old facility
        (sets status="withdrawn")
     6. Expires today's pending challenge tasks for withdrawn challenges
-    7. Updates patient.health_facility_id
-    8. Single commit — all-or-nothing
-    9. Post-commit: FCM notifications to the patient and each removed
+    7. Removes care provider assignments for CPs belonging to old facility
+    8. Updates patient.health_facility_id
+    9. Single commit — all-or-nothing
+    10. Post-commit: FCM notifications to the patient and each removed
        buddy (best-effort, failures don't roll back)
 
     ## What's preserved
@@ -60,7 +61,7 @@ async def transfer_patient_facility(
     - Medications and prescriptions
     - Diet and fitness plans
     - Patient-created groups (no facility_id)
-    - Care provider access via explicit assignment (many-to-many)
+    - Care provider access via assignment outside the old facility
 
     ## What auto-updates without action
 
@@ -80,6 +81,7 @@ async def transfer_patient_facility(
       "buddies_removed": 3,
       "groups_left": 2,
       "challenges_withdrawn": 1,
+      "care_providers_removed": 2,
       "removed_buddy_partner_ids": ["uuid", "uuid", "uuid"]
     }
     ```

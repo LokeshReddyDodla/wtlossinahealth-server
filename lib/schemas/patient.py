@@ -50,6 +50,7 @@ class PatientBase(BaseModel):
     timezone: Optional[str] = None
     occupation: Optional[str] = None
     preferred_ai_language: Optional[str] = None
+    health_facility_id: Optional[UUID] = None
 
 
 class PatientCreate(PatientBase):
