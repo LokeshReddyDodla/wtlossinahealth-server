@@ -47,16 +47,8 @@ from .helpers import (
 )
 
 
-def _normalize_to_image_urls(
-    image_url: object | None,
-    image_urls: list | None,
-) -> list[str] | None:
-    """Merge legacy image_url + image_urls into a single list (source of truth)."""
+def _normalize_to_image_urls(image_urls: list | None) -> list[str] | None:
     urls = [str(u) for u in (image_urls or [])]
-    if image_url:
-        s = str(image_url)
-        if s not in urls:
-            urls.insert(0, s)
     return urls or None
 
 
@@ -286,10 +278,8 @@ class MealService:
             meal.source = update_data.source
             if update_data.description is not None:
                 meal.description = update_data.description
-            if update_data.image_url is not None or update_data.image_urls is not None:
-                meal.image_urls = _normalize_to_image_urls(
-                    update_data.image_url, update_data.image_urls,
-                )
+            if update_data.image_urls is not None:
+                meal.image_urls = _normalize_to_image_urls(update_data.image_urls)
 
             meal.analyzed = False
             meal.analyzed_at = None
@@ -361,7 +351,7 @@ class MealService:
                 time=request.consumed_at.time(),
                 source=request.source.value,
                 description=request.description,
-                image_urls=_normalize_to_image_urls(request.image_url, request.image_urls),
+                image_urls=_normalize_to_image_urls(request.image_urls),
                 audio_url=request.audio_url,
                 tags=ext.tags or [],
                 analyzed=True,
@@ -459,10 +449,8 @@ class MealService:
             meal.time = request.consumed_at.time()
             meal.source = request.source.value
             meal.description = request.description
-            if request.image_url is not None or request.image_urls is not None:
-                meal.image_urls = _normalize_to_image_urls(
-                    request.image_url, request.image_urls,
-                )
+            if request.image_urls is not None:
+                meal.image_urls = _normalize_to_image_urls(request.image_urls)
             if request.audio_url is not None:
                 meal.audio_url = request.audio_url
             meal.tags = list(ext.tags or [])

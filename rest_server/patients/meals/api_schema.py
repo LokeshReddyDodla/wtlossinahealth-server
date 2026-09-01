@@ -12,7 +12,6 @@ class PatientMealUpdateRequest(BaseModel):
     datetime: datetime
     source: Optional[str] = "app"
     description: Optional[str] = None
-    image_url: Optional[HttpUrl] = None
     image_urls: Optional[list[HttpUrl]] = None
 
 
