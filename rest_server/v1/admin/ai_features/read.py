@@ -17,6 +17,7 @@ _LABELS: dict[AIFeatureEnum, str] = {
     AIFeatureEnum.COHORT_AGENT: "Cohort agent (provider)",
     AIFeatureEnum.RESEARCH_AGENT: "Research agent (provider)",
     AIFeatureEnum.PRODUCT_BOT: "Product bot (public, system-only)",
+    AIFeatureEnum.SUPPORT_ASSISTANT: "Support assistant (patient tickets)",
 }
 
 # product_bot has no patient/facility, so a facility-scoped pause is meaningless.

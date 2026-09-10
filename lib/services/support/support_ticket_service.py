@@ -179,6 +179,7 @@ class SupportTicketService:
         status_filter: Optional[SupportTicketStatusLiteral],
         requester_type_filter: Optional[RequesterTypeLiteral],
         search: Optional[str] = None,
+        needs_human_filter: Optional[bool] = None,
         limit: int,
         offset: int,
     ) -> tuple[list[dict], int]:
@@ -210,6 +211,13 @@ class SupportTicketService:
             query["status"] = status_filter
         if requester_type_filter:
             query["requester_type"] = requester_type_filter
+        # Tickets the AI assistant could not close out on its own. False
+        # means "no escalation recorded", which includes tickets the bot
+        # never touched (no ``assistant`` sub-document at all).
+        if needs_human_filter is True:
+            query["assistant.needs_human"] = True
+        elif needs_human_filter is False:
+            query["assistant.needs_human"] = {"$ne": True}
 
         col = self.mongo_store.db["support_tickets"]
 

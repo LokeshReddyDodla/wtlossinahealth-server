@@ -46,3 +46,16 @@ UNKNOWN_SENDER_PROFILE = SenderProfileSchema(
     role="patient",  # safe default; clients render generic avatar
     subrole=None,
 )
+
+
+# Profile for the AI support assistant's messages. ``role`` is "admin" on
+# purpose: existing app builds bucket admin senders as the product support
+# side of a ticket, so the bot renders correctly with no client change. The
+# name is what distinguishes it from a human "Support Team" reply.
+SUPPORT_ASSISTANT_SENDER_PROFILE = SenderProfileSchema(
+    first_name="Support",
+    last_name="Assistant",
+    profile_picture=None,
+    role="admin",
+    subrole=None,
+)

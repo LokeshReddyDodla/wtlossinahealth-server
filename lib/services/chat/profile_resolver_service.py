@@ -21,11 +21,13 @@ from typing import Iterable
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
+from lib.core.constants import SUPPORT_ASSISTANT_SENDER_ID
 from lib.core.postgres_store import PostgresStore
 from lib.models.admin import Admin
 from lib.models.care_provider import CareProvider
 from lib.models.patient import Patient
 from lib.schemas.sender_profile import (
+    SUPPORT_ASSISTANT_SENDER_PROFILE,
     SenderProfileRoleLiteral,
     SenderProfileSchema,
     UNKNOWN_SENDER_PROFILE,
@@ -77,6 +79,15 @@ class ProfileResolverService:
         if not unique_ids:
             return {}
 
+        # The support assistant has no PG row; resolve it before the role
+        # lookups so it never falls through to "Unknown User".
+        resolved_bot: dict[str, SenderProfileSchema] = {}
+        if SUPPORT_ASSISTANT_SENDER_ID in unique_ids:
+            resolved_bot[SUPPORT_ASSISTANT_SENDER_ID] = SUPPORT_ASSISTANT_SENDER_PROFILE
+            unique_ids = unique_ids - {SUPPORT_ASSISTANT_SENDER_ID}
+            if not unique_ids:
+                return resolved_bot
+
         # Run the three role lookups sequentially, NOT via asyncio.gather.
         # Async SQLAlchemy sessions are single-stream — concurrent
         # execute() calls trip an IllegalStateChangeError. Each query is
@@ -88,7 +99,7 @@ class ProfileResolverService:
         )
         admins = await self._fetch_admins(unique_ids, postgres_session)
 
-        resolved: dict[str, SenderProfileSchema] = {}
+        resolved: dict[str, SenderProfileSchema] = dict(resolved_bot)
         for uid, patient in patients.items():
             resolved[uid] = SenderProfileSchema(
                 first_name=patient.first_name or "",

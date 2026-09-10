@@ -225,3 +225,41 @@ async def test_resolve_dedups_repeated_ids():
     assert len(out) == 1
     # PG was called exactly 3 times (patients, care_providers, admins).
     assert session.execute.await_count == 3
+
+
+# --- support assistant (synthetic sender, no PG row) --------------------
+
+
+@pytest.mark.asyncio
+async def test_resolve_support_assistant_without_touching_pg():
+    from lib.core.constants import SUPPORT_ASSISTANT_SENDER_ID
+
+    session = _fake_session_returning()
+    svc = ProfileResolverService()
+    out = await svc.resolve.__wrapped__(
+        svc, [SUPPORT_ASSISTANT_SENDER_ID], postgres_session=session
+    )
+
+    profile = out[SUPPORT_ASSISTANT_SENDER_ID]
+    assert (profile.first_name, profile.last_name) == ("Support", "Assistant")
+    assert profile.role == "admin"
+    # Only the bot was requested: no role-table query should have run.
+    session.execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_resolve_support_assistant_alongside_real_users():
+    from lib.core.constants import SUPPORT_ASSISTANT_SENDER_ID
+
+    pid = uuid4()
+    patient = SimpleNamespace(
+        patient_id=pid, first_name="Alice", last_name="Singh", profile_picture=None
+    )
+    session = _fake_session_returning(patients=[patient])
+    svc = ProfileResolverService()
+    out = await svc.resolve.__wrapped__(
+        svc, [str(pid), SUPPORT_ASSISTANT_SENDER_ID], postgres_session=session
+    )
+
+    assert out[str(pid)].role == "patient"
+    assert out[SUPPORT_ASSISTANT_SENDER_ID].last_name == "Assistant"

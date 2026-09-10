@@ -4,7 +4,7 @@ from typing import Dict, Optional
 
 from fastapi.encoders import jsonable_encoder
 
-from lib.core.constants import EmitMessageKeyEnum
+from lib.core.constants import SUPPORT_ASSISTANT_SENDER_ID, EmitMessageKeyEnum
 from lib.core.mongo_store import get_mongo_store
 from lib.schemas.chat_message import ChatMessage, ChatMessageCreate
 from lib.schemas.fcm_notification_info import FCMNotificationInfo
@@ -95,6 +95,9 @@ class ChatMessagingService(BaseChatService):
                 # Fan out to agents who aren't (yet) chat participants — the
                 # support queue. Imports local to avoid a circular import via
                 # SupportTicketService -> ChatMessagingService.
+                from lib.services.support.support_assistant_service import (
+                    schedule_reply as schedule_support_assistant_reply,
+                )
                 from lib.services.support.support_notification_service import (
                     SupportNotificationService,
                 )
@@ -102,12 +105,18 @@ class ChatMessagingService(BaseChatService):
                     SupportTicketService,
                 )
 
-                await SupportNotificationService().notify_queue(
-                    chat=chat,
-                    message=saved_message,
-                    sender_id=message_data.sender_id,
-                    notification_info=notification_info,
+                # The assistant's own replies don't page the queue: staff were
+                # already notified by the patient message the bot is answering.
+                is_assistant_message = (
+                    str(message_data.sender_id) == SUPPORT_ASSISTANT_SENDER_ID
                 )
+                if not is_assistant_message:
+                    await SupportNotificationService().notify_queue(
+                        chat=chat,
+                        message=saved_message,
+                        sender_id=message_data.sender_id,
+                        notification_info=notification_info,
+                    )
                 # Requester replies reopen closed/resolved tickets and
                 # always bump last_message_at on the ticket so the queue
                 # sort surfaces the freshest activity.
@@ -116,6 +125,10 @@ class ChatMessagingService(BaseChatService):
                     sender_id=message_data.sender_id,
                     content=message_data.content,
                 )
+                # AI first responder, off the request path. Decides for
+                # itself whether it may answer (patient ticket, no human
+                # joined, feature on, reply budget left).
+                schedule_support_assistant_reply(chat=chat, message=saved_message)
 
         except Exception as e:
             logger.error("chat_add_message_failed error=%s", e)

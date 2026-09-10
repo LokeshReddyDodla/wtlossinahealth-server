@@ -4,6 +4,11 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, model_validator
 
+from lib.ai_foundation.agents.support_assistant.contracts import (
+    HandlingMode,
+    SupportCategory,
+    SupportUrgency,
+)
 from lib.core.types import (
     SupportScopeLiteral,
     SupportTicketStatusLiteral,
@@ -11,6 +16,22 @@ from lib.core.types import (
 from lib.schemas.chat_message import MediaSchema
 
 RequesterTypeLiteral = Literal["patient", "care_provider"]
+
+
+class SupportAssistantTicketState(BaseModel):
+    """What the AI support assistant last concluded about this ticket.
+    Written only by ``SupportAssistantService`` (``$set`` on ``assistant.*``);
+    read by the staff queue for triage. Absent on tickets the bot never
+    touched (care-provider tickets, bot disabled, human already engaged)."""
+
+    category: Optional[SupportCategory] = None
+    urgency: Optional[SupportUrgency] = None
+    needs_human: bool = False
+    summary: Optional[str] = None
+    handling_mode: Optional[HandlingMode] = None
+    reply_count: int = 0
+    last_replied_at: Optional[datetime] = None
+    last_trace_id: Optional[str] = None
 
 
 class SupportTicketSchema(BaseModel):
@@ -38,6 +59,8 @@ class SupportTicketSchema(BaseModel):
 
     resolved_at: Optional[datetime] = None
     closed_at: Optional[datetime] = None
+
+    assistant: Optional[SupportAssistantTicketState] = None
 
     class Config:
         populate_by_name = True

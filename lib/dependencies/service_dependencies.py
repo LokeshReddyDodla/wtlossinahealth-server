@@ -153,6 +153,14 @@ def get_support_ticket_service():
     return cast(SupportTicketService, container.resolve(SupportTicketService))
 
 
+def get_support_assistant_service():
+    from lib.services.support.support_assistant_service import (
+        SupportAssistantService,
+    )
+
+    return cast(SupportAssistantService, container.resolve(SupportAssistantService))
+
+
 def get_direct_chat_resolver() -> DirectChatResolver:
     return cast(DirectChatResolver, container.resolve(DirectChatResolver))
 

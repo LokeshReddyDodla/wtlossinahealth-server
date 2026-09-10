@@ -29,6 +29,8 @@ with patch("redis.from_url", return_value=mock_redis), \\
     from lib.ai_foundation.agents.research_agent.agent import ResearchAgent
     from lib.ai_foundation.agents.product_bot.agent import ProductBotAgent
     from lib.ai_foundation.agents.dashboard_help.agent import DashboardHelpAgent
+    from lib.ai_foundation.agents.support_assistant.agent import SupportAssistantAgent
+    from lib.services.support.support_assistant_service import SupportAssistantService
     from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTracker
     from lib.ai_foundation.clinical.metabolic import MetabolicService
     from lib.ai_foundation.events.bus import EventBus
@@ -55,6 +57,8 @@ with patch("redis.from_url", return_value=mock_redis), \\
         ResearchAgent,
         ProductBotAgent,
         DashboardHelpAgent,
+        SupportAssistantAgent,
+        SupportAssistantService,
         BaseSpeechToText,
         BaseTextToSpeech,
     ]

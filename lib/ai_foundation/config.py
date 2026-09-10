@@ -47,6 +47,13 @@ class AIFoundationSettings(BaseSettings):
     SUMMARIES_TTL_DAYS: int = Field(default=90, description="TTL in days for thread summaries")
     PRODUCT_BOT_CONVERSATIONS_TTL_DAYS: int = Field(default=90, description="TTL in days for public product-bot conversation analytics")
 
+    # ── Support Assistant (AI first responder on patient support tickets) ──
+
+    SUPPORT_ASSISTANT_MAX_REPLIES_PER_TICKET: int = Field(default=6, description="Bot replies allowed per ticket before it goes silent and leaves the thread to a human")
+    SUPPORT_ASSISTANT_HISTORY_MESSAGES: int = Field(default=12, description="Most recent ticket messages replayed to the model as conversation context")
+    SUPPORT_ASSISTANT_TIMEOUT_SECONDS: float = Field(default=45.0, description="Timeout for the single triage+reply LLM call")
+    SUPPORT_ASSISTANT_TEMPERATURE: float = Field(default=0.2, description="Sampling temperature for support replies (low: grounded, consistent)")
+
     # ── Reasoning Engine ──────────────────────────────────────────────────
 
     REASONING_DEFAULT_TIER: str = Field(default="standard", description="Default reasoning tier: basic, standard, advanced, unlimited")

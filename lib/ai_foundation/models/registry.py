@@ -53,6 +53,7 @@ class ModelTask(str, Enum):
     QUALITY_JUDGE = "quality_judge"
     PRODUCT_BOT = "product_bot"
     TRANSLATION = "translation"
+    SUPPORT_ASSISTANT = "support_assistant"
 
 
 class ModelProvider(str, Enum):
@@ -481,6 +482,15 @@ def build_default_registry(
     )
     registry.set_task_route(
         ModelTask.PRODUCT_BOT,
+        primary="gpt-4.1-mini",
+        fallbacks=["claude-haiku-4-5-20251001", "gemini-3.6-flash"],
+    )
+    # Patient support assistant: one structured call (triage + reply) per
+    # ticket message, grounded in a markdown knowledge base. Cheap tier is
+    # enough for grounded how-to answers; the hold/emergency wording is
+    # templated in code, not generated.
+    registry.set_task_route(
+        ModelTask.SUPPORT_ASSISTANT,
         primary="gpt-4.1-mini",
         fallbacks=["claude-haiku-4-5-20251001", "gemini-3.6-flash"],
     )

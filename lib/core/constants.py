@@ -28,6 +28,15 @@ class AIFeatureEnum(str, Enum):
     COHORT_AGENT = "cohort_agent"
     RESEARCH_AGENT = "research_agent"
     PRODUCT_BOT = "product_bot"
+    SUPPORT_ASSISTANT = "support_assistant"
+
+
+# Synthetic sender id for the AI support assistant's messages in support
+# chats. Never a row in patients / care_providers / admins — the chat profile
+# resolver special-cases it, and every "is this a human?" check in the support
+# layer must exclude it. Fixed so the bot's messages stay attributable across
+# deploys and environments.
+SUPPORT_ASSISTANT_SENDER_ID = "00000000-0000-4000-8000-00000000a551"
 
 
 class CareProviderStatus(Enum):

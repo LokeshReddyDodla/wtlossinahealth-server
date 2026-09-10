@@ -138,6 +138,12 @@ def fake_support_notification(monkeypatch):
         "lib.services.support.support_ticket_service.SupportTicketService",
         FakeTicketSvc,
     )
+    # The AI first responder is fire-and-forget off this branch; stub it so
+    # no background task tries to resolve the real container here.
+    monkeypatch.setattr(
+        "lib.services.support.support_assistant_service.schedule_reply",
+        MagicMock(),
+    )
     return instances
 
 
@@ -436,3 +442,62 @@ async def test_mark_all_messages_as_read_excludes_self_from_socket_fanout(
     svc.notification_service.notify_participants.assert_awaited_once()
     kwargs = svc.notification_service.notify_participants.await_args.kwargs
     assert kwargs["exclude_user_id"] == "user-b"
+
+
+# --- AI first responder hook -------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_support_chat_message_schedules_assistant_reply(
+    messaging_svc, fake_support_notification, monkeypatch
+):
+    svc, chats_collection = messaging_svc
+    chats_collection.find_one = AsyncMock(
+        return_value={
+            "_id": "chat-1",
+            "kind": "support",
+            "participants": [{"id": "patient-1", "type": "patient"}],
+        }
+    )
+    scheduled = MagicMock()
+    monkeypatch.setattr(
+        "lib.services.support.support_assistant_service.schedule_reply", scheduled
+    )
+
+    await svc.add_message(_build_message_create())
+
+    scheduled.assert_called_once()
+    kwargs = scheduled.call_args.kwargs
+    assert kwargs["chat"]["_id"] == "chat-1"
+    assert kwargs["message"]["sender_id"] == "patient-1"
+    assert kwargs["message"]["content"] == "hello"
+
+
+@pytest.mark.asyncio
+async def test_assistant_reply_does_not_page_the_support_queue(
+    messaging_svc, fake_support_notification, monkeypatch
+):
+    """The bot answering a patient must not re-notify staff — they were
+    already paged by the patient's message."""
+    from lib.core.constants import SUPPORT_ASSISTANT_SENDER_ID
+
+    svc, chats_collection = messaging_svc
+    chats_collection.find_one = AsyncMock(
+        return_value={
+            "_id": "chat-1",
+            "kind": "support",
+            "participants": [{"id": "patient-1", "type": "patient"}],
+        }
+    )
+    scheduled = MagicMock()
+    monkeypatch.setattr(
+        "lib.services.support.support_assistant_service.schedule_reply", scheduled
+    )
+
+    msg = _build_message_create()
+    msg.sender_id = SUPPORT_ASSISTANT_SENDER_ID
+    await svc.add_message(msg)
+
+    assert fake_support_notification == []  # no SupportNotificationService instantiated
+    # Still handed to the scheduler, which drops bot-authored messages itself.
+    scheduled.assert_called_once()

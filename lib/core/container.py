@@ -26,6 +26,10 @@ from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.chat.chat_messaging_service import ChatMessagingService
 from lib.services.chat.chat_notification_service import ChatNotificationService
 from lib.services.chat.chat_participant_service import ChatParticipantService
+from lib.services.support.support_assistant_service import SupportAssistantService
+from lib.services.support.support_assistant_snapshot_service import (
+    SupportAssistantSnapshotService,
+)
 from lib.services.support.support_ticket_service import SupportTicketService
 from lib.services.chat.direct_chat_resolver import DirectChatResolver
 from lib.services.dashboard_metrics.cgm_metrics_service import (
@@ -164,6 +168,7 @@ from lib.ai_foundation.agents.proactive_monitor import ProactiveMonitorAgent
 from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTracker
 from lib.ai_foundation.agents.product_bot import ProductBotAgent
 from lib.ai_foundation.agents.dashboard_help import DashboardHelpAgent
+from lib.ai_foundation.agents.support_assistant import SupportAssistantAgent
 from lib.ai_foundation.rate_limit.public_limiter import PublicRateLimiter
 from lib.ai_foundation.voice.config import voice_settings as _voice_settings
 from lib.ai_foundation.voice.stt import BaseSpeechToText, build_stt
@@ -1876,6 +1881,37 @@ container.register(
     DashboardHelpAgent,
     lambda: DashboardHelpAgent(
         gateway=cast(ModelGateway, container.resolve(ModelGateway)),
+    ),
+    scope=Scope.singleton,
+)
+
+# Patient support assistant: AI first responder inside support tickets.
+container.register(
+    SupportAssistantAgent,
+    lambda: SupportAssistantAgent(
+        gateway=cast(ModelGateway, container.resolve(ModelGateway)),
+        translator=cast(TranslationService, container.resolve(TranslationService)),
+    ),
+    scope=Scope.singleton,
+)
+container.register(
+    SupportAssistantSnapshotService,
+    lambda: SupportAssistantSnapshotService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+    ),
+    scope=Scope.singleton,
+)
+container.register(
+    SupportAssistantService,
+    lambda: SupportAssistantService(
+        agent=cast(SupportAssistantAgent, container.resolve(SupportAssistantAgent)),
+        snapshot_service=cast(
+            SupportAssistantSnapshotService,
+            container.resolve(SupportAssistantSnapshotService),
+        ),
+        chat_messaging_service=cast(
+            ChatMessagingService, container.resolve(ChatMessagingService)
+        ),
     ),
     scope=Scope.singleton,
 )
